@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "DSP Fleet Manager (Full Stack)",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "start-dev.bat"],
+      "port": 5173
+    },
+    {
+      "name": "Setup GitHub",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "setup-github.bat"],
+      "port": 9999
+    }
+  ]
+}

@@ -4,14 +4,146 @@
     {
       "name": "DSP Fleet Manager (Full Stack)",
       "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
-      "runtimeArgs": ["/c", "start-dev.bat"],
+      "runtimeArgs": ["/c", "start-dev-simple.bat"],
       "port": 5173
+    },
+    {
+      "name": "DSP Backend Only",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "start-backend.bat"],
+      "port": 3001
     },
     {
       "name": "Setup GitHub",
       "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
       "runtimeArgs": ["/c", "setup-github.bat"],
       "port": 9999
+    },
+    {
+      "name": "Push to GitHub",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "push-to-github.bat"],
+      "port": 9998
+    },
+    {
+      "name": "Import Associates",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "import-associates.bat"],
+      "port": 9997
+    },
+    {
+      "name": "Test Node",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "test-node.bat"],
+      "port": 9996
+    },
+    {
+      "name": "Migrate Schedule",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "migrate-schedule.bat"],
+      "port": 9995
+    },
+    {
+      "name": "Install xlsx",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "install-xlsx.bat"],
+      "port": 9994
+    },
+    {
+      "name": "Migrate Repairs",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "migrate-repairs.bat"],
+      "port": 9993
+    },
+    {
+      "name": "Migrate Day Recurring",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "migrate-day-recurring.bat"],
+      "port": 9992
+    },
+    {
+      "name": "Migrate Publish Status",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "migrate-publish-status.bat"],
+      "port": 9991
+    },
+    {
+      "name": "Debug Backend",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "debug-backend.bat"],
+      "port": 9990
+    },
+    {
+      "name": "Migrate Auth Columns",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "migrate-auth-columns.bat"],
+      "port": 9989
+    },
+    {
+      "name": "Migrate Change Log",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "migrate-change-log.bat"],
+      "port": 9988
+    },
+    {
+      "name": "Full Import",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "full-import.bat"],
+      "port": 9987
+    },
+    {
+      "name": "Wipe and Reimport",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "wipe-reimport-run.bat"],
+      "port": 9986
+    },
+    {
+      "name": "Test Node Output",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "test-node-output.bat"],
+      "port": 9985
+    },
+    {
+      "name": "Fleet Import",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "fleet-import.bat"],
+      "port": 9984
+    },
+    {
+      "name": "Migrate Shift Types",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "migrate-shift-types.bat"],
+      "port": 9983
+    },
+    {
+      "name": "Commit Railway Config",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "commit-railway.bat"],
+      "port": 9982
+    },
+    {
+      "name": "Check Git Status",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "check-git.bat"],
+      "port": 9981
+    },
+    {
+      "name": "Git Diagnostics",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "git-check2.bat"],
+      "port": 9980
+    },
+    {
+      "name": "Git Push Railway",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "git-push-railway.bat"],
+      "port": 9979
+    },
+    {
+      "name": "Git Push Log",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "run-git-push.bat"],
+      "port": 9978
     }
   ]
 }

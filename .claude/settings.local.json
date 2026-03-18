@@ -1,7 +1,27 @@
 {
   "permissions": {
     "allow": [
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(node -e \"const XLSX=require\\(''xlsx''\\); const wb=XLSX.readFile\\(''C:/Users/arace/Downloads/Week-12-Schedule \\(1\\).xlsx''\\); console.log\\(''Sheet Names:'', wb.SheetNames\\); const ws=wb.Sheets[''Rostered Work Blocks'']; if\\(ws\\) { const data=XLSX.utils.sheet_to_json\\(ws,{header:1}\\); console.log\\(''First 15 rows of Rostered Work Blocks:''\\); console.log\\(JSON.stringify\\(data.slice\\(0,15\\), null, 2\\)\\); }\")",
+      "Bash(node server/src/db/migrateOpsPlanner.js)",
+      "Bash(node \"C:/Users/arace/OneDrive/Desktop/DSP Scheduler/server/src/db/migrateOpsPlanner.js\")",
+      "Bash(python -c \":*)",
+      "Bash(node -e \":*)",
+      "Bash(netstat -ano)",
+      "Bash(cmd /c \"netstat -ano | findstr \"\":3001 \"\" | findstr LISTEN\")",
+      "Bash(\"C:/Program Files/nodejs/node.exe\" --check src/routes/shifts.js)",
+      "Bash(\"C:/Program Files/nodejs/node.exe\" --check \"C:/Users/arace/OneDrive/Desktop/DSP Scheduler/server/src/routes/shifts.js\")",
+      "Bash(python3 -c \" import json, sys with open\\(r''C:\\\\Users\\\\arace\\\\.claude\\\\projects\\\\C--Users-arace-OneDrive-Desktop-DSP-Scheduler\\\\3d27b1de-5bc8-43ca-97b8-c680e3f96d22\\\\tool-results\\\\toolu_01KHNSEsG5e2KWbwFLsHTCdF.json''\\) as f: data = json.load\\(f\\) print\\(data[0][''text''][:15000]\\) \")",
+      "Bash(\"C:/Program Files/nodejs/node.exe\" src/db/makeAdmin.js)",
+      "Bash(cmd /c \"cd /d \"\"C:\\\\Users\\\\arace\\\\OneDrive\\\\Desktop\\\\DSP Scheduler\\\\server\"\" && \"\"C:\\\\Program Files\\\\nodejs\\\\node.exe\"\" src/db/makeAdmin.js\")",
+      "Bash(del \"C:\\\\Users\\\\arace\\\\OneDrive\\\\Desktop\\\\DSP Scheduler\\\\server\\\\src\\\\db\\\\makeAdmin.js\")",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(node src/db/migrateChangeLog.js)",
+      "Bash(node \"C:/Users/arace/OneDrive/Desktop/DSP Scheduler/server/src/db/migrateChangeLog.js\")",
+      "Bash(node server/src/index.js)",
+      "Bash(node server/src/db/migrateDriverRecurring.js)",
+      "Bash(node server/src/db/wipeAndReimport.js)",
+      "Bash(findstr \"ChevronsUpDown\\\\|ArrowUpDown\")"
     ]
   }
 }

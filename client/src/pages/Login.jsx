@@ -8,17 +8,26 @@ import { Truck, Eye, EyeOff } from 'lucide-react';
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ email: 'jmitchell@dspfleet.com', password: 'password123' });
+  const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/login', form);
+      const { data } = await api.post('/auth/login', { ...form, rememberMe });
       login(data.user, data.token);
-      navigate('/', { replace: true });
+      if (data.must_change_password) {
+        navigate('/change-password', { replace: true });
+        return;
+      }
+      const role = data.user.role;
+      if (role === 'driver') navigate('/my-schedule', { replace: true });
+      else if (role === 'manager' || role === 'dispatcher') navigate('/schedule', { replace: true });
+      else navigate('/', { replace: true });
     } catch (err) {
       toast.error(err.response?.data?.error || 'Login failed');
     } finally {
@@ -27,28 +36,28 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-sidebar flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#1E3A5F] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary mb-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#2563EB] mb-4 shadow-lg">
             <Truck size={32} className="text-white" />
           </div>
           <h1 className="text-2xl font-bold text-white">DSP Fleet Manager</h1>
-          <p className="text-slate-400 text-sm mt-1">Sign in to your account</p>
+          <p className="text-blue-300 text-sm mt-1">Sign in to your account</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="card space-y-4">
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-xl p-6 space-y-4">
           <div>
-            <label className="label">Email</label>
+            <label className="block text-[13px] font-medium text-[#374151] mb-1.5">Email</label>
             <input
               type="email" className="input" value={form.email}
               onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-              placeholder="you@dspfleet.com" required
+              placeholder="you@dspfleet.com" required autoFocus
             />
           </div>
           <div>
-            <label className="label">Password</label>
+            <label className="block text-[13px] font-medium text-[#374151] mb-1.5">Password</label>
             <div className="relative">
               <input
                 type={showPass ? 'text' : 'password'} className="input pr-10" value={form.password}
@@ -56,19 +65,45 @@ export default function Login() {
                 placeholder="••••••••" required
               />
               <button type="button" onClick={() => setShowPass(s => !s)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                 {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           </div>
-          <button type="submit" className="btn-primary w-full justify-center py-2.5" disabled={loading}>
+
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-sm text-[#374151] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={e => setRememberMe(e.target.checked)}
+                className="rounded accent-[#2563EB]"
+              />
+              Remember me
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowForgot(s => !s)}
+              className="text-xs text-[#2563EB] hover:text-[#1D4ED8]"
+            >
+              Forgot password?
+            </button>
+          </div>
+
+          {showForgot && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700 text-center">
+              Contact your administrator to reset your password.
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="btn-primary w-full justify-center py-2.5 text-base"
+            disabled={loading}
+          >
             {loading ? 'Signing in…' : 'Sign In'}
           </button>
         </form>
-
-        <p className="text-center text-xs text-slate-500 mt-4">
-          Demo: jmitchell@dspfleet.com / password123
-        </p>
       </div>
     </div>
   );

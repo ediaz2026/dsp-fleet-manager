@@ -1,221 +1,1187 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
-import { Plus, Edit2, AlertTriangle, User, Phone, Shield } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import {
+  Users, Calendar, AlertTriangle, Plus, Edit2, Trash2, ChevronRight,
+  Search, X, Save, ChevronDown, ChevronUp, RefreshCw, RotateCcw, Check,
+  AlertCircle, Clock, Shield, FileText, User, ChevronsUpDown
+} from 'lucide-react';
 import api from '../api/client';
-import Badge from '../components/Badge';
-import Modal from '../components/Modal';
 import toast from 'react-hot-toast';
-import { format, differenceInDays } from 'date-fns';
+import { useSort } from '../hooks/useSort';
+import { format, differenceInDays, parseISO, isValid } from 'date-fns';
 import { useAuth } from '../App';
+import { useLocation } from 'react-router-dom';
 
-export default function Drivers() {
-  const { user } = useAuth();
+// ─── Constants ────────────────────────────────────────────────────────────────
+const SIDEBAR = [
+  { id: 'all-drivers',  label: 'All Drivers',        icon: Users },
+  { id: 'recurring',    label: 'Recurring Schedules', icon: Calendar },
+  { id: 'alerts',       label: 'Driver Alerts',       icon: AlertTriangle },
+];
+
+const STATUS_TABS = ['all', 'active', 'inactive', 'terminated'];
+const STATUS_LABEL = { all: 'All', active: 'Active', inactive: 'Inactive', terminated: 'Terminated' };
+const STATUS_COLOR = {
+  active:     'bg-emerald-100 text-emerald-700',
+  inactive:   'bg-amber-100 text-amber-700',
+  terminated: 'bg-red-100 text-red-700',
+};
+
+const DAYS_COL  = ['sun','mon','tue','wed','thu','fri','sat'];
+const DAYS_ABBR = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+const SHIFT_TYPES = ['EDV','STEP VAN','HELPER','ON CALL','EXTRA','DISPATCH AM','DISPATCH PM','SUSPENSION','UTO','PTO','TRAINING'];
+const SHIFT_COLORS = {
+  'EDV':         'bg-blue-500',  'STEP VAN':    'bg-indigo-700',
+  'HELPER':      'bg-amber-500', 'ON CALL':     'bg-yellow-500',
+  'EXTRA':       'bg-green-500', 'DISPATCH AM': 'bg-cyan-500',
+  'DISPATCH PM': 'bg-sky-600',   'SUSPENSION':  'bg-red-500',
+  'UTO':         'bg-purple-500','PTO':          'bg-teal-500',
+  'TRAINING':    'bg-orange-500',
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function fmtDate(d) {
+  if (!d) return '—';
+  try { return format(parseISO(String(d).slice(0, 10)), 'MM/dd/yyyy'); } catch { return d; }
+}
+function licenseExpClass(d) {
+  if (!d) return 'text-slate-400';
+  try {
+    const days = differenceInDays(parseISO(String(d).slice(0, 10)), new Date());
+    if (days < 0) return 'text-red-600 font-semibold';
+    if (days <= 60) return 'text-amber-600 font-semibold';
+    return 'text-slate-700';
+  } catch { return 'text-slate-400'; }
+}
+function hasRecurring(driver) {
+  return Array.isArray(driver.recurring_rows) && driver.recurring_rows.length > 0;
+}
+
+// ─── ConfirmModal ─────────────────────────────────────────────────────────────
+function ConfirmModal({ title, message, confirmLabel, danger, onConfirm, onClose }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-bold text-slate-800 mb-2">{title}</h3>
+        <p className="text-sm text-slate-600 mb-5">{message}</p>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors">Cancel</button>
+          <button
+            onClick={onConfirm}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors ${danger ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'}`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── RecurringGrid (embedded in profile + recurring section) ─────────────────
+function RecurringGrid({ staffId, locked = false }) {
   const qc = useQueryClient();
-  const [search, setSearch] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  const [profileModal, setProfileModal] = useState(null);
-  const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({});
-  const isManager = ['manager', 'admin'].includes(user?.role);
 
-  const { data: drivers = [], isLoading } = useQuery({
+  // refetchOnWindowFocus: false is critical — prevents tab-switch from triggering
+  // a background refetch that wipes the user's unsaved edits via useEffect below
+  const { data: serverRows = [], isLoading } = useQuery({
+    queryKey: ['recurring', staffId],
+    queryFn: () => api.get(`/drivers/${staffId}/recurring`).then(r => r.data),
+    enabled: !!staffId,
+    refetchOnWindowFocus: false,
+    staleTime: 30000,
+  });
+
+  // Shift type defaults for auto-fill (retry:false — table may not exist yet)
+  const { data: shiftTypesData = [] } = useQuery({
+    queryKey: ['shift-types'],
+    queryFn: () => api.get('/schedule/shift-types').then(r => r.data),
+    retry: false,
+    staleTime: 300000,
+    refetchOnWindowFocus: false,
+  });
+  const shiftTypeDefaults = useMemo(() => {
+    const map = {};
+    shiftTypesData.forEach(st => { map[st.name] = st; });
+    return map;
+  }, [shiftTypesData]);
+
+  // Local state — lifted from individual rows for batch save
+  const [localRows, setLocalRows] = useState([]);
+  const [dirtyIds, setDirtyIds] = useState(new Set());
+  const [applyCurrentWeek, setApplyCurrentWeek] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const hasChanges = dirtyIds.size > 0;
+  const isExisting = serverRows.length > 0; // has server-persisted rows
+  // Can save whenever we have rows (even no changes — user may want to re-apply schedule)
+  const canSave = !saving && localRows.length > 0;
+
+  // Sync from server — safe because refetchOnWindowFocus:false means serverRows
+  // only changes on initial mount or after an explicit invalidateQueries (post-save)
+  useEffect(() => {
+    setLocalRows(serverRows);
+    setDirtyIds(new Set());
+  }, [serverRows]);
+
+  const updateLocalRow = (rowId, changes) => {
+    setLocalRows(prev => prev.map(r => r.id === rowId ? { ...r, ...changes } : r));
+    setDirtyIds(prev => new Set([...prev, rowId]));
+  };
+
+  const addRowMut = useMutation({
+    mutationFn: () => {
+      const def = shiftTypeDefaults['EDV'];
+      return api.post(`/drivers/${staffId}/recurring`, {
+        shift_type: 'EDV',
+        start_time: def?.default_start_time || '07:00',
+        end_time:   def?.default_end_time   || '17:00',
+      });
+    },
+    onSuccess: (res) => {
+      // Add directly to local state — do NOT invalidate ['recurring', staffId]
+      // which would fire useEffect and clear dirtyIds
+      setLocalRows(prev => [...prev, res.data]);
+      setDirtyIds(prev => new Set([...prev, res.data.id]));
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.error || 'Failed to add shift row');
+    },
+  });
+
+  const deleteRowMut = useMutation({
+    mutationFn: (rowId) => api.delete(`/drivers/${staffId}/recurring/${rowId}`),
+    onSuccess: (_, rowId) => {
+      setLocalRows(prev => prev.filter(r => r.id !== rowId));
+      setDirtyIds(prev => { const s = new Set(prev); s.delete(rowId); return s; });
+      qc.invalidateQueries(['drivers-overview']);
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.error || 'Failed to remove shift row');
+    },
+  });
+
+  const handleSave = async () => {
+    if (localRows.length === 0) { toast.error('Add at least one shift row first'); return; }
+    setSaving(true);
+    try {
+      // Save all dirty rows first
+      if (dirtyIds.size > 0) {
+        await Promise.all(
+          localRows
+            .filter(r => dirtyIds.has(r.id))
+            .map(r => api.put(`/drivers/${staffId}/recurring/${r.id}`, r))
+        );
+      }
+      // Then apply recurring schedule to upcoming weeks
+      const result = await api.post(`/drivers/${staffId}/recurring/apply-weekly`, { applyCurrentWeek });
+      const created = result.data?.created ?? 0;
+      toast.success(created > 0
+        ? `Saved! Applied ${created} shift${created !== 1 ? 's' : ''} to upcoming weeks`
+        : 'Recurring schedule saved');
+      setDirtyIds(new Set());
+      setApplyCurrentWeek(false);
+      qc.invalidateQueries(['recurring', staffId]);
+      qc.invalidateQueries(['drivers-overview']);
+      qc.invalidateQueries(['shifts']);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to save recurring schedule');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (isLoading) return <div className="text-xs text-slate-400 py-2">Loading schedule…</div>;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Scrollable rows area — capped so Save button never goes off-screen */}
+      <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
+        {localRows.length === 0 && !addRowMut.isPending && (
+          <p className="text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
+            ⚠️ No recurring schedule configured — click "+ Add shift row" below
+          </p>
+        )}
+        {localRows.map(row => (
+          <RecurringRowEditor
+            key={row.id}
+            row={row}
+            locked={locked}
+            isDirty={dirtyIds.has(row.id)}
+            shiftTypeDefaults={shiftTypeDefaults}
+            onChange={(changes) => updateLocalRow(row.id, changes)}
+            onDelete={() => deleteRowMut.mutate(row.id)}
+          />
+        ))}
+      </div>
+
+      {/* Footer — always visible */}
+      {!locked && (
+        <div className="space-y-2.5">
+          <button
+            onClick={() => addRowMut.mutate()}
+            disabled={addRowMut.isPending}
+            className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 px-2 py-1.5 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50"
+          >
+            <Plus size={13} /> {addRowMut.isPending ? 'Adding…' : 'Add shift row'}
+          </button>
+
+          <div className="pt-2 border-t border-slate-200 space-y-2.5">
+            {isExisting && (
+              <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={applyCurrentWeek}
+                  onChange={e => setApplyCurrentWeek(e.target.checked)}
+                  className="rounded accent-blue-600"
+                />
+                Also apply changes to current week
+              </label>
+            )}
+            <button
+              onClick={handleSave}
+              disabled={!canSave}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                canSave
+                  ? hasChanges
+                    ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                    : 'bg-slate-600 text-white hover:bg-slate-700 shadow-sm'
+                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              }`}
+            >
+              <Save size={14} />
+              {saving ? 'Saving…' : hasChanges ? 'Save Changes' : 'Apply to Schedule'}
+            </button>
+            {hasChanges && (
+              <p className="text-xs text-blue-500 font-medium">● Unsaved changes</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecurringRowEditor({ row, locked, isDirty, shiftTypeDefaults, onChange, onDelete }) {
+  if (locked) {
+    const activeDays = DAYS_COL.filter(d => row[d]);
+    return (
+      <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded text-white ${SHIFT_COLORS[row.shift_type] || 'bg-slate-400'}`}>{row.shift_type}</span>
+        <span className="text-slate-400">{row.start_time?.slice(0,5)}–{row.end_time?.slice(0,5)}</span>
+        <span className="ml-1">{activeDays.map(d => DAYS_ABBR[DAYS_COL.indexOf(d)]).join(' ')}</span>
+      </div>
+    );
+  }
+
+  const handleShiftTypeChange = (newType) => {
+    const def = shiftTypeDefaults?.[newType];
+    const changes = { shift_type: newType };
+    if (def?.default_start_time) changes.start_time = def.default_start_time;
+    if (def?.default_end_time)   changes.end_time   = def.default_end_time;
+    onChange(changes);
+  };
+
+  return (
+    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border flex-wrap transition-colors ${
+      isDirty ? 'border-blue-300 bg-blue-50/30' : 'bg-slate-50 border-slate-200'
+    }`}>
+      <select
+        value={row.shift_type}
+        onChange={e => handleShiftTypeChange(e.target.value)}
+        className="text-xs border border-slate-300 rounded px-1.5 py-1 bg-white focus:ring-1 focus:ring-blue-500 outline-none"
+      >
+        {SHIFT_TYPES.map(t => <option key={t}>{t}</option>)}
+      </select>
+      <input
+        type="time"
+        value={row.start_time?.slice(0,5) || '07:00'}
+        onChange={e => onChange({ start_time: e.target.value })}
+        className="text-xs border border-slate-300 rounded px-1.5 py-1 w-24 bg-white focus:ring-1 focus:ring-blue-500 outline-none"
+      />
+      <span className="text-slate-400 text-xs">–</span>
+      <input
+        type="time"
+        value={row.end_time?.slice(0,5) || '17:00'}
+        onChange={e => onChange({ end_time: e.target.value })}
+        className="text-xs border border-slate-300 rounded px-1.5 py-1 w-24 bg-white focus:ring-1 focus:ring-blue-500 outline-none"
+      />
+      <div className="flex items-center gap-1 ml-1">
+        {DAYS_COL.map((d, i) => (
+          <button
+            key={d}
+            onClick={() => onChange({ [d]: !row[d] })}
+            className={`w-6 h-6 text-[10px] font-bold rounded transition-colors ${row[d] ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 border border-slate-300 hover:border-blue-400'}`}
+          >{DAYS_ABBR[i]}</button>
+        ))}
+      </div>
+      <div className="flex items-center gap-1.5 ml-auto">
+        {isDirty && <span className="text-[10px] text-blue-500 font-semibold">Modified</span>}
+        <button onClick={onDelete} className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 transition-colors" title="Remove">
+          <Trash2 size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Driver Profile Modal ─────────────────────────────────────────────────────
+function DriverProfile({ driver, onClose, onStatusChange, onDelete, onSaved, initialTab = 'personal' }) {
+  const qc = useQueryClient();
+  const [tab, setTab] = useState(driver._initialTab || initialTab);
+  const [form, setForm] = useState({
+    first_name: driver.first_name || '',
+    last_name: driver.last_name || '',
+    hire_date: driver.hire_date ? String(driver.hire_date).slice(0,10) : '',
+    employee_code: driver.employee_code || '',
+    transponder_id: driver.transponder_id || '',
+    license_number: driver.license_number || '',
+    license_expiration: driver.license_expiration ? String(driver.license_expiration).slice(0,10) : '',
+    license_state: driver.license_state || '',
+    dob: driver.dob ? String(driver.dob).slice(0,10) : '',
+    notes: driver.notes || '',
+  });
+  const [dirty, setDirty] = useState(false);
+  const [confirm, setConfirm] = useState(null);
+  const isTerminated = driver.employment_status === 'terminated';
+
+  const { data: attendance = [] } = useQuery({
+    queryKey: ['driver-attendance', driver.staff_id],
+    queryFn: () => api.get(`/drivers/${driver.staff_id}/attendance`).then(r => r.data),
+    enabled: tab === 'attendance',
+  });
+
+  const saveMut = useMutation({
+    mutationFn: () => api.put(`/drivers/${driver.staff_id}/profile`, form),
+    onSuccess: () => {
+      toast.success('Profile saved');
+      setDirty(false);
+      qc.invalidateQueries(['drivers']);
+      qc.invalidateQueries(['drivers-overview']);
+      onSaved?.();
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Save failed'),
+  });
+
+  const set = (k, v) => { setForm(p => ({ ...p, [k]: v })); setDirty(true); };
+
+  const TABS = [
+    { id: 'personal',    label: 'Personal Info',     icon: User },
+    { id: 'id',          label: 'Identification',    icon: Shield },
+    { id: 'schedule',    label: 'Schedule',          icon: Calendar },
+    { id: 'attendance',  label: 'Attendance',        icon: Clock },
+    { id: 'notes',       label: 'Notes',             icon: FileText },
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 py-4 border-b border-slate-100">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">
+              {driver.first_name} {driver.last_name}
+            </h2>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[driver.employment_status] || 'bg-slate-100 text-slate-600'}`}>
+                {STATUS_LABEL[driver.employment_status] || driver.employment_status}
+              </span>
+              {driver.employee_code && <span className="text-xs text-slate-500">Code: {driver.employee_code}</span>}
+              {isTerminated && <span className="text-xs text-red-500 font-medium">Profile locked</span>}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {!isTerminated && dirty && (
+              <button
+                onClick={() => saveMut.mutate()}
+                disabled={saveMut.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-60"
+              >
+                <Save size={14} /> {saveMut.isPending ? 'Saving...' : 'Save'}
+              </button>
+            )}
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Status actions */}
+        {!isTerminated && (
+          <div className="px-6 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium text-slate-500 mr-1">Change status:</span>
+            {STATUS_TABS.filter(s => s !== 'all' && s !== driver.employment_status).map(s => (
+              <button
+                key={s}
+                onClick={() => setConfirm({ type: 'status', newStatus: s })}
+                className={`text-xs px-3 py-1 rounded-full font-medium border transition-colors ${
+                  s === 'terminated' ? 'border-red-300 text-red-600 hover:bg-red-50' :
+                  s === 'inactive'   ? 'border-amber-300 text-amber-600 hover:bg-amber-50' :
+                                       'border-emerald-300 text-emerald-600 hover:bg-emerald-50'
+                }`}
+              >
+                → {STATUS_LABEL[s]}
+              </button>
+            ))}
+            <button
+              onClick={() => setConfirm({ type: 'delete' })}
+              className="ml-auto text-xs px-3 py-1 rounded-full font-medium border border-red-300 text-red-600 hover:bg-red-50 transition-colors"
+            >
+              Delete Driver
+            </button>
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div className="flex border-b border-slate-100 overflow-x-auto">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
+                tab === t.id
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <t.icon size={14} />
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        <div className="p-6 space-y-4">
+
+          {/* ── Personal Info ── */}
+          {tab === 'personal' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Legal First Name</label>
+                <input value={form.first_name} onChange={e => set('first_name', e.target.value)} disabled={isTerminated}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Last Name</label>
+                <input value={form.last_name} onChange={e => set('last_name', e.target.value)} disabled={isTerminated}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Date of Birth</label>
+                <input type="date" value={form.dob} onChange={e => set('dob', e.target.value)} disabled={isTerminated}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Hire Date</label>
+                <input type="date" value={form.hire_date} onChange={e => set('hire_date', e.target.value)} disabled={isTerminated}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Employee Code</label>
+                <input value={form.employee_code} onChange={e => set('employee_code', e.target.value)} disabled={isTerminated}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Employment Status</label>
+                <span className={`inline-flex items-center px-3 py-2 rounded-lg text-sm font-medium ${STATUS_COLOR[driver.employment_status] || ''}`}>
+                  {STATUS_LABEL[driver.employment_status] || driver.employment_status}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ── Identification ── */}
+          {tab === 'id' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Transporter ID (DAProviderID)</label>
+                <input value={form.transponder_id} onChange={e => set('transponder_id', e.target.value)} disabled={isTerminated}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Driver's License Number</label>
+                <input value={form.license_number} onChange={e => set('license_number', e.target.value)} disabled={isTerminated}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">License State</label>
+                <input value={form.license_state} onChange={e => set('license_state', e.target.value)} disabled={isTerminated}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400" placeholder="e.g. FL" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">License Expiration</label>
+                <input type="date" value={form.license_expiration} onChange={e => set('license_expiration', e.target.value)} disabled={isTerminated}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400" />
+              </div>
+            </div>
+          )}
+
+          {/* ── Recurring Schedule ── */}
+          {tab === 'schedule' && (
+            <div>
+              <p className="text-xs text-slate-500 mb-3">Set a recurring weekly pattern. Select shift type, days, and times — then click <strong>Save Changes</strong> to save and push to the upcoming schedule.</p>
+              <RecurringGrid staffId={driver.staff_id} locked={isTerminated} />
+            </div>
+          )}
+
+          {/* ── Attendance History ── */}
+          {tab === 'attendance' && (
+            <div>
+              {attendance.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-8">No attendance records found.</p>
+              ) : (
+                <div className="space-y-1 max-h-80 overflow-y-auto">
+                  {attendance.map(a => (
+                    <div key={a.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-50 border border-slate-100">
+                      <span className="text-xs text-slate-500 w-20 flex-shrink-0">{fmtDate(a.attendance_date)}</span>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                        a.status === 'ncns' ? 'bg-red-100 text-red-700' :
+                        a.status === 'called_out' ? 'bg-amber-100 text-amber-700' :
+                        a.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {a.status === 'called_out' ? 'Called Out' :
+                         a.status === 'ncns' ? 'NCNS' :
+                         a.status.charAt(0).toUpperCase() + a.status.slice(1)}
+                      </span>
+                      {a.call_out_reason && <span className="text-xs text-slate-500 truncate">{a.call_out_reason}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Notes ── */}
+          {tab === 'notes' && (
+            <div>
+              <textarea
+                value={form.notes}
+                onChange={e => set('notes', e.target.value)}
+                disabled={isTerminated}
+                rows={6}
+                placeholder="Add notes about this driver..."
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400 resize-none"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Confirm sub-modal */}
+        {confirm && (
+          <ConfirmModal
+            title={confirm.type === 'delete' ? 'Delete Driver?' : `Change status to ${STATUS_LABEL[confirm.newStatus]}?`}
+            message={
+              confirm.type === 'delete'
+                ? `Permanently delete ${driver.first_name} ${driver.last_name}? This cannot be undone.`
+                : confirm.newStatus === 'terminated'
+                  ? `This will remove ${driver.first_name} from the schedule and permanently delete their recurring schedule.`
+                  : confirm.newStatus === 'inactive'
+                    ? `${driver.first_name} will be removed from the weekly schedule and cannot be assigned shifts.`
+                    : `${driver.first_name} will return to the active roster and weekly schedule.`
+            }
+            confirmLabel={confirm.type === 'delete' ? 'Delete Forever' : `Set ${STATUS_LABEL[confirm.newStatus] || ''}`}
+            danger={confirm.type === 'delete' || confirm.newStatus === 'terminated'}
+            onClose={() => setConfirm(null)}
+            onConfirm={() => {
+              setConfirm(null);
+              if (confirm.type === 'delete') onDelete(driver.staff_id);
+              else onStatusChange(driver.staff_id, confirm.newStatus);
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Add Driver Modal ─────────────────────────────────────────────────────────
+function AddDriverModal({ onClose, onSaved }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    first_name: '', last_name: '', hire_date: '', employee_code: '',
+    transponder_id: '', license_number: '', license_expiration: '', license_state: '', dob: '',
+  });
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const createMut = useMutation({
+    mutationFn: () => api.post('/drivers/create', form),
+    onSuccess: () => {
+      toast.success('Driver added');
+      qc.invalidateQueries(['drivers']);
+      qc.invalidateQueries(['drivers-overview']);
+      onSaved?.();
+      onClose();
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to add driver'),
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h2 className="text-base font-bold text-slate-800">Add New Driver</h2>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 transition-colors text-slate-400"><X size={16} /></button>
+        </div>
+        <div className="p-6 grid grid-cols-2 gap-4">
+          {[
+            ['first_name','Legal First Name','text',true],['last_name','Last Name','text',true],
+            ['hire_date','Hire Date','date',false],['employee_code','Employee Code','text',false],
+            ['transponder_id','Transporter ID','text',false],['dob','Date of Birth','date',false],
+            ['license_number',"Driver's License #",'text',false],['license_expiration','License Expiration','date',false],
+            ['license_state','License State','text',false],
+          ].map(([k, label, type, req]) => (
+            <div key={k} className={k === 'transponder_id' ? 'col-span-2' : ''}>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">{label}{req && ' *'}</label>
+              <input
+                type={type} value={form[k]} onChange={e => set(k, e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+          ))}
+        </div>
+        <div className="px-6 pb-5 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 transition-colors">Cancel</button>
+          <button
+            onClick={() => createMut.mutate()}
+            disabled={!form.first_name || !form.last_name || createMut.isPending}
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+          >
+            {createMut.isPending ? 'Adding...' : 'Add Driver'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SortableHeader ───────────────────────────────────────────────────────────
+function SortableHeader({ label, col, sortKey, sortDir, onToggle, align = 'left' }) {
+  const active = sortKey === col;
+  return (
+    <th
+      className={`px-3 py-2.5 font-semibold text-slate-500 text-xs cursor-pointer select-none hover:text-slate-700 text-${align}`}
+      onClick={() => onToggle(col)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active
+          ? sortDir === 'asc' ? <ChevronUp size={11} className="text-blue-500" /> : <ChevronDown size={11} className="text-blue-500" />
+          : <ChevronsUpDown size={11} className="opacity-30" />
+        }
+      </span>
+    </th>
+  );
+}
+
+// ─── All Drivers Section ──────────────────────────────────────────────────────
+function AllDriversSection({ onOpenProfile, initialStatus }) {
+  const qc = useQueryClient();
+  const [statusFilter, setStatusFilter] = useState(() => initialStatus || localStorage.getItem('drivers_status') || 'active');
+  const [search, setSearch] = useState('');
+  const [licenseFilter, setLicenseFilter] = useState('all');
+  const [scheduleFilter, setScheduleFilter] = useState('all');
+  const [addOpen, setAddOpen] = useState(false);
+
+  const saveFilter = (s) => { setStatusFilter(s); localStorage.setItem('drivers_status', s); };
+  const hasActiveFilters = licenseFilter !== 'all' || scheduleFilter !== 'all';
+  const clearFilters = () => { setLicenseFilter('all'); setScheduleFilter('all'); };
+
+  const { data: allDrivers = [], isLoading } = useQuery({
+    queryKey: ['drivers'],
+    queryFn: () => api.get('/drivers').then(r => r.data),
+  });
+  const { data: overview = [] } = useQuery({
+    queryKey: ['drivers-overview'],
+    queryFn: () => api.get('/drivers/recurring-overview').then(r => r.data),
+  });
+
+  // Merge recurring info + computed fields for sorting
+  const drivers = allDrivers.map(d => {
+    const ov = overview.find(o => o.staff_id === d.staff_id);
+    const recurring_rows = ov?.recurring_rows || [];
+    return { ...d, recurring_rows, has_recurring: recurring_rows.length > 0 ? 1 : 0 };
+  });
+
+  const filtered = drivers
+    .filter(d => statusFilter === 'all' ? true : d.employment_status === statusFilter)
+    .filter(d => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return `${d.first_name} ${d.last_name}`.toLowerCase().includes(q)
+        || (d.transponder_id || '').toLowerCase().includes(q)
+        || (d.employee_code || '').toLowerCase().includes(q);
+    })
+    .filter(d => {
+      if (licenseFilter === 'all') return true;
+      if (!d.license_expiration) return false;
+      const days = differenceInDays(parseISO(String(d.license_expiration).slice(0, 10)), new Date());
+      if (licenseFilter === 'expired') return days < 0;
+      if (licenseFilter === 'expiring') return days >= 0 && days <= 60;
+      return true;
+    })
+    .filter(d => {
+      if (scheduleFilter === 'all') return true;
+      if (scheduleFilter === 'configured') return d.has_recurring === 1;
+      if (scheduleFilter === 'not-set') return d.has_recurring === 0;
+      return true;
+    });
+
+  const { sorted: displayedDrivers, sortKey, sortDir, toggle } = useSort(filtered, 'last_name', 'asc');
+
+  const counts = STATUS_TABS.reduce((acc, s) => {
+    acc[s] = s === 'all' ? drivers.length : drivers.filter(d => d.employment_status === s).length;
+    return acc;
+  }, {});
+
+  const LicensePill = ({ val, label }) => (
+    <button
+      onClick={() => setLicenseFilter(val)}
+      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all border ${
+        licenseFilter === val
+          ? 'bg-blue-600 text-white border-blue-600'
+          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+      }`}
+    >{label}</button>
+  );
+  const SchedulePill = ({ val, label }) => (
+    <button
+      onClick={() => setScheduleFilter(val)}
+      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all border ${
+        scheduleFilter === val
+          ? 'bg-blue-600 text-white border-blue-600'
+          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+      }`}
+    >{label}</button>
+  );
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Top bar */}
+      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+        <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+          {STATUS_TABS.map(s => (
+            <button
+              key={s}
+              onClick={() => saveFilter(s)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${statusFilter === s ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              {STATUS_LABEL[s]} <span className="ml-1 text-xs opacity-60">{counts[s] || 0}</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 flex-1 justify-end">
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search drivers…"
+              className="pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none w-52"
+            />
+          </div>
+          <button
+            onClick={() => setAddOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            <Plus size={14} /> Add Driver
+          </button>
+        </div>
+      </div>
+
+      {/* Filter + Sort row */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-slate-400 font-medium">License:</span>
+          <LicensePill val="all" label="All" />
+          <LicensePill val="expiring" label="Expiring Soon" />
+          <LicensePill val="expired" label="Expired" />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-slate-400 font-medium">Schedule:</span>
+          <SchedulePill val="all" label="All" />
+          <SchedulePill val="configured" label="Configured" />
+          <SchedulePill val="not-set" label="Not Set" />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-slate-400 font-medium">Sort by:</span>
+          {[{ col: 'first_name', label: 'First Name' }, { col: 'last_name', label: 'Last Name' }].map(({ col, label }) => {
+            const active = sortKey === col;
+            return (
+              <button
+                key={col}
+                onClick={() => toggle(col)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                  active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                {label}
+                {active
+                  ? sortDir === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />
+                  : <ChevronsUpDown size={11} className="opacity-40" />
+                }
+              </button>
+            );
+          })}
+        </div>
+        {hasActiveFilters && (
+          <button onClick={clearFilters} className="ml-auto text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+            <X size={11} /> Clear Filters
+          </button>
+        )}
+        <span className={`text-xs text-slate-400 ${hasActiveFilters ? '' : 'ml-auto'}`}>{displayedDrivers.length} driver{displayedDrivers.length !== 1 ? 's' : ''}</span>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1 overflow-auto">
+        {isLoading ? (
+          <div className="text-center py-16 text-slate-400">Loading drivers…</div>
+        ) : displayedDrivers.length === 0 ? (
+          <div className="text-center py-16 text-slate-400">
+            {search || hasActiveFilters ? 'No drivers match the current filters' : `No ${statusFilter === 'all' ? '' : statusFilter + ' '}drivers`}
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="text-left px-3 py-2.5 font-semibold text-slate-500 text-xs">First Name</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-slate-500 text-xs">Last Name</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-slate-500 text-xs">Transporter ID</th>
+                <SortableHeader label="Hire Date"    col="hire_date"           sortKey={sortKey} sortDir={sortDir} onToggle={toggle} />
+                <SortableHeader label="License Exp"  col="license_expiration"  sortKey={sortKey} sortDir={sortDir} onToggle={toggle} />
+                <SortableHeader label="Schedule"     col="has_recurring"       sortKey={sortKey} sortDir={sortDir} onToggle={toggle} align="center" />
+                <SortableHeader label="Status"       col="employment_status"   sortKey={sortKey} sortDir={sortDir} onToggle={toggle} align="center" />
+                <th className="px-3 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {displayedDrivers.map(d => {
+                const expired = d.license_expiration
+                  ? differenceInDays(parseISO(String(d.license_expiration).slice(0,10)), new Date()) < 0
+                  : false;
+                const hasRec = hasRecurring(d);
+                return (
+                  <tr
+                    key={d.staff_id}
+                    className="hover:bg-blue-50/40 cursor-pointer transition-colors"
+                    onClick={() => onOpenProfile(d)}
+                  >
+                    <td className="px-3 py-2.5">
+                      <div className="font-medium text-slate-800">{d.first_name}</div>
+                      {d.employee_code && <div className="text-xs text-slate-400">{d.employee_code}</div>}
+                    </td>
+                    <td className="px-3 py-2.5 font-medium text-slate-800">{d.last_name}</td>
+                    <td className="px-3 py-2.5">
+                      <span className="font-mono text-xs text-slate-600">{d.transponder_id || '—'}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-slate-600">{fmtDate(d.hire_date)}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={licenseExpClass(d.license_expiration)}>
+                        {fmtDate(d.license_expiration)}
+                        {expired && ' ⚠'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-center">
+                      {hasRec
+                        ? <span className="text-emerald-600 text-sm font-bold" title="Recurring schedule set">✅</span>
+                        : <button
+                            onClick={e => { e.stopPropagation(); onOpenProfile(d, 'schedule'); }}
+                            className="text-amber-500 text-sm font-bold hover:scale-110 transition-transform"
+                            title="No recurring schedule — click to configure"
+                          >⚠️</button>
+                      }
+                    </td>
+                    <td className="px-3 py-2.5 text-center">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[d.employment_status] || ''}`}>
+                        {STATUS_LABEL[d.employment_status] || d.employment_status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <button
+                        onClick={e => { e.stopPropagation(); onOpenProfile(d); }}
+                        className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors"
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {addOpen && <AddDriverModal onClose={() => setAddOpen(false)} />}
+    </div>
+  );
+}
+
+// ─── Recurring Schedules Section ──────────────────────────────────────────────
+function RecurringSection({ onOpenProfile }) {
+  const [search, setSearch] = useState('');
+  const [filterShift, setFilterShift] = useState('');
+  const [showUnconfigured, setShowUnconfigured] = useState(false);
+
+  const { data: overview = [], isLoading } = useQuery({
+    queryKey: ['drivers-overview'],
+    queryFn: () => api.get('/drivers/recurring-overview').then(r => r.data),
+  });
+  const { data: allDrivers = [] } = useQuery({
     queryKey: ['drivers'],
     queryFn: () => api.get('/drivers').then(r => r.data),
   });
 
-  const { data: staffList = [] } = useQuery({
-    queryKey: ['staff-all'],
-    queryFn: () => api.get('/staff', { params: { role: 'driver' } }).then(r => r.data),
-    enabled: showModal,
-  });
+  const enriched = overview.map(o => {
+    const d = allDrivers.find(d => d.staff_id === o.staff_id) || {};
+    return { ...o, employment_status: d.employment_status, transponder_id: d.transponder_id };
+  }).filter(o => o.employment_status === 'active');
 
-  const saveMutation = useMutation({
-    mutationFn: data => editing ? api.put(`/drivers/${editing.id}`, data) : api.post('/drivers', data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['drivers'] });
-      toast.success(editing ? 'Driver updated' : 'Driver profile created');
-      setShowModal(false); setEditing(null);
-    },
-    onError: err => toast.error(err.response?.data?.error || 'Failed'),
-  });
-
-  const { data: summary } = useQuery({
-    queryKey: ['driver-summary', profileModal?.staff_id],
-    queryFn: () => api.get(`/staff/${profileModal.staff_id}/attendance-summary`).then(r => r.data),
-    enabled: !!profileModal,
-  });
-
-  const openEdit = (d) => {
-    setEditing(d);
-    setForm({
-      ...d,
-      license_expiration: d.license_expiration?.split('T')[0] || '',
-      dob: d.dob?.split('T')[0] || '',
+  let displayed = enriched
+    .filter(d => {
+      if (!search) return true;
+      return `${d.first_name} ${d.last_name}`.toLowerCase().includes(search.toLowerCase());
+    })
+    .filter(d => !showUnconfigured || (d.recurring_rows || []).length === 0)
+    .filter(d => {
+      if (!filterShift) return true;
+      return (d.recurring_rows || []).some(r => r.shift_type === filterShift);
     });
-    setShowModal(true);
-  };
 
-  const filtered = drivers.filter(d =>
-    `${d.first_name} ${d.last_name} ${d.employee_id}`.toLowerCase().includes(search.toLowerCase())
-  );
+  // Unconfigured drivers at top
+  displayed.sort((a, b) => {
+    const aHas = (a.recurring_rows || []).length > 0;
+    const bHas = (b.recurring_rows || []).length > 0;
+    if (aHas !== bHas) return aHas ? 1 : -1;
+    return a.last_name?.localeCompare(b.last_name);
+  });
 
   return (
-    <div className="space-y-5">
-      <div className="page-header">
-        <h1 className="page-title">Driver Profiles</h1>
-        {isManager && <button className="btn-primary" onClick={() => { setEditing(null); setForm({ license_class: 'D', license_state: 'FL' }); setShowModal(true); }}><Plus size={16} /> Add Driver Profile</button>}
+    <div className="h-full flex flex-col">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <div className="relative">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
+            className="pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none w-44" />
+        </div>
+        <select value={filterShift} onChange={e => setFilterShift(e.target.value)}
+          className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+          <option value="">All shift types</option>
+          {SHIFT_TYPES.map(t => <option key={t}>{t}</option>)}
+        </select>
+        <label className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer">
+          <input type="checkbox" checked={showUnconfigured} onChange={e => setShowUnconfigured(e.target.checked)}
+            className="rounded" />
+          Show unconfigured only
+        </label>
+        <span className="ml-auto text-xs text-slate-400">{displayed.length} drivers</span>
       </div>
 
-      <input type="text" className="input max-w-sm" placeholder="Search drivers…" value={search} onChange={e => setSearch(e.target.value)} />
-
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {[...Array(6)].map((_, i) => <div key={i} className="card h-40 animate-pulse bg-surface-hover" />)}
-        </div>
+        <div className="text-center py-16 text-slate-400">Loading…</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map(d => {
-            const licExpDays = d.license_expiration ? differenceInDays(new Date(d.license_expiration), new Date()) : 999;
+        <div className="flex-1 overflow-auto space-y-3">
+          {displayed.map(d => {
+            const hasRec = (d.recurring_rows || []).length > 0;
             return (
-              <div key={d.id} className={`card cursor-pointer hover:border-primary/50 transition-colors ${licExpDays <= 60 ? 'border-yellow-500/30' : ''}`}
-                onClick={() => setProfileModal(d)}>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/20 text-primary font-bold text-sm flex items-center justify-center">
-                      {d.first_name[0]}{d.last_name[0]}
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-slate-100">{d.first_name} {d.last_name}</h3>
-                      <p className="text-xs text-slate-500">{d.employee_id}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Badge status={d.employment_status} />
-                    {isManager && <button onClick={e => { e.stopPropagation(); openEdit(d); }} className="btn-ghost p-1.5 rounded-lg"><Edit2 size={14} /></button>}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div><span className="text-slate-500">License</span><p className="text-slate-300 font-mono">{d.license_number || '—'}</p></div>
+              <div key={d.staff_id} className={`border rounded-xl p-4 ${hasRec ? 'border-slate-200 bg-white' : 'border-amber-200 bg-amber-50/40'}`}>
+                <div className="flex items-center justify-between mb-3">
                   <div>
-                    <span className="text-slate-500">License Exp.</span>
-                    <p className={licExpDays <= 60 ? 'text-yellow-400' : 'text-slate-300'}>
-                      {d.license_expiration ? format(new Date(d.license_expiration), 'MM/dd/yyyy') : '—'}
-                      {licExpDays <= 60 && <AlertTriangle size={10} className="inline ml-1" />}
-                    </p>
+                    <button
+                      onClick={() => onOpenProfile({ ...d }, 'schedule')}
+                      className="font-semibold text-slate-800 hover:text-blue-600 transition-colors text-sm"
+                    >
+                      {d.first_name} {d.last_name}
+                    </button>
+                    {!hasRec && <span className="ml-2 text-xs text-amber-600 font-medium">⚠️ Not configured</span>}
                   </div>
-                  <div><span className="text-slate-500">State/Class</span><p className="text-slate-300">{d.license_state} — Class {d.license_class}</p></div>
-                  <div><span className="text-slate-500">Transponder</span><p className="text-slate-300">{d.transponder_id || '—'}</p></div>
-                  <div><span className="text-slate-500">Hire Date</span><p className="text-slate-300">{d.hire_date ? format(new Date(d.hire_date), 'MM/dd/yyyy') : '—'}</p></div>
-                  <div><span className="text-slate-500">Phone</span><p className="text-slate-300">{d.phone || '—'}</p></div>
                 </div>
-
-                {d.emergency_contact_name && (
-                  <div className="mt-3 pt-3 border-t border-surface-border text-xs">
-                    <span className="text-slate-500">Emergency: </span>
-                    <span className="text-slate-400">{d.emergency_contact_name} ({d.emergency_contact_relation}) {d.emergency_contact_phone}</span>
-                  </div>
-                )}
+                <RecurringGrid staffId={d.staff_id} />
               </div>
             );
           })}
-          {filtered.length === 0 && (
-            <div className="col-span-3 text-center py-16 text-slate-500">No driver profiles found</div>
+          {displayed.length === 0 && (
+            <div className="text-center py-16 text-slate-400">No drivers found</div>
           )}
         </div>
       )}
-
-      {/* Profile Detail Modal */}
-      <Modal isOpen={!!profileModal} onClose={() => setProfileModal(null)} title={`${profileModal?.first_name} ${profileModal?.last_name}`} size="lg">
-        {profileModal && (
-          <div className="space-y-5">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <InfoRow icon={User} label="Employee ID" value={profileModal.employee_id} />
-              <InfoRow icon={Shield} label="License #" value={profileModal.license_number} />
-              <InfoRow label="License Expires" value={profileModal.license_expiration ? format(new Date(profileModal.license_expiration), 'MMM d, yyyy') : '—'} />
-              <InfoRow label="State / Class" value={`${profileModal.license_state} — Class ${profileModal.license_class}`} />
-              <InfoRow label="Date of Birth" value={profileModal.dob ? format(new Date(profileModal.dob), 'MMM d, yyyy') : '—'} />
-              <InfoRow label="Transponder" value={profileModal.transponder_id} />
-              <InfoRow label="Hire Date" value={profileModal.hire_date ? format(new Date(profileModal.hire_date), 'MMM d, yyyy') : '—'} />
-              <InfoRow label="Email" value={profileModal.email} />
-              <InfoRow icon={Phone} label="Phone" value={profileModal.phone} />
-              <InfoRow label="Address" value={[profileModal.address, profileModal.city, profileModal.state, profileModal.zip].filter(Boolean).join(', ')} />
-            </div>
-            {profileModal.emergency_contact_name && (
-              <div className="border-t border-surface-border pt-4">
-                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Emergency Contact</p>
-                <p className="text-slate-300">{profileModal.emergency_contact_name} — {profileModal.emergency_contact_relation}</p>
-                <p className="text-slate-400">{profileModal.emergency_contact_phone}</p>
-              </div>
-            )}
-            {summary && (
-              <div className="border-t border-surface-border pt-4">
-                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-3">Attendance (90 days)</p>
-                <div className="grid grid-cols-4 gap-3 text-center text-sm">
-                  <Stat label="Present" value={summary.present_count} color="text-green-400" />
-                  <Stat label="Called Out" value={summary.called_out_count} color="text-orange-400" />
-                  <Stat label="NCNS" value={summary.ncns_count} color="text-red-400" />
-                  <Stat label="Late" value={summary.late_count} color="text-yellow-400" />
-                </div>
-              </div>
-            )}
-            {profileModal.notes && (
-              <div className="border-t border-surface-border pt-4">
-                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1">Notes</p>
-                <p className="text-slate-400 text-sm">{profileModal.notes}</p>
-              </div>
-            )}
-          </div>
-        )}
-      </Modal>
-
-      {/* Add/Edit Modal */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Edit Driver Profile' : 'Add Driver Profile'} size="lg">
-        <form className="space-y-4" onSubmit={e => { e.preventDefault(); saveMutation.mutate(form); }}>
-          {!editing && (
-            <div><label className="label">Staff Member *</label>
-              <select className="select" required value={form.staff_id || ''} onChange={e => setForm(f => ({ ...f, staff_id: e.target.value }))}>
-                <option value="">Select staff…</option>
-                {staffList.map(s => <option key={s.id} value={s.id}>{s.first_name} {s.last_name} ({s.employee_id})</option>)}
-              </select>
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="label">License Number</label><input className="input" value={form.license_number || ''} onChange={e => setForm(f => ({ ...f, license_number: e.target.value }))} /></div>
-            <div><label className="label">License Expiration</label><input type="date" className="input" value={form.license_expiration || ''} onChange={e => setForm(f => ({ ...f, license_expiration: e.target.value }))} /></div>
-            <div><label className="label">State</label><input className="input" maxLength={2} value={form.license_state || ''} onChange={e => setForm(f => ({ ...f, license_state: e.target.value.toUpperCase() }))} /></div>
-            <div><label className="label">Class</label><input className="input" value={form.license_class || ''} onChange={e => setForm(f => ({ ...f, license_class: e.target.value }))} /></div>
-            <div><label className="label">Date of Birth</label><input type="date" className="input" value={form.dob || ''} onChange={e => setForm(f => ({ ...f, dob: e.target.value }))} /></div>
-            <div><label className="label">Transponder ID</label><input className="input" value={form.transponder_id || ''} onChange={e => setForm(f => ({ ...f, transponder_id: e.target.value }))} /></div>
-            <div><label className="label">Emergency Contact</label><input className="input" value={form.emergency_contact_name || ''} onChange={e => setForm(f => ({ ...f, emergency_contact_name: e.target.value }))} placeholder="Full name" /></div>
-            <div><label className="label">Contact Phone</label><input className="input" value={form.emergency_contact_phone || ''} onChange={e => setForm(f => ({ ...f, emergency_contact_phone: e.target.value }))} /></div>
-            <div><label className="label">Relation</label><input className="input" value={form.emergency_contact_relation || ''} onChange={e => setForm(f => ({ ...f, emergency_contact_relation: e.target.value }))} placeholder="Spouse, Parent…" /></div>
-          </div>
-          <div><label className="label">Notes</label><textarea className="input min-h-16 resize-none" value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
-          <div className="flex gap-3 pt-2">
-            <button type="button" className="btn-secondary flex-1" onClick={() => setShowModal(false)}>Cancel</button>
-            <button type="submit" className="btn-primary flex-1" disabled={saveMutation.isPending}>{saveMutation.isPending ? 'Saving…' : editing ? 'Update' : 'Add'}</button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 }
 
-function InfoRow({ icon: Icon, label, value }) {
+// ─── Driver Alerts Section ────────────────────────────────────────────────────
+function AlertsSection({ onOpenProfile }) {
+  const { data: allDrivers = [], isLoading } = useQuery({
+    queryKey: ['drivers'],
+    queryFn: () => api.get('/drivers').then(r => r.data),
+  });
+  const { data: overview = [] } = useQuery({
+    queryKey: ['drivers-overview'],
+    queryFn: () => api.get('/drivers/recurring-overview').then(r => r.data),
+  });
+
+  const active = allDrivers.filter(d => d.employment_status === 'active');
+  const enriched = active.map(d => {
+    const ov = overview.find(o => o.staff_id === d.staff_id);
+    return { ...d, recurring_rows: ov?.recurring_rows || [] };
+  });
+
+  const today = new Date();
+  const noSchedule = enriched.filter(d => (d.recurring_rows || []).length === 0);
+  const licExpired = enriched.filter(d => d.license_expiration &&
+    differenceInDays(parseISO(String(d.license_expiration).slice(0,10)), today) < 0);
+  const licExpiring = enriched.filter(d => d.license_expiration && (() => {
+    const days = differenceInDays(parseISO(String(d.license_expiration).slice(0,10)), today);
+    return days >= 0 && days <= 60;
+  })());
+
+  const AlertRow = ({ driver, label, color, icon, openTab }) => (
+    <div
+      className="flex items-center gap-3 px-4 py-3 rounded-xl border hover:shadow-sm transition-all cursor-pointer bg-white"
+      onClick={() => onOpenProfile(driver, openTab)}
+    >
+      <span className="text-lg">{icon}</span>
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-slate-800 text-sm">{driver.first_name} {driver.last_name}</p>
+        <p className={`text-xs ${color}`}>{label}</p>
+      </div>
+      <button className="text-xs px-3 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex-shrink-0">
+        View Profile
+      </button>
+    </div>
+  );
+
+  const Section = ({ title, items, color, icon, emptyMsg, openTab }) => (
+    <div className="mb-6">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-base">{icon}</span>
+        <h3 className="font-semibold text-slate-700 text-sm">{title}</h3>
+        <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${items.length > 0 ? color : 'bg-slate-100 text-slate-400'}`}>
+          {items.length}
+        </span>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-xs text-slate-400 px-4 py-2">{emptyMsg}</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map(d => (
+            <AlertRow
+              key={d.staff_id}
+              driver={d}
+              icon={icon}
+              openTab={openTab}
+              color={color.replace('bg-', 'text-').replace(/100|50/, '600')}
+              label={
+                title.includes('Schedule') ? 'No recurring schedule set'
+                : title.includes('Expired') ? `Expired ${fmtDate(d.license_expiration)}`
+                : `Expires ${fmtDate(d.license_expiration)} (${differenceInDays(parseISO(String(d.license_expiration).slice(0,10)), today)} days)`
+              }
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  if (isLoading) return <div className="text-center py-16 text-slate-400">Loading…</div>;
+
   return (
     <div>
-      <p className="text-xs text-slate-500 flex items-center gap-1">{Icon && <Icon size={11} />}{label}</p>
-      <p className="text-slate-300">{value || '—'}</p>
+      <Section title="No Recurring Schedule" items={noSchedule} icon="🔴" color="bg-red-100 text-red-700" emptyMsg="All active drivers have a schedule configured." openTab="schedule" />
+      <Section title="License Expired" items={licExpired} icon="🔴" color="bg-red-100 text-red-700" emptyMsg="No expired licenses." openTab="id" />
+      <Section title="License Expiring Within 60 Days" items={licExpiring} icon="🟡" color="bg-amber-100 text-amber-700" emptyMsg="No licenses expiring soon." openTab="id" />
     </div>
   );
 }
 
-function Stat({ label, value, color }) {
+// ─── Main Drivers Page ────────────────────────────────────────────────────────
+export default function Drivers() {
+  const qc = useQueryClient();
+  const location = useLocation();
+  const [section, setSection] = useState(() => {
+    if (location.state?.section) return location.state.section;
+    return localStorage.getItem('drivers_section') || 'all-drivers';
+  });
+  const [profileDriver, setProfileDriver] = useState(null);
+  const initialStatus = location.state?.status || null;
+
+  const saveSection = (s) => { setSection(s); localStorage.setItem('drivers_section', s); };
+
+  const statusMut = useMutation({
+    mutationFn: ({ staffId, status }) => api.put(`/drivers/${staffId}/status`, { status }),
+    onSuccess: (_, { status }) => {
+      qc.invalidateQueries(['drivers']);
+      qc.invalidateQueries(['drivers-overview']);
+      toast.success(`Driver status updated to ${status}`);
+      setProfileDriver(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Status change failed'),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (staffId) => api.delete(`/drivers/${staffId}`),
+    onSuccess: () => {
+      toast.success('Driver deleted');
+      qc.invalidateQueries(['drivers']);
+      qc.invalidateQueries(['drivers-overview']);
+      setProfileDriver(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Delete failed'),
+  });
+
+  const openProfile = useCallback((driver, tab) => {
+    setProfileDriver(tab ? { ...driver, _initialTab: tab } : driver);
+  }, []);
+
   return (
-    <div className="card py-2">
-      <p className={`text-xl font-bold ${color}`}>{value || 0}</p>
-      <p className="text-xs text-slate-500">{label}</p>
+    <div className="flex -mt-6 -mx-6 -mb-6" style={{ minHeight: 'calc(100vh - 3.5rem)' }}>
+
+      {/* ── Left Sidebar ── */}
+      <div className="w-52 bg-slate-900 flex-shrink-0 flex flex-col">
+        <div className="px-4 pt-5 pb-3">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Drivers</p>
+        </div>
+        <nav className="flex-1 px-2 space-y-0.5">
+          {SIDEBAR.map(item => (
+            <button
+              key={item.id}
+              onClick={() => saveSection(item.id)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                section === item.id
+                  ? 'bg-blue-600 text-white'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
+              }`}
+            >
+              <item.icon size={15} />
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* ── Main Content ── */}
+      <div className="flex-1 overflow-auto bg-slate-50 p-6">
+        {section === 'all-drivers' && <AllDriversSection onOpenProfile={openProfile} initialStatus={initialStatus} />}
+        {section === 'recurring'   && <RecurringSection onOpenProfile={openProfile} />}
+        {section === 'alerts'      && <AlertsSection onOpenProfile={openProfile} />}
+      </div>
+
+      {/* ── Driver Profile Modal ── */}
+      {profileDriver && (
+        <DriverProfile
+          driver={profileDriver}
+          onClose={() => setProfileDriver(null)}
+          onStatusChange={(staffId, status) => statusMut.mutate({ staffId, status })}
+          onDelete={(staffId) => deleteMut.mutate(staffId)}
+          onSaved={() => {
+            qc.invalidateQueries(['drivers']);
+            qc.invalidateQueries(['drivers-overview']);
+          }}
+        />
+      )}
     </div>
   );
 }

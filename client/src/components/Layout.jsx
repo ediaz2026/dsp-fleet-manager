@@ -1,20 +1,13 @@
 import { Outlet } from 'react-router-dom';
-import Sidebar from './Sidebar';
-import Header from './Header';
-import { useState } from 'react';
+import TopNav from './TopNav';
 
 export default function Layout() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-
   return (
-    <div className="flex h-screen overflow-hidden bg-surface">
-      <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen(o => !o)} />
-      <div className="flex flex-col flex-1 overflow-hidden min-w-0">
-        <Header onMenuClick={() => setSidebarOpen(o => !o)} />
-        <main className="flex-1 overflow-y-auto p-6">
-          <Outlet />
-        </main>
-      </div>
+    <div className="min-h-screen bg-white flex flex-col">
+      <TopNav />
+      <main className="flex-1 p-6 max-w-screen-2xl mx-auto w-full">
+        <Outlet />
+      </main>
     </div>
   );
 }

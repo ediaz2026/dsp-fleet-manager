@@ -7,6 +7,8 @@ import Badge from '../components/Badge';
 import Modal from '../components/Modal';
 import toast from 'react-hot-toast';
 import { useAuth } from '../App';
+import { useSort } from '../hooks/useSort';
+import SortableHeader from '../components/SortableHeader';
 
 export default function AmazonRoutes() {
   const { user } = useAuth();
@@ -61,7 +63,9 @@ export default function AmazonRoutes() {
     },
   });
 
-  const matchColors = { matched: 'text-green-400', mismatched: 'text-orange-400', unmatched: 'text-red-400' };
+  const { sorted: sortedRoutes, sortKey, sortDir, toggle } = useSort(routes, 'route_code');
+
+  const matchColors = { matched: 'text-green-600', mismatched: 'text-orange-600', unmatched: 'text-red-600' };
   const matchIcons = { matched: CheckCircle, mismatched: AlertTriangle, unmatched: XCircle };
 
   return (
@@ -84,18 +88,18 @@ export default function AmazonRoutes() {
           </div>
           <div>
             <label className="label">Route File (CSV or Excel)</label>
-            <label className="block w-full border-2 border-dashed border-surface-border rounded-xl p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all">
+            <label className="block w-full border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-primary hover:bg-blue-50/30 transition-all">
               {file ? (
                 <div>
                   <Package size={24} className="text-primary mx-auto mb-2" />
-                  <p className="text-sm text-slate-300 font-medium">{file.name}</p>
+                  <p className="text-sm text-slate-700 font-medium">{file.name}</p>
                   <p className="text-xs text-slate-500">{(file.size / 1024).toFixed(1)} KB</p>
                 </div>
               ) : (
                 <div>
-                  <Upload size={24} className="text-slate-500 mx-auto mb-2" />
-                  <p className="text-sm text-slate-400">Click to select file</p>
-                  <p className="text-xs text-slate-600 mt-1">CSV or XLSX format</p>
+                  <Upload size={24} className="text-slate-400 mx-auto mb-2" />
+                  <p className="text-sm text-slate-500">Click to select file</p>
+                  <p className="text-xs text-slate-400 mt-1">CSV or XLSX format</p>
                 </div>
               )}
               <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
@@ -113,12 +117,12 @@ export default function AmazonRoutes() {
 
       {/* Files list */}
       {isLoading ? (
-        <div className="space-y-3">{[...Array(3)].map((_, i) => <div key={i} className="card h-20 animate-pulse bg-surface-hover" />)}</div>
+        <div className="space-y-3">{[...Array(3)].map((_, i) => <div key={i} className="card h-20 animate-pulse bg-slate-100" />)}</div>
       ) : files.length === 0 ? (
         <div className="card text-center py-16">
-          <Package size={40} className="text-slate-600 mx-auto mb-3" />
-          <p className="text-slate-400">No route files uploaded yet</p>
-          <p className="text-slate-600 text-sm">Upload an Amazon route CSV to match drivers</p>
+          <Package size={40} className="text-slate-300 mx-auto mb-3" />
+          <p className="text-slate-500">No route files uploaded yet</p>
+          <p className="text-slate-400 text-sm">Upload an Amazon route CSV to match drivers</p>
         </div>
       ) : !viewFile ? (
         <div className="space-y-3">
@@ -127,15 +131,15 @@ export default function AmazonRoutes() {
               <div className="flex items-center gap-3">
                 <Package size={20} className="text-primary" />
                 <div>
-                  <p className="font-medium text-slate-200">{f.file_name}</p>
+                  <p className="font-medium text-slate-800">{f.file_name}</p>
                   <p className="text-xs text-slate-500">Route date: {format(new Date(f.route_date), 'MMM d, yyyy')} · Uploaded {format(new Date(f.created_at), 'MMM d')}</p>
                 </div>
               </div>
               <div className="flex items-center gap-4 text-sm">
-                <span className="text-green-400">{f.matched_routes} matched</span>
-                <span className="text-orange-400">{f.mismatched_routes} mismatched</span>
-                <span className="text-red-400">{f.unmatched_routes} unmatched</span>
-                <ChevronRight size={16} className="text-slate-500" />
+                <span className="text-green-600">{f.matched_routes} matched</span>
+                <span className="text-orange-600">{f.mismatched_routes} mismatched</span>
+                <span className="text-red-600">{f.unmatched_routes} unmatched</span>
+                <ChevronRight size={16} className="text-slate-400" />
               </div>
             </div>
           ))}
@@ -147,21 +151,20 @@ export default function AmazonRoutes() {
           <div className="card">
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="font-semibold text-slate-100">{viewFile.file_name}</h2>
-                <p className="text-sm text-slate-400">Route date: {format(new Date(viewFile.route_date), 'MMMM d, yyyy')}</p>
+                <h2 className="font-semibold text-slate-800">{viewFile.file_name}</h2>
+                <p className="text-sm text-slate-500">Route date: {format(new Date(viewFile.route_date), 'MMMM d, yyyy')}</p>
               </div>
               <div className="flex gap-3 text-center text-sm">
-                <div><p className="text-2xl font-bold text-green-400">{viewFile.matched_routes}</p><p className="text-xs text-slate-500">Matched</p></div>
-                <div><p className="text-2xl font-bold text-orange-400">{viewFile.mismatched_routes}</p><p className="text-xs text-slate-500">Mismatch</p></div>
-                <div><p className="text-2xl font-bold text-red-400">{viewFile.unmatched_routes}</p><p className="text-xs text-slate-500">Unmatched</p></div>
+                <div><p className="text-2xl font-bold text-green-600">{viewFile.matched_routes}</p><p className="text-xs text-slate-500">Matched</p></div>
+                <div><p className="text-2xl font-bold text-orange-600">{viewFile.mismatched_routes}</p><p className="text-xs text-slate-500">Mismatch</p></div>
+                <div><p className="text-2xl font-bold text-red-600">{viewFile.unmatched_routes}</p><p className="text-xs text-slate-500">Unmatched</p></div>
               </div>
             </div>
 
-            {/* Mismatch indicator */}
             {(viewFile.mismatched_routes > 0 || viewFile.unmatched_routes > 0) && (
-              <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
-                <AlertTriangle size={14} className="text-yellow-400" />
-                <p className="text-xs text-yellow-300">{viewFile.mismatched_routes + viewFile.unmatched_routes} routes need review — Amazon roster doesn't match internal schedule</p>
+              <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg border border-amber-200">
+                <AlertTriangle size={14} className="text-amber-500" />
+                <p className="text-xs text-amber-700">{viewFile.mismatched_routes + viewFile.unmatched_routes} routes need review — Amazon roster doesn't match internal schedule</p>
               </div>
             )}
           </div>
@@ -169,32 +172,32 @@ export default function AmazonRoutes() {
           <div className="card p-0 overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-surface-border text-xs text-slate-400">
-                  <th className="text-left px-4 py-3">Route</th>
-                  <th className="text-left px-4 py-3">Amazon Driver Name</th>
-                  <th className="text-left px-4 py-3">Internal Match</th>
-                  <th className="text-left px-4 py-3">Status</th>
-                  {isManager && <th className="text-left px-4 py-3">Action</th>}
+                <tr className="border-b border-slate-200 bg-slate-100">
+                  <SortableHeader label="Route" sortKey="route_code" currentKey={sortKey} direction={sortDir} onSort={toggle} className="text-left" />
+                  <SortableHeader label="Amazon Driver" sortKey="amazon_driver_name" currentKey={sortKey} direction={sortDir} onSort={toggle} className="text-left" />
+                  <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Internal Match</th>
+                  <SortableHeader label="Status" sortKey="match_status" currentKey={sortKey} direction={sortDir} onSort={toggle} className="text-left" />
+                  {isManager && <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Action</th>}
                 </tr>
               </thead>
               <tbody>
-                {routes.map(r => {
+                {sortedRoutes.map(r => {
                   const Icon = matchIcons[r.match_status] || XCircle;
                   return (
-                    <tr key={r.id} className="table-row">
-                      <td className="px-4 py-3 font-mono text-slate-300">{r.route_code}</td>
-                      <td className="px-4 py-3 text-slate-400">{r.amazon_driver_name || '—'}</td>
-                      <td className="px-4 py-3 text-slate-300">
-                        {r.internal_first ? `${r.internal_first} ${r.internal_last}` : <span className="text-slate-600">Not matched</span>}
+                    <tr key={r.id} className="table-row even:bg-slate-50">
+                      <td className="px-3 py-3 font-mono text-slate-700">{r.route_code}</td>
+                      <td className="px-3 py-3 text-slate-600">{r.amazon_driver_name || '—'}</td>
+                      <td className="px-3 py-3 text-slate-700">
+                        {r.internal_first ? `${r.internal_first} ${r.internal_last}` : <span className="text-slate-400">Not matched</span>}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <div className="flex items-center gap-1.5">
                           <Icon size={14} className={matchColors[r.match_status]} />
                           <Badge status={r.match_status} />
                         </div>
                       </td>
                       {isManager && (
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3">
                           {r.match_status !== 'matched' && (
                             <button onClick={() => { setMatchModal(r); setMatchStaffId(''); }} className="text-xs text-primary hover:underline">
                               {r.match_status === 'mismatched' ? 'Fix match' : 'Match driver'}
@@ -214,7 +217,7 @@ export default function AmazonRoutes() {
       {/* Manual match modal */}
       <Modal isOpen={!!matchModal} onClose={() => setMatchModal(null)} title="Match Driver" size="sm">
         <div className="space-y-4">
-          <p className="text-sm text-slate-400">Amazon route <span className="text-slate-200 font-medium">{matchModal?.route_code}</span> — Amazon driver: <span className="text-slate-200 font-medium">{matchModal?.amazon_driver_name}</span></p>
+          <p className="text-sm text-slate-600">Amazon route <span className="text-slate-800 font-medium">{matchModal?.route_code}</span> — Amazon driver: <span className="text-slate-800 font-medium">{matchModal?.amazon_driver_name}</span></p>
           <div>
             <label className="label">Internal Driver</label>
             <select className="select" value={matchStaffId} onChange={e => setMatchStaffId(e.target.value)}>

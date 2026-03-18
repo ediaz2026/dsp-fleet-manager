@@ -1,0 +1,159 @@
+=== Node version: v24.14.0 ===
+=== CWD: C:\Users\arace\OneDrive\Desktop\DSP Scheduler ===
+
+$ git --version
+git version 2.53.0.windows.2
+
+
+$ git log --oneline -3
+d9fcac9 Initial commit: DSP Fleet & Workforce Management System
+
+
+$ git add railway.json nixpacks.toml package.json client/src/pages/Drivers.jsx
+(no output)
+
+$ git status
+On branch main
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+	modified:   .claude/launch.json
+	modified:   .claude/settings.local.json
+	new file:   AssociateData (2).csv
+	new file:   client/package-lock.json
+	modified:   client/package.json
+	modified:   client/src/App.jsx
+	modified:   client/src/components/Badge.jsx
+	modified:   client/src/components/Header.jsx
+	modified:   client/src/components/Layout.jsx
+	modified:   client/src/components/Modal.jsx
+	modified:   client/src/components/Sidebar.jsx
+	new file:   client/src/components/SortableHeader.jsx
+	new file:   client/src/components/TopNav.jsx
+	new file:   client/src/hooks/useSort.js
+	modified:   client/src/index.css
+	modified:   client/src/pages/AmazonRoutes.jsx
+	modified:   client/src/pages/Attendance.jsx
+	new file:   client/src/pages/ChangePassword.jsx
+	modified:   client/src/pages/Dashboard.jsx
+	new file:   client/src/pages/DriverSchedule.jsx
+	modified:   client/src/pages/Drivers.jsx
+	modified:   client/src/pages/Inspections.jsx
+	modified:   client/src/pages/Login.jsx
+	new file:   client/src/pages/Management.jsx
+	new file:   client/src/pages/OperationalPlanner.jsx
+	modified:   client/src/pages/Payroll.jsx
+	modified:   client/src/pages/Schedule.jsx
+	new file:   client/src/pages/Scorecard.jsx
+	modified:   client/src/pages/Settings.jsx
+	modified:   client/src/pages/Vehicles.jsx
+	modified:   client/tailwind.config.js
+	new file:   debug-backend.bat
+	new file:   debug-output.txt
+	new file:   fleet-import-result.json
+	new file:   fleet-import.bat
+	new file:   full-import-log.txt
+	new file:   full-import-result.json
+	new file:   full-import.bat
+	new file:   import-associates.bat
+	new file:   import-log.txt
+	new file:   install-xlsx.bat
+	new file:   migrate-auth-columns.bat
+	new file:   migrate-change-log.bat
+	new file:   migrate-day-recurring.bat
+	new file:   migrate-driver-recurring.bat
+	new file:   migrate-management.bat
+	new file:   migrate-publish-status.bat
+	new file:   migrate-repairs.bat
+	new file:   migrate-schedule.bat
+	new file:   migrate-shift-types.bat
+	new file:   nixpacks.toml
+	new file:   node-test-output.txt
+	new file:   package-lock.json
+	modified:   package.json
+	new file:   push-to-github.bat
+	new file:   railway.json
+	new file:   restart-backend.bat
+	new file:   run-backend.bat
+	new file:   server/package-lock.json
+	new file:   server/src/db/fleetImport.js
+	new file:   server/src/db/fullImport.js
+	new file:   server/src/db/importAssociates.js
+	new file:   server/src/db/makeAdmin.js
+	new file:   server/src/db/migrateAuthColumns.js
+	new file:   server/src/db/migrateChangeLog.js
+	new file:   server/src/db/migrateDayRecurring.js
+	new file:   server/src/db/migrateDriverRecurring.js
+	new file:   server/src/db/migrateManagement.js
+	new file:   server/src/db/migrateOpsPlanner.js
+	new file:   server/src/db/migratePublishStatus.js
+	new file:   server/src/db/migrateRepairs.js
+	new file:   server/src/db/migrateSchedule.js
+	new file:   server/src/db/migrateShiftTypes.js
+	modified:   server/src/db/schema.sql
+	new file:   server/src/db/wipeAndReimport.js
+	modified:   server/src/index.js
+	modified:   server/src/middleware/auth.js
+	new file:   server/src/routes/admin.js
+	modified:   server/src/routes/auth.js
+	new file:   server/src/routes/cortexSync.js
+	modified:   server/src/routes/dashboard.js
+	new file:   server/src/routes/driverReports.js
+	modified:   server/src/routes/drivers.js
+	new file:   server/src/routes/opsPlanner.js
+	new file:   server/src/routes/repairs.js
+	new file:   server/src/routes/schedule.js
+	modified:   server/src/routes/shifts.js
+	modified:   server/src/routes/vehicles.js
+	modified:   setup-github.bat
+	new file:   start-backend.bat
+	new file:   start-dev-simple.bat
+	modified:   start-dev.bat
+	new file:   test-node-out.txt
+	new file:   test-node-output.bat
+	new file:   test-node.bat
+	new file:   wipe-and-reimport.bat
+	new file:   wipe-reimport-log.txt
+	new file:   wipe-reimport-result.json
+	new file:   wipe-reimport-run.bat
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   .claude/launch.json
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	check-git.bat
+	commit-railway.bat
+	git-check2.bat
+	git-commit-push.js
+	git-ps-push.ps1
+	git-push-log.bat
+	git-push-output.txt
+	git-push-railway.bat
+	run-git-push.bat
+
+
+
+$ git commit -m "Add Railway deployment config"
+stdout: 
+stderr: Author identity unknown
+
+*** Please tell me who you are.
+
+Run
+
+  git config --global user.email "you@example.com"
+  git config --global user.name "Your Name"
+
+to set your account's default identity.
+Omit --global to set the identity only in this repository.
+
+fatal: unable to auto-detect email address (got 'arace@TABLET-NEJFP1UC.(none)')
+
+code: 128
+
+$ git push origin main
+(no output)
+
+=== DONE ===

@@ -17,10 +17,17 @@ function authMiddleware(req, res, next) {
 }
 
 function managerOnly(req, res, next) {
-  if (!['manager', 'admin'].includes(req.user?.role)) {
+  if (!['manager', 'admin', 'dispatcher'].includes(req.user?.role)) {
     return res.status(403).json({ error: 'Manager access required' });
   }
   next();
 }
 
-module.exports = { authMiddleware, managerOnly, JWT_SECRET };
+function adminOnly(req, res, next) {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
+module.exports = { authMiddleware, managerOnly, adminOnly, JWT_SECRET };

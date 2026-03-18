@@ -113,6 +113,89 @@ router.put('/alerts/:alertId/resolve', managerOnly, async (req, res) => {
   res.json(rows[0]);
 });
 
+// POST /api/vehicles/import  — bulk upsert from fleet Excel data
+router.post('/import', managerOnly, async (req, res) => {
+  const { rows: importRows = [] } = req.body;
+  let created = 0, updated = 0, skipped = 0;
+  const errors = [];
+
+  const parseDate = (d) => {
+    if (!d) return null;
+    try {
+      const s = String(d).trim();
+      if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+        const [m, day, yr] = s.split('/');
+        return `${yr}-${m.padStart(2,'0')}-${day.padStart(2,'0')}`;
+      }
+      const dt = new Date(s);
+      if (!isNaN(dt)) return dt.toISOString().slice(0, 10);
+    } catch {}
+    return null;
+  };
+
+  const parseServiceType = (raw) => {
+    if (!raw) return null;
+    const s = raw.toLowerCase();
+    if (s.includes('step van')) return 'STEP VAN';
+    if (s.includes('electric') || s.includes('rivian') || s.includes('edv')) return 'EDV';
+    return raw.toUpperCase();
+  };
+
+  for (const row of importRows) {
+    try {
+      const vin = String(row['vin'] || '').trim();
+      if (!vin) { skipped++; continue; }
+
+      const service_type   = parseServiceType(row['serviceType'] || row['type']);
+      const status         = (row['operationalStatus'] || '').toUpperCase() === 'OPERATIONAL' ? 'active' : 'inactive';
+      const vehicle_name   = row['vehicleName']          || vin;
+      const license_plate  = row['licensePlateNumber']   || null;
+      const make           = row['make']                 || null;
+      const model          = row['model']                || null;
+      const year           = row['year']                 ? parseInt(row['year']) : null;
+      const status_note    = row['statusReasonMessage']  || null;
+      const vehicle_provider = row['vehicleProvider']    || null;
+      const ownership_type_label = row['ownershipType']  || null;
+      const ownership_start_date = parseDate(row['ownershipStartDate']);
+      const ownership_end_date   = parseDate(row['ownershipEndDate']);
+      const registration_expiration = parseDate(row['registrationExpiryDate']);
+      const registered_state = row['registeredState']    || null;
+
+      const { rows: existing } = await pool.query('SELECT id FROM vehicles WHERE vin = $1', [vin]);
+
+      if (existing[0]) {
+        await pool.query(
+          `UPDATE vehicles SET vehicle_name=$1, license_plate=$2, make=$3, model=$4, year=$5,
+           service_type=$6, status=$7, status_note=$8, vehicle_provider=$9,
+           ownership_type_label=$10, ownership_start_date=$11, ownership_end_date=$12,
+           registration_expiration=$13, registered_state=$14, updated_at=NOW()
+           WHERE vin=$15`,
+          [vehicle_name, license_plate, make, model, year, service_type, status, status_note,
+           vehicle_provider, ownership_type_label, ownership_start_date, ownership_end_date,
+           registration_expiration, registered_state, vin]
+        );
+        updated++;
+      } else {
+        await pool.query(
+          `INSERT INTO vehicles (vehicle_name, license_plate, vin, make, model, year,
+           service_type, status, status_note, vehicle_provider,
+           ownership_type_label, ownership_start_date, ownership_end_date,
+           registration_expiration, registered_state)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+          [vehicle_name, license_plate, vin, make, model, year, service_type, status, status_note,
+           vehicle_provider, ownership_type_label, ownership_start_date, ownership_end_date,
+           registration_expiration, registered_state]
+        );
+        created++;
+      }
+    } catch (e) {
+      errors.push(`${row['vin'] || '?'}: ${e.message}`);
+    }
+  }
+
+  res.json({ created, updated, skipped, errors });
+});
+
 // Auto-generate alerts for expiring documents
 router.post('/check-expirations', managerOnly, async (req, res) => {
   const vehicles = await pool.query(

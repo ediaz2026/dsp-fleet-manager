@@ -1,10 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { format, subDays } from 'date-fns';
 import { RefreshCw, Download, DollarSign, Clock, TrendingUp, TrendingDown } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { useSort } from '../hooks/useSort';
+import SortableHeader from '../components/SortableHeader';
 
 export default function Payroll() {
   const qc = useQueryClient();
@@ -35,6 +37,17 @@ export default function Payroll() {
       setSyncing(null);
     },
   });
+
+  // Add variance as a sortable field
+  const summaryWithVariance = useMemo(() =>
+    summary.map(r => ({
+      ...r,
+      variance: parseFloat(r.actual_hours || 0) - parseFloat(r.scheduled_hours || 0),
+    })),
+    [summary]
+  );
+
+  const { sorted, sortKey, sortDir, toggle } = useSort(summaryWithVariance, 'last_name');
 
   const totalScheduled = summary.reduce((s, r) => s + parseFloat(r.scheduled_hours || 0), 0);
   const totalActual = summary.reduce((s, r) => s + parseFloat(r.actual_hours || 0), 0);
@@ -93,20 +106,20 @@ export default function Payroll() {
       {/* Summary stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="card flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center"><Clock size={20} className="text-blue-400" /></div>
-          <div><p className="text-xs text-slate-400">Scheduled Hours</p><p className="text-2xl font-bold text-slate-100">{totalScheduled.toFixed(0)}</p></div>
+          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center"><Clock size={20} className="text-blue-600" /></div>
+          <div><p className="text-xs text-slate-500">Scheduled Hours</p><p className="text-2xl font-bold text-slate-900">{totalScheduled.toFixed(0)}</p></div>
         </div>
         <div className="card flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center"><DollarSign size={20} className="text-green-400" /></div>
-          <div><p className="text-xs text-slate-400">Actual Hours</p><p className="text-2xl font-bold text-slate-100">{totalActual.toFixed(0)}</p></div>
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center"><DollarSign size={20} className="text-emerald-600" /></div>
+          <div><p className="text-xs text-slate-500">Actual Hours</p><p className="text-2xl font-bold text-slate-900">{totalActual.toFixed(0)}</p></div>
         </div>
         <div className="card flex items-center gap-4">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${variance >= 0 ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
-            {variance >= 0 ? <TrendingUp size={20} className="text-green-400" /> : <TrendingDown size={20} className="text-red-400" />}
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${variance >= 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
+            {variance >= 0 ? <TrendingUp size={20} className="text-emerald-600" /> : <TrendingDown size={20} className="text-red-600" />}
           </div>
           <div>
-            <p className="text-xs text-slate-400">Variance</p>
-            <p className={`text-2xl font-bold ${variance >= 0 ? 'text-green-400' : 'text-red-400'}`}>{variance >= 0 ? '+' : ''}{variance.toFixed(0)}h</p>
+            <p className="text-xs text-slate-500">Variance</p>
+            <p className={`text-2xl font-bold ${variance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{variance >= 0 ? '+' : ''}{variance.toFixed(0)}h</p>
           </div>
         </div>
       </div>
@@ -114,16 +127,16 @@ export default function Payroll() {
       {/* Chart */}
       {chartData.length > 0 && (
         <div className="card">
-          <h2 className="font-semibold text-slate-200 mb-4">Hours: Scheduled vs. Actual</h2>
+          <h2 className="font-semibold text-slate-800 mb-4">Hours: Scheduled vs. Actual</h2>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={chartData} barSize={12}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
-              <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#f1f5f9' }} />
-              <Legend wrapperStyle={{ color: '#94a3b8', fontSize: 12 }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} />
+              <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
+              <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, color: '#0f172a' }} />
+              <Legend wrapperStyle={{ color: '#64748b', fontSize: 12 }} />
               <Bar dataKey="scheduled" fill="#3b82f6" radius={[4,4,0,0]} name="Scheduled" />
-              <Bar dataKey="actual" fill="#22c55e" radius={[4,4,0,0]} name="Actual" />
+              <Bar dataKey="actual" fill="#10b981" radius={[4,4,0,0]} name="Actual" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -133,39 +146,39 @@ export default function Payroll() {
       <div className="card p-0 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-surface-border text-xs text-slate-400">
-              <th className="text-left px-4 py-3">Employee</th>
-              <th className="text-right px-4 py-3">Scheduled</th>
-              <th className="text-right px-4 py-3">Actual</th>
-              <th className="text-right px-4 py-3">Variance</th>
-              <th className="text-center px-4 py-3">Days Present</th>
-              <th className="text-center px-4 py-3">NCNS</th>
-              <th className="text-center px-4 py-3">Call-Outs</th>
+            <tr className="border-b border-slate-200 bg-slate-100">
+              <SortableHeader label="Employee" sortKey="last_name" currentKey={sortKey} direction={sortDir} onSort={toggle} className="text-left" />
+              <SortableHeader label="Scheduled" sortKey="scheduled_hours" currentKey={sortKey} direction={sortDir} onSort={toggle} className="text-right" />
+              <SortableHeader label="Actual" sortKey="actual_hours" currentKey={sortKey} direction={sortDir} onSort={toggle} className="text-right" />
+              <SortableHeader label="Variance" sortKey="variance" currentKey={sortKey} direction={sortDir} onSort={toggle} className="text-right" />
+              <SortableHeader label="Days Present" sortKey="days_present" currentKey={sortKey} direction={sortDir} onSort={toggle} className="text-center" />
+              <SortableHeader label="NCNS" sortKey="ncns_count" currentKey={sortKey} direction={sortDir} onSort={toggle} className="text-center" />
+              <SortableHeader label="Call-Outs" sortKey="callout_count" currentKey={sortKey} direction={sortDir} onSort={toggle} className="text-center" />
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr><td colSpan={7} className="text-center py-10 text-slate-500">Loading…</td></tr>
-            ) : summary.length === 0 ? (
+            ) : sorted.length === 0 ? (
               <tr><td colSpan={7} className="text-center py-10 text-slate-500">No payroll data for this period</td></tr>
-            ) : summary.map(r => {
+            ) : sorted.map(r => {
               const sched = parseFloat(r.scheduled_hours || 0);
               const actual = parseFloat(r.actual_hours || 0);
               const v = actual - sched;
               return (
-                <tr key={r.employee_id} className="table-row">
+                <tr key={r.employee_id} className="table-row even:bg-slate-50">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-slate-200">{r.first_name} {r.last_name}</p>
+                    <p className="font-medium text-slate-800">{r.first_name} {r.last_name}</p>
                     <p className="text-xs text-slate-500">{r.employee_id}</p>
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-300">{sched.toFixed(1)}h</td>
-                  <td className="px-4 py-3 text-right text-slate-300 font-medium">{actual.toFixed(1)}h</td>
-                  <td className={`px-4 py-3 text-right font-medium ${v >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <td className="px-4 py-3 text-right text-slate-600">{sched.toFixed(1)}h</td>
+                  <td className="px-4 py-3 text-right text-slate-700 font-medium">{actual.toFixed(1)}h</td>
+                  <td className={`px-4 py-3 text-right font-medium ${v >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {v >= 0 ? '+' : ''}{v.toFixed(1)}h
                   </td>
-                  <td className="px-4 py-3 text-center text-slate-300">{r.days_present}</td>
-                  <td className="px-4 py-3 text-center text-red-400 font-medium">{r.ncns_count}</td>
-                  <td className="px-4 py-3 text-center text-orange-400">{r.callout_count}</td>
+                  <td className="px-4 py-3 text-center text-slate-700">{r.days_present}</td>
+                  <td className="px-4 py-3 text-center text-red-600 font-medium">{r.ncns_count}</td>
+                  <td className="px-4 py-3 text-center text-orange-600">{r.callout_count}</td>
                 </tr>
               );
             })}

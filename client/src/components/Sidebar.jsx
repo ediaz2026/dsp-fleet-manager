@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Calendar, ClipboardCheck, DollarSign, Truck,
-  Car, Users, Search, Cpu, Settings, ChevronLeft, ChevronRight, Package
+  Car, Users, Search, Cpu, Settings, ChevronLeft, ChevronRight, Package, ClipboardList
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -11,6 +11,7 @@ const navItems = [
   { to: '/attendance', icon: ClipboardCheck, label: 'Attendance' },
   { to: '/payroll', icon: DollarSign, label: 'Payroll' },
   { to: '/amazon-routes', icon: Package, label: 'Amazon Routes' },
+  { to: '/operational-planner', icon: ClipboardList, label: 'Ops Planner' },
   { divider: true },
   { to: '/vehicles', icon: Car, label: 'Vehicles' },
   { to: '/drivers', icon: Users, label: 'Drivers' },
@@ -35,8 +36,8 @@ export default function Sidebar({ open, onToggle }) {
         </div>
         {open && (
           <div>
-            <p className="text-sm font-bold text-white leading-tight">DSP Fleet</p>
-            <p className="text-xs text-slate-400">Manager</p>
+            <p className="text-sm font-bold text-white leading-tight">Last Mile</p>
+            <p className="text-xs text-primary-light font-semibold tracking-wide">DSP LLC</p>
           </div>
         )}
       </div>

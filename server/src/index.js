@@ -37,6 +37,12 @@ app.use('/api/amazon-routes', require('./routes/amazonRoutes'));
 app.use('/api/payroll', require('./routes/payroll'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/schedule', require('./routes/schedule'));
+app.use('/api/admin',   require('./routes/admin'));
+app.use('/api/repairs', require('./routes/repairs'));
+app.use('/api/driver-reports', require('./routes/driverReports'));
+app.use('/api/ops-planner', require('./routes/opsPlanner'));
+app.use('/api/cortex-sync', require('./routes/cortexSync'));
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));

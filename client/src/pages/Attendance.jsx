@@ -7,12 +7,14 @@ import Badge from '../components/Badge';
 import Modal from '../components/Modal';
 import toast from 'react-hot-toast';
 import { useAuth } from '../App';
+import { useSort } from '../hooks/useSort';
+import SortableHeader from '../components/SortableHeader';
 
 const STATUS_OPTS = [
-  { value: 'present', label: 'Present', icon: CheckCircle, color: 'text-green-400' },
-  { value: 'late', label: 'Late', icon: Clock, color: 'text-yellow-400' },
-  { value: 'called_out', label: 'Called Out', icon: AlertCircle, color: 'text-orange-400' },
-  { value: 'ncns', label: 'NCNS', icon: XCircle, color: 'text-red-400' },
+  { value: 'present', label: 'Present', icon: CheckCircle, color: 'text-green-600' },
+  { value: 'late', label: 'Late', icon: Clock, color: 'text-yellow-600' },
+  { value: 'called_out', label: 'Called Out', icon: AlertCircle, color: 'text-orange-600' },
+  { value: 'ncns', label: 'NCNS', icon: XCircle, color: 'text-red-600' },
 ];
 
 export default function Attendance() {
@@ -93,12 +95,15 @@ export default function Attendance() {
     markMutation.mutate({ attendanceId: row.attendance_id || null, payload });
   };
 
-  // Today's schedule view for marking
   const { data: todayShifts = [] } = useQuery({
     queryKey: ['shifts-today-attendance', dateFilter],
     queryFn: () => api.get('/shifts', { params: { start: dateFilter, end: dateFilter } }).then(r => r.data),
     enabled: tab === 'log',
   });
+
+  const { sorted: sortedShifts, sortKey: sKey, sortDir: sDir, toggle: sToggle } = useSort(todayShifts, 'first_name');
+  const { sorted: sortedViolations, sortKey: vKey, sortDir: vDir, toggle: vToggle } = useSort(violations, 'created_at', 'desc');
+  const { sorted: sortedExport, sortKey: eKey, sortDir: eDir, toggle: eToggle } = useSort(exportData, 'last_name');
 
   const exportCSV = () => {
     const headers = ['Employee ID', 'First Name', 'Last Name', 'Present', 'Called Out', 'NCNS', 'Late', 'Total Hours'];
@@ -117,10 +122,10 @@ export default function Attendance() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 bg-surface-card rounded-xl border border-surface-border w-fit">
+      <div className="flex gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 w-fit">
         {[['log', 'Daily Log'], ['violations', 'Violations'], ['export', 'Export']].map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${tab === v ? 'bg-primary text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${tab === v ? 'bg-primary text-white' : 'text-slate-500 hover:text-slate-700'}`}>
             {l}
           </button>
         ))}
@@ -131,48 +136,48 @@ export default function Attendance() {
           <div className="flex items-center gap-4">
             <input type="date" className="input w-auto" value={dateFilter}
               onChange={e => setDateFilter(e.target.value)} />
-            <span className="text-slate-400 text-sm">{todayShifts.length} shifts scheduled</span>
+            <span className="text-slate-500 text-sm">{todayShifts.length} shifts scheduled</span>
           </div>
 
           <div className="card p-0 overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-surface-border text-xs text-slate-400">
-                  <th className="text-left px-4 py-3">Driver</th>
-                  <th className="text-left px-4 py-3">Shift</th>
-                  <th className="text-left px-4 py-3">Clock In</th>
-                  <th className="text-left px-4 py-3">Clock Out</th>
-                  <th className="text-left px-4 py-3">Hours</th>
-                  <th className="text-left px-4 py-3">Status</th>
-                  {isManager && <th className="text-left px-4 py-3">Quick Mark</th>}
+                <tr className="border-b border-slate-200 bg-slate-100">
+                  <SortableHeader label="Driver" sortKey="first_name" currentKey={sKey} direction={sDir} onSort={sToggle} className="text-left" />
+                  <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Shift</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Clock In</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Clock Out</th>
+                  <SortableHeader label="Hours" sortKey="hours_worked" currentKey={sKey} direction={sDir} onSort={sToggle} className="text-left" />
+                  <SortableHeader label="Status" sortKey="attendance_status" currentKey={sKey} direction={sDir} onSort={sToggle} className="text-left" />
+                  {isManager && <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Quick Mark</th>}
                 </tr>
               </thead>
               <tbody>
-                {todayShifts.length === 0 ? (
+                {sortedShifts.length === 0 ? (
                   <tr><td colSpan={7} className="text-center py-10 text-slate-500">No shifts on this date</td></tr>
-                ) : todayShifts.map(row => (
-                  <tr key={row.id} className="table-row">
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-slate-200">{row.first_name} {row.last_name}</p>
+                ) : sortedShifts.map(row => (
+                  <tr key={row.id} className="table-row even:bg-slate-50">
+                    <td className="px-3 py-3">
+                      <p className="font-medium text-slate-800">{row.first_name} {row.last_name}</p>
                       <p className="text-xs text-slate-500">{row.employee_id}</p>
                     </td>
-                    <td className="px-4 py-3 text-slate-400">{row.start_time?.slice(0,5)} – {row.end_time?.slice(0,5)}</td>
-                    <td className="px-4 py-3 text-slate-400">{row.clock_in ? format(new Date(row.clock_in), 'h:mm a') : '—'}</td>
-                    <td className="px-4 py-3 text-slate-400">{row.clock_out ? format(new Date(row.clock_out), 'h:mm a') : '—'}</td>
-                    <td className="px-4 py-3 text-slate-400">{row.hours_worked ? `${parseFloat(row.hours_worked).toFixed(1)}h` : '—'}</td>
-                    <td className="px-4 py-3"><Badge status={row.attendance_status || 'scheduled'} /></td>
+                    <td className="px-3 py-3 text-slate-600">{row.start_time?.slice(0,5)} – {row.end_time?.slice(0,5)}</td>
+                    <td className="px-3 py-3 text-slate-600">{row.clock_in ? format(new Date(row.clock_in), 'h:mm a') : '—'}</td>
+                    <td className="px-3 py-3 text-slate-600">{row.clock_out ? format(new Date(row.clock_out), 'h:mm a') : '—'}</td>
+                    <td className="px-3 py-3 text-slate-600">{row.hours_worked ? `${parseFloat(row.hours_worked).toFixed(1)}h` : '—'}</td>
+                    <td className="px-3 py-3"><Badge status={row.attendance_status || 'scheduled'} /></td>
                     {isManager && (
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <div className="flex gap-1">
                           {STATUS_OPTS.map(opt => (
                             <button key={opt.value} onClick={() => quickMark(row, opt.value)}
                               title={opt.label}
-                              className={`p-1.5 rounded-lg border border-surface-border hover:bg-surface-hover transition-colors ${row.attendance_status === opt.value ? 'bg-surface-hover ring-1 ring-primary' : ''}`}>
+                              className={`p-1.5 rounded-lg border border-slate-200 hover:bg-blue-50 transition-colors ${row.attendance_status === opt.value ? 'bg-blue-50 ring-1 ring-primary' : ''}`}>
                               <opt.icon size={14} className={opt.color} />
                             </button>
                           ))}
                           <button onClick={() => openEdit(row)}
-                            className="p-1.5 rounded-lg border border-surface-border hover:bg-surface-hover text-slate-400">
+                            className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500">
                             <ChevronDown size={14} />
                           </button>
                         </div>
@@ -190,26 +195,26 @@ export default function Attendance() {
         <div className="card p-0 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-surface-border text-xs text-slate-400">
-                <th className="text-left px-4 py-3">Employee</th>
-                <th className="text-left px-4 py-3">Rule</th>
-                <th className="text-left px-4 py-3">Type</th>
-                <th className="text-left px-4 py-3">Action</th>
-                <th className="text-left px-4 py-3">Notes</th>
-                <th className="text-left px-4 py-3">Date</th>
+              <tr className="border-b border-slate-200 bg-slate-100">
+                <SortableHeader label="Employee" sortKey="first_name" currentKey={vKey} direction={vDir} onSort={vToggle} className="text-left" />
+                <SortableHeader label="Rule" sortKey="rule_name" currentKey={vKey} direction={vDir} onSort={vToggle} className="text-left" />
+                <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Type</th>
+                <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Action</th>
+                <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Notes</th>
+                <SortableHeader label="Date" sortKey="created_at" currentKey={vKey} direction={vDir} onSort={vToggle} className="text-left" />
               </tr>
             </thead>
             <tbody>
-              {violations.length === 0 ? (
+              {sortedViolations.length === 0 ? (
                 <tr><td colSpan={6} className="text-center py-10 text-slate-500">No violations recorded</td></tr>
-              ) : violations.map(v => (
-                <tr key={v.id} className="table-row">
-                  <td className="px-4 py-3 font-medium text-slate-200">{v.staff?.first_name} {v.staff?.last_name}</td>
-                  <td className="px-4 py-3 text-slate-400">{v.rule_name}</td>
-                  <td className="px-4 py-3"><Badge status={v.violation_type} /></td>
-                  <td className="px-4 py-3"><Badge status={v.action_taken} /></td>
-                  <td className="px-4 py-3 text-slate-500 text-xs max-w-xs truncate">{v.notes}</td>
-                  <td className="px-4 py-3 text-slate-500">{format(new Date(v.created_at), 'MMM d, yyyy')}</td>
+              ) : sortedViolations.map(v => (
+                <tr key={v.id} className="table-row even:bg-slate-50">
+                  <td className="px-3 py-3 font-medium text-slate-800">{v.staff?.first_name} {v.staff?.last_name}</td>
+                  <td className="px-3 py-3 text-slate-600">{v.rule_name}</td>
+                  <td className="px-3 py-3"><Badge status={v.violation_type} /></td>
+                  <td className="px-3 py-3"><Badge status={v.action_taken} /></td>
+                  <td className="px-3 py-3 text-slate-500 text-xs max-w-xs truncate">{v.notes}</td>
+                  <td className="px-3 py-3 text-slate-500">{format(new Date(v.created_at), 'MMM d, yyyy')}</td>
                 </tr>
               ))}
             </tbody>
@@ -235,26 +240,26 @@ export default function Attendance() {
           <div className="card p-0 overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-surface-border text-xs text-slate-400">
-                  <th className="text-left px-4 py-3">Employee ID</th>
-                  <th className="text-left px-4 py-3">Name</th>
-                  <th className="text-center px-4 py-3">Present</th>
-                  <th className="text-center px-4 py-3">Called Out</th>
-                  <th className="text-center px-4 py-3">NCNS</th>
-                  <th className="text-center px-4 py-3">Late</th>
-                  <th className="text-center px-4 py-3">Total Hours</th>
+                <tr className="border-b border-slate-200 bg-slate-100">
+                  <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Employee ID</th>
+                  <SortableHeader label="Name" sortKey="last_name" currentKey={eKey} direction={eDir} onSort={eToggle} className="text-left" />
+                  <SortableHeader label="Present" sortKey="present" currentKey={eKey} direction={eDir} onSort={eToggle} className="text-center" />
+                  <SortableHeader label="Called Out" sortKey="called_out" currentKey={eKey} direction={eDir} onSort={eToggle} className="text-center" />
+                  <SortableHeader label="NCNS" sortKey="ncns" currentKey={eKey} direction={eDir} onSort={eToggle} className="text-center" />
+                  <SortableHeader label="Late" sortKey="late" currentKey={eKey} direction={eDir} onSort={eToggle} className="text-center" />
+                  <SortableHeader label="Total Hours" sortKey="total_hours" currentKey={eKey} direction={eDir} onSort={eToggle} className="text-center" />
                 </tr>
               </thead>
               <tbody>
-                {exportData.map(r => (
-                  <tr key={r.employee_id} className="table-row">
-                    <td className="px-4 py-3 text-slate-500">{r.employee_id}</td>
-                    <td className="px-4 py-3 font-medium text-slate-200">{r.first_name} {r.last_name}</td>
-                    <td className="px-4 py-3 text-center text-green-400">{r.present}</td>
-                    <td className="px-4 py-3 text-center text-orange-400">{r.called_out}</td>
-                    <td className="px-4 py-3 text-center text-red-400">{r.ncns}</td>
-                    <td className="px-4 py-3 text-center text-yellow-400">{r.late}</td>
-                    <td className="px-4 py-3 text-center text-slate-300 font-medium">{parseFloat(r.total_hours).toFixed(1)}</td>
+                {sortedExport.map(r => (
+                  <tr key={r.employee_id} className="table-row even:bg-slate-50">
+                    <td className="px-3 py-3 text-slate-500">{r.employee_id}</td>
+                    <td className="px-3 py-3 font-medium text-slate-800">{r.first_name} {r.last_name}</td>
+                    <td className="px-3 py-3 text-center text-green-600">{r.present}</td>
+                    <td className="px-3 py-3 text-center text-orange-600">{r.called_out}</td>
+                    <td className="px-3 py-3 text-center text-red-600">{r.ncns}</td>
+                    <td className="px-3 py-3 text-center text-yellow-600">{r.late}</td>
+                    <td className="px-3 py-3 text-center text-slate-700 font-medium">{parseFloat(r.total_hours).toFixed(1)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -270,39 +275,39 @@ export default function Attendance() {
           markMutation.mutate({ attendanceId: editModal?.attendance_id || null, payload: editForm });
         }}>
           <div>
-            <label className="label">Status</label>
+            <label className="modal-label">Status</label>
             <select className="select" value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}>
               {STATUS_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
           {editForm.status === 'late' && (
             <div>
-              <label className="label">Minutes Late</label>
+              <label className="modal-label">Minutes Late</label>
               <input type="number" className="input" value={editForm.late_minutes}
                 onChange={e => setEditForm(f => ({ ...f, late_minutes: e.target.value }))} min="0" />
             </div>
           )}
           {['called_out', 'ncns'].includes(editForm.status) && (
             <div>
-              <label className="label">Reason</label>
+              <label className="modal-label">Reason</label>
               <input type="text" className="input" value={editForm.call_out_reason}
                 onChange={e => setEditForm(f => ({ ...f, call_out_reason: e.target.value }))} placeholder="Optional reason" />
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Clock In</label>
+              <label className="modal-label">Clock In</label>
               <input type="datetime-local" className="input" value={editForm.clock_in}
                 onChange={e => setEditForm(f => ({ ...f, clock_in: e.target.value }))} />
             </div>
             <div>
-              <label className="label">Clock Out</label>
+              <label className="modal-label">Clock Out</label>
               <input type="datetime-local" className="input" value={editForm.clock_out}
                 onChange={e => setEditForm(f => ({ ...f, clock_out: e.target.value }))} />
             </div>
           </div>
           <div>
-            <label className="label">Notes</label>
+            <label className="modal-label">Notes</label>
             <input type="text" className="input" value={editForm.notes}
               onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
           </div>

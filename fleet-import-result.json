@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "total_inserted": 49,
+  "edv_count": 38,
+  "step_van_count": 10,
+  "other_count": 1,
+  "grounded": [
+    "EV 03",
+    "EV 26"
+  ],
+  "errors": 0,
+  "ts": "2026-03-18T13:11:21.528Z"
+}

@@ -4,17 +4,30 @@ export default {
   theme: {
     extend: {
       colors: {
-        surface: {
-          DEFAULT: '#1e293b',
-          card: '#243447',
-          hover: '#2d3f55',
-          border: '#334155',
-        },
-        sidebar: '#0f172a',
+        // Pure white light theme
+        base: '#ffffff',
+        card: '#ffffff',
+        'card-border': '#e2e8f0',
+        // Primary: blue
         primary: {
-          DEFAULT: '#3b82f6',
-          hover: '#2563eb',
+          DEFAULT: '#2563eb',
+          hover: '#1d4ed8',
+          light: '#60a5fa',
+          50: '#eff6ff',
+          100: '#dbeafe',
         },
+        // Content text colors
+        content: {
+          DEFAULT: '#0f172a',
+          muted: '#475569',
+          subtle: '#94a3b8',
+        },
+        // Nav bar — deep navy
+        nav: '#1E3A5F',
+        'nav-border': '#162d4a',
+      },
+      fontFamily: {
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
       },
     },
   },

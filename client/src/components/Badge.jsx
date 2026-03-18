@@ -1,36 +1,38 @@
 import clsx from 'clsx';
 
 const variants = {
-  present:        'bg-green-500/20 text-green-400',
-  active:         'bg-green-500/20 text-green-400',
-  matched:        'bg-green-500/20 text-green-400',
-  completed:      'bg-green-500/20 text-green-400',
-  good:           'bg-green-500/20 text-green-400',
+  present:        'bg-green-100 text-green-700',
+  active:         'bg-green-100 text-green-700',
+  matched:        'bg-green-100 text-green-700',
+  completed:      'bg-green-100 text-green-700',
+  good:           'bg-green-100 text-green-700',
+  excellent:      'bg-emerald-100 text-emerald-700',
 
-  late:           'bg-yellow-500/20 text-yellow-400',
-  warning:        'bg-yellow-500/20 text-yellow-400',
-  in_progress:    'bg-yellow-500/20 text-yellow-400',
-  scheduled:      'bg-blue-500/20 text-blue-400',
-  pending:        'bg-slate-500/20 text-slate-400',
-  synced:         'bg-blue-500/20 text-blue-400',
-  fair:           'bg-yellow-500/20 text-yellow-400',
+  late:           'bg-yellow-100 text-yellow-700',
+  warning:        'bg-yellow-100 text-yellow-700',
+  in_progress:    'bg-yellow-100 text-yellow-700',
+  fair:           'bg-yellow-100 text-yellow-700',
 
-  called_out:     'bg-orange-500/20 text-orange-400',
-  mismatched:     'bg-orange-500/20 text-orange-400',
-  maintenance:    'bg-orange-500/20 text-orange-400',
+  scheduled:      'bg-blue-100 text-blue-700',
+  synced:         'bg-blue-100 text-blue-700',
+  driver:         'bg-blue-100 text-blue-700',
 
-  ncns:           'bg-red-500/20 text-red-400',
-  critical:       'bg-red-500/20 text-red-400',
-  flagged:        'bg-red-500/20 text-red-400',
-  terminated:     'bg-red-500/20 text-red-400',
-  poor:           'bg-red-500/20 text-red-400',
-  damage_flag:    'bg-red-500/20 text-red-400',
+  pending:        'bg-slate-100 text-slate-600',
+  unmatched:      'bg-slate-100 text-slate-600',
 
-  unmatched:      'bg-slate-500/20 text-slate-400',
-  manager:        'bg-purple-500/20 text-purple-400',
-  dispatcher:     'bg-indigo-500/20 text-indigo-400',
-  driver:         'bg-blue-500/20 text-blue-400',
-  excellent:      'bg-emerald-500/20 text-emerald-400',
+  called_out:     'bg-orange-100 text-orange-700',
+  mismatched:     'bg-orange-100 text-orange-700',
+  maintenance:    'bg-orange-100 text-orange-700',
+
+  ncns:           'bg-red-100 text-red-700',
+  critical:       'bg-red-100 text-red-700',
+  flagged:        'bg-red-100 text-red-700',
+  terminated:     'bg-red-100 text-red-700',
+  poor:           'bg-red-100 text-red-700',
+  damage_flag:    'bg-red-100 text-red-700',
+
+  manager:        'bg-purple-100 text-purple-700',
+  dispatcher:     'bg-indigo-100 text-indigo-700',
 };
 
 const labels = {
@@ -50,7 +52,7 @@ export default function Badge({ status, label }) {
   const key = (status || '').toLowerCase().replace(/ /g, '_');
   const display = label || labels[key] || (status ? status.replace(/_/g, ' ') : '');
   return (
-    <span className={clsx('badge capitalize', variants[key] || 'bg-slate-500/20 text-slate-400')}>
+    <span className={clsx('badge capitalize', variants[key] || 'bg-slate-100 text-slate-600')}>
       {display}
     </span>
   );

@@ -221,3 +221,116 @@ CREATE INDEX IF NOT EXISTS idx_inspections_vehicle ON inspections(vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_amazon_routes_date ON amazon_routes(route_date);
 CREATE INDEX IF NOT EXISTS idx_fleet_alerts_vehicle ON fleet_alerts(vehicle_id, is_resolved);
 CREATE INDEX IF NOT EXISTS idx_violations_staff ON staff_violations(staff_id, created_at);
+
+-- Day-based recurring schedule configuration (one row per day of week)
+CREATE TABLE IF NOT EXISTS day_schedules (
+  day_of_week INTEGER PRIMARY KEY CHECK (day_of_week >= 0 AND day_of_week <= 6),
+  shift_type  VARCHAR(50) DEFAULT 'EDV',
+  start_time  TIME DEFAULT '07:00',
+  end_time    TIME DEFAULT '17:00',
+  enabled     BOOLEAN DEFAULT TRUE,
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Drivers assigned to each day's recurring schedule
+CREATE TABLE IF NOT EXISTS day_schedule_drivers (
+  id          SERIAL PRIMARY KEY,
+  day_of_week INTEGER NOT NULL,
+  staff_id    INTEGER REFERENCES staff(id) ON DELETE CASCADE,
+  UNIQUE(day_of_week, staff_id)
+);
+
+-- Seed 7 day rows (idempotent)
+INSERT INTO day_schedules (day_of_week)
+VALUES (0),(1),(2),(3),(4),(5),(6)
+ON CONFLICT DO NOTHING;
+
+-- Auth / security columns on staff
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0;
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
+
+-- Publish status on shifts (idempotent)
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS publish_status VARCHAR(20) DEFAULT 'draft';
+
+-- Schedule change log (powers pre-publish review modal)
+CREATE TABLE IF NOT EXISTS shift_change_log (
+  id               SERIAL PRIMARY KEY,
+  shift_id         INTEGER REFERENCES shifts(id) ON DELETE CASCADE,
+  staff_id         INTEGER,
+  staff_name       VARCHAR(200),
+  changed_by_id    INTEGER,
+  changed_by_name  VARCHAR(200),
+  change_type      VARCHAR(30) NOT NULL,  -- 'create' | 'update' | 'attendance'
+  description      TEXT NOT NULL,
+  previous_value   TEXT,
+  new_value        TEXT,
+  shift_date       DATE,
+  week_start       DATE,
+  publish_status   VARCHAR(20) DEFAULT 'draft',
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_change_log_week  ON shift_change_log(week_start);
+CREATE INDEX IF NOT EXISTS idx_change_log_shift ON shift_change_log(shift_id);
+
+-- Per-driver recurring schedule rows (multi-shift-type, per-day checkboxes)
+CREATE TABLE IF NOT EXISTS driver_recurring_shifts (
+  id         SERIAL PRIMARY KEY,
+  staff_id   INTEGER REFERENCES staff(id) ON DELETE CASCADE,
+  shift_type VARCHAR(50) NOT NULL DEFAULT 'EDV',
+  start_time TIME NOT NULL DEFAULT '07:00',
+  end_time   TIME NOT NULL DEFAULT '17:00',
+  sun        BOOLEAN DEFAULT FALSE,
+  mon        BOOLEAN DEFAULT FALSE,
+  tue        BOOLEAN DEFAULT FALSE,
+  wed        BOOLEAN DEFAULT FALSE,
+  thu        BOOLEAN DEFAULT FALSE,
+  fri        BOOLEAN DEFAULT FALSE,
+  sat        BOOLEAN DEFAULT FALSE,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Rotating driver flag on staff
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS is_rotating BOOLEAN DEFAULT FALSE;
+
+-- Management: Paycom employee code on staff
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS employee_code VARCHAR(50);
+
+-- Management: Fleet import columns on vehicles
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS service_type VARCHAR(50);
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS status_note TEXT;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS vehicle_provider VARCHAR(100);
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ownership_type_label VARCHAR(100);
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ownership_type_code VARCHAR(50);
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ownership_start_date DATE;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ownership_end_date DATE;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS registered_state VARCHAR(10);
+
+-- Shift types (used in Management > Shift Types and RecurringGrid auto-fill)
+CREATE TABLE IF NOT EXISTS shift_types (
+  id                 SERIAL PRIMARY KEY,
+  name               VARCHAR(50) UNIQUE NOT NULL,
+  default_start_time TIME NOT NULL DEFAULT '07:00',
+  default_end_time   TIME NOT NULL DEFAULT '17:00',
+  color              VARCHAR(30) DEFAULT 'blue',
+  is_active          BOOLEAN DEFAULT TRUE,
+  sort_order         INTEGER DEFAULT 99,
+  created_at         TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Seed default shift types (idempotent)
+INSERT INTO shift_types (name, default_start_time, default_end_time, color, sort_order) VALUES
+  ('EDV',         '07:00', '17:00', 'blue',   1),
+  ('STEP VAN',    '07:00', '17:00', 'indigo', 2),
+  ('HELPER',      '07:00', '15:00', 'amber',  3),
+  ('ON CALL',     '07:00', '17:00', 'yellow', 4),
+  ('EXTRA',       '07:00', '17:00', 'green',  5),
+  ('DISPATCH AM', '05:00', '13:00', 'cyan',   6),
+  ('DISPATCH PM', '13:00', '21:00', 'sky',    7),
+  ('SUSPENSION',  '07:00', '17:00', 'red',    8),
+  ('UTO',         '07:00', '17:00', 'purple', 9),
+  ('PTO',         '07:00', '17:00', 'teal',   10),
+  ('TRAINING',    '07:00', '15:00', 'orange', 11)
+ON CONFLICT (name) DO NOTHING;

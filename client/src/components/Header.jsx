@@ -19,13 +19,16 @@ export default function Header({ onMenuClick }) {
   const alertCount = alerts?.length || 0;
 
   return (
-    <header className="h-16 bg-surface-card border-b border-surface-border flex items-center justify-between px-6 flex-shrink-0">
+    <header className="h-16 bg-sidebar border-b border-surface-border flex items-center justify-between px-6 flex-shrink-0">
       <div className="flex items-center gap-4">
-        <button onClick={onMenuClick} className="btn-ghost p-2 rounded-lg">
+        <button onClick={onMenuClick} className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-surface-hover transition-colors">
           <Menu size={20} />
         </button>
-        <div className="text-sm text-slate-400">
-          {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+        <div>
+          <p className="text-sm font-bold text-white">Last Mile DSP LLC</p>
+          <p className="text-xs text-slate-400">
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
         </div>
       </div>
 

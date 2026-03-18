@@ -3,8 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/dsp_manager',
+  ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
 
 async function migrate() {

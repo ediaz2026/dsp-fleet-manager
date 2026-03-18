@@ -5,9 +5,28 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// ─── Auto-migrate on startup ───────────────────────────────────────────────
+async function runMigrations() {
+  const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/dsp_manager',
+    ssl: isProduction ? { rejectUnauthorized: false } : false,
+  });
+  try {
+    const schema = fs.readFileSync(path.join(__dirname, 'db/schema.sql'), 'utf8');
+    await pool.query(schema);
+    console.log('✅ Database schema applied');
+  } catch (err) {
+    console.error('❌ Migration error:', err.message);
+  } finally {
+    await pool.end();
+  }
+}
 
 // Ensure upload directories exist
 const dirs = ['uploads', 'uploads/inspections', 'uploads/routes', 'uploads/qrcodes'];
@@ -53,7 +72,10 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`\n🚀 DSP Fleet Manager API running on http://localhost:${PORT}`);
-  console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}\n`);
+// Run migrations then start server
+runMigrations().then(() => {
+  app.listen(PORT, () => {
+    console.log(`\n🚀 DSP Fleet Manager API running on port ${PORT}`);
+    console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}\n`);
+  });
 });

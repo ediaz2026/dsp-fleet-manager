@@ -5,6 +5,7 @@ git version 2.53.0.windows.2
 
 
 $ git log --oneline -3
+b367dc0 Add Railway deployment config
 d9fcac9 Initial commit: DSP Fleet & Workforce Management System
 
 
@@ -12,195 +13,12 @@ $ git add .
 (no output)
 
 $ git status --short
-M  .claude/launch.json
-M  .claude/settings.local.json
-A  "AssociateData (2).csv"
-A  check-git.bat
-A  client/package-lock.json
-M  client/package.json
-M  client/src/App.jsx
-M  client/src/components/Badge.jsx
-M  client/src/components/Header.jsx
-M  client/src/components/Layout.jsx
-M  client/src/components/Modal.jsx
-M  client/src/components/Sidebar.jsx
-A  client/src/components/SortableHeader.jsx
-A  client/src/components/TopNav.jsx
-A  client/src/hooks/useSort.js
-M  client/src/index.css
-M  client/src/pages/AmazonRoutes.jsx
-M  client/src/pages/Attendance.jsx
-A  client/src/pages/ChangePassword.jsx
-M  client/src/pages/Dashboard.jsx
-A  client/src/pages/DriverSchedule.jsx
-M  client/src/pages/Drivers.jsx
-M  client/src/pages/Inspections.jsx
-M  client/src/pages/Login.jsx
-A  client/src/pages/Management.jsx
-A  client/src/pages/OperationalPlanner.jsx
-M  client/src/pages/Payroll.jsx
-M  client/src/pages/Schedule.jsx
-A  client/src/pages/Scorecard.jsx
-M  client/src/pages/Settings.jsx
-M  client/src/pages/Vehicles.jsx
-M  client/tailwind.config.js
-A  commit-railway.bat
-A  debug-backend.bat
-A  debug-output.txt
-A  fleet-import-result.json
-A  fleet-import.bat
-A  full-import-log.txt
-A  full-import-result.json
-A  full-import.bat
-A  git-check2.bat
-A  git-commit-push.js
-A  git-ps-push.ps1
-A  git-push-log.bat
-A  git-push-output.txt
-A  git-push-railway.bat
-A  import-associates.bat
-A  import-log.txt
-A  install-xlsx.bat
-A  migrate-auth-columns.bat
-A  migrate-change-log.bat
-A  migrate-day-recurring.bat
-A  migrate-driver-recurring.bat
-A  migrate-management.bat
-A  migrate-publish-status.bat
-A  migrate-repairs.bat
-A  migrate-schedule.bat
-A  migrate-shift-types.bat
-A  nixpacks.toml
-A  node-test-output.txt
-A  package-lock.json
-M  package.json
-A  push-to-github.bat
-A  railway.json
-A  restart-backend.bat
-A  run-backend.bat
-A  run-git-push.bat
-A  server/package-lock.json
-A  server/src/db/fleetImport.js
-A  server/src/db/fullImport.js
-A  server/src/db/importAssociates.js
-A  server/src/db/makeAdmin.js
-A  server/src/db/migrateAuthColumns.js
-A  server/src/db/migrateChangeLog.js
-A  server/src/db/migrateDayRecurring.js
-A  server/src/db/migrateDriverRecurring.js
-A  server/src/db/migrateManagement.js
-A  server/src/db/migrateOpsPlanner.js
-A  server/src/db/migratePublishStatus.js
-A  server/src/db/migrateRepairs.js
-A  server/src/db/migrateSchedule.js
-A  server/src/db/migrateShiftTypes.js
-M  server/src/db/schema.sql
-A  server/src/db/wipeAndReimport.js
-M  server/src/index.js
-M  server/src/middleware/auth.js
-A  server/src/routes/admin.js
-M  server/src/routes/auth.js
-A  server/src/routes/cortexSync.js
-M  server/src/routes/dashboard.js
-A  server/src/routes/driverReports.js
-M  server/src/routes/drivers.js
-A  server/src/routes/opsPlanner.js
-A  server/src/routes/repairs.js
-A  server/src/routes/schedule.js
-M  server/src/routes/shifts.js
-M  server/src/routes/vehicles.js
-M  setup-github.bat
-A  start-backend.bat
-A  start-dev-simple.bat
-M  start-dev.bat
-A  test-node-out.txt
-A  test-node-output.bat
-A  test-node.bat
-A  wipe-and-reimport.bat
-A  wipe-reimport-log.txt
-A  wipe-reimport-result.json
-A  wipe-reimport-run.bat
+M  git-push-output.txt
 
 
 $ git commit -m "Add Railway deployment config"
-[main b367dc0] Add Railway deployment config
- 108 files changed, 20428 insertions(+), 1016 deletions(-)
- create mode 100644 AssociateData (2).csv
- create mode 100644 check-git.bat
- create mode 100644 client/package-lock.json
- create mode 100644 client/src/components/SortableHeader.jsx
- create mode 100644 client/src/components/TopNav.jsx
- create mode 100644 client/src/hooks/useSort.js
- create mode 100644 client/src/pages/ChangePassword.jsx
- create mode 100644 client/src/pages/DriverSchedule.jsx
- create mode 100644 client/src/pages/Management.jsx
- create mode 100644 client/src/pages/OperationalPlanner.jsx
- create mode 100644 client/src/pages/Scorecard.jsx
- create mode 100644 commit-railway.bat
- create mode 100644 debug-backend.bat
- create mode 100644 debug-output.txt
- create mode 100644 fleet-import-result.json
- create mode 100644 fleet-import.bat
- create mode 100644 full-import-log.txt
- create mode 100644 full-import-result.json
- create mode 100644 full-import.bat
- create mode 100644 git-check2.bat
- create mode 100644 git-commit-push.js
- create mode 100644 git-ps-push.ps1
- create mode 100644 git-push-log.bat
- create mode 100644 git-push-output.txt
- create mode 100644 git-push-railway.bat
- create mode 100644 import-associates.bat
- create mode 100644 import-log.txt
- create mode 100644 install-xlsx.bat
- create mode 100644 migrate-auth-columns.bat
- create mode 100644 migrate-change-log.bat
- create mode 100644 migrate-day-recurring.bat
- create mode 100644 migrate-driver-recurring.bat
- create mode 100644 migrate-management.bat
- create mode 100644 migrate-publish-status.bat
- create mode 100644 migrate-repairs.bat
- create mode 100644 migrate-schedule.bat
- create mode 100644 migrate-shift-types.bat
- create mode 100644 nixpacks.toml
- create mode 100644 node-test-output.txt
- create mode 100644 package-lock.json
- create mode 100644 push-to-github.bat
- create mode 100644 railway.json
- create mode 100644 restart-backend.bat
- create mode 100644 run-backend.bat
- create mode 100644 run-git-push.bat
- create mode 100644 server/package-lock.json
- create mode 100644 server/src/db/fleetImport.js
- create mode 100644 server/src/db/fullImport.js
- create mode 100644 server/src/db/importAssociates.js
- create mode 100644 server/src/db/makeAdmin.js
- create mode 100644 server/src/db/migrateAuthColumns.js
- create mode 100644 server/src/db/migrateChangeLog.js
- create mode 100644 server/src/db/migrateDayRecurring.js
- create mode 100644 server/src/db/migrateDriverRecurring.js
- create mode 100644 server/src/db/migrateManagement.js
- create mode 100644 server/src/db/migrateOpsPlanner.js
- create mode 100644 server/src/db/migratePublishStatus.js
- create mode 100644 server/src/db/migrateRepairs.js
- create mode 100644 server/src/db/migrateSchedule.js
- create mode 100644 server/src/db/migrateShiftTypes.js
- create mode 100644 server/src/db/wipeAndReimport.js
- create mode 100644 server/src/routes/admin.js
- create mode 100644 server/src/routes/cortexSync.js
- create mode 100644 server/src/routes/driverReports.js
- create mode 100644 server/src/routes/opsPlanner.js
- create mode 100644 server/src/routes/repairs.js
- create mode 100644 server/src/routes/schedule.js
- create mode 100644 start-backend.bat
- create mode 100644 start-dev-simple.bat
- create mode 100644 test-node-out.txt
- create mode 100644 test-node-output.bat
- create mode 100644 test-node.bat
- create mode 100644 wipe-and-reimport.bat
- create mode 100644 wipe-reimport-log.txt
- create mode 100644 wipe-reimport-result.json
- create mode 100644 wipe-reimport-run.bat
+[main 0bc23ff] Add Railway deployment config
+ 1 file changed, 188 insertions(+), 138 deletions(-)
 
 
 $ git push origin main

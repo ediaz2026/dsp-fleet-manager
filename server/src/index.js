@@ -35,10 +35,20 @@ dirs.forEach(dir => {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 });
 
-// Middleware
+// CORS — allow localhost in dev + Railway production URL
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://dsp-fleet-manager-production.up.railway.app',
+  process.env.CLIENT_URL,
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
-  credentials: true
+  origin: (origin, callback) => {
+    // Allow requests with no origin (server-to-server, mobile apps, curl)
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  credentials: true,
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -65,6 +75,17 @@ app.use('/api/cortex-sync', require('./routes/cortexSync'));
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
+
+// In production, serve the built React client from client/dist
+// This must come AFTER all /api routes
+if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
+  const clientDist = path.join(__dirname, '../../client/dist');
+  app.use(express.static(clientDist));
+  // Catch-all: send index.html for all non-API routes (client-side routing)
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
 
 // Error handler
 app.use((err, req, res, next) => {

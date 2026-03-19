@@ -110,6 +110,46 @@ app.get('/api/health', (req, res) => res.json({
   env: process.env.NODE_ENV || 'development',
 }));
 
+// ─── Debug endpoint (no auth) — shows DB tables + row counts ───────────────
+app.get('/api/debug', async (req, res) => {
+  const pool = require('./db/pool');
+  const results = { isRailway, env: process.env.NODE_ENV || 'development', tables: {}, errors: [] };
+
+  // Mask connection string for safety
+  const connStr = process.env.DATABASE_URL || 'local';
+  results.dbHost = connStr.replace(/\/\/[^@]+@/, '//***:***@');
+
+  const tables = [
+    'staff', 'drivers', 'vehicles', 'shifts', 'attendance',
+    'payroll_records', 'inspections', 'amazon_routes',
+    'driver_recurring_shifts', 'shift_types', 'settings',
+    'repairs', 'fleet_alerts', 'consequence_rules',
+  ];
+
+  for (const table of tables) {
+    try {
+      const { rows } = await pool.query(`SELECT COUNT(*) AS count FROM ${table}`);
+      results.tables[table] = parseInt(rows[0].count, 10);
+    } catch (err) {
+      results.tables[table] = `ERROR: ${err.message}`;
+      results.errors.push(`${table}: ${err.message}`);
+    }
+  }
+
+  // Sample a staff row to confirm data shape
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, first_name, last_name, email, role, status FROM staff LIMIT 3`
+    );
+    results.staffSample = rows;
+  } catch (err) {
+    results.staffSample = `ERROR: ${err.message}`;
+  }
+
+  console.log('[DEBUG] Table counts:', JSON.stringify(results.tables));
+  res.json(results);
+});
+
 // Serve the built React client — check if client/dist exists
 const clientDist = path.join(__dirname, '../../client/dist');
 if (fs.existsSync(clientDist)) {
@@ -119,9 +159,11 @@ if (fs.existsSync(clientDist)) {
   });
 }
 
-// Error handler
+// Error handler — logs full details to Railway logs
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error(`[ERROR] ${req.method} ${req.path}`);
+  console.error(`[ERROR] Message: ${err.message}`);
+  if (err.stack) console.error(`[ERROR] Stack: ${err.stack}`);
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 

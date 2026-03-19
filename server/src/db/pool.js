@@ -16,4 +16,13 @@ pool.on('error', (err) => {
   console.error('Unexpected error on idle DB client:', err.message);
 });
 
+// Test connection on startup and log result
+pool.query('SELECT NOW() AS now, current_database() AS db')
+  .then(({ rows }) => {
+    console.log(`🗄️  DB connected: ${rows[0].db} at ${rows[0].now} (SSL: ${isRailway})`);
+  })
+  .catch((err) => {
+    console.error(`❌ DB connection FAILED: ${err.message}`);
+  });
+
 module.exports = pool;

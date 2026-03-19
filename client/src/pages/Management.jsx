@@ -5,6 +5,7 @@ import {
   Save, Plus, Trash2, Shield, Bell, Cpu, DollarSign, Cloud, ToggleLeft, ToggleRight,
   Tag, RepeatIcon, X, ChevronDown, ChevronUp, Search, Users, UserPlus, RefreshCw,
   Settings, Calendar, Upload, CheckCircle, AlertCircle, ChevronRight, GripVertical,
+  Download, FileSpreadsheet,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../api/client';
@@ -67,6 +68,7 @@ const SIDEBAR = [
     items: [
       { id: 'general',       label: 'General Settings', icon: Settings },
       { id: 'users',         label: 'User Management',  icon: Users },
+      { id: 'bulk-import',   label: 'Bulk Import',      icon: FileSpreadsheet },
       { id: 'notifications', label: 'Notifications',    icon: Bell },
     ],
   },
@@ -273,6 +275,27 @@ export default function Management() {
     if (!file) return;
     e.target.value = '';
     parseXlsxFile(file, rows => importVehiclesMutation.mutate(rows));
+  };
+
+  const downloadTemplate = (type) => {
+    let data, filename;
+    if (type === 'drivers') {
+      data = [
+        ['DAProviderID', 'Legal_Firstname', 'Legal_Lastname', 'Employee_Code', 'DriversLicense', 'Birth_Date_(MM/DD/YYYY)', 'DLExpirationDate', 'Hire_Date'],
+        ['DA123456789', 'John', 'Smith', 'EMP001', 'D12345678', '01/15/1990', '12/31/2026', '03/01/2024'],
+      ];
+      filename = 'drivers-import-template.xlsx';
+    } else {
+      data = [
+        ['vin', 'vehicleName', 'licensePlateNumber', 'make', 'model', 'year', 'serviceType', 'operationalStatus', 'registrationExpiryDate', 'registeredState'],
+        ['1HGBH41JXMN109186', 'VAN-001', 'ABC1234', 'Mercedes', 'Sprinter', '2022', 'EDV', 'OPERATIONAL', '12/31/2026', 'FL'],
+      ];
+      filename = 'vehicles-import-template.xlsx';
+    }
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, type === 'drivers' ? 'Drivers' : 'Vehicles');
+    XLSX.writeFile(wb, filename);
   };
 
   /* ── Filtered drivers list ─────────────────────────────────────────────── */
@@ -939,6 +962,132 @@ export default function Management() {
                   {userList.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-[#94a3b8]">No users found</td></tr>}
                 </tbody>
               </table>
+            </section>
+          </>
+        )}
+
+        {/* ══ BULK IMPORT ══════════════════════════════════════════════════ */}
+        {activeSection === 'bulk-import' && (
+          <>
+            <h1 className="text-2xl font-bold text-slate-900">Bulk Import</h1>
+            <p className="text-sm text-slate-500">Import multiple drivers or vehicles from an Excel or CSV spreadsheet. Download a template to see the exact column format required.</p>
+
+            {/* ── Drivers ─────────────────────────────────────────────── */}
+            <section className={CARD}>
+              <h2 className={SH + ' pb-3 border-b border-[#E2E8F0]'}>
+                <Users size={18} className="text-[#2563EB]" /> Import Drivers
+              </h2>
+              <p className="text-xs text-[#6B7280]">Existing drivers matched by <strong>DAProviderID</strong> will be updated; new entries will be created automatically.</p>
+
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => downloadTemplate('drivers')}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-600 border border-blue-300 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                >
+                  <Download size={14} /> Download Template
+                </button>
+                <span className="text-xs text-slate-400">Required: DAProviderID, Legal_Firstname, Legal_Lastname</span>
+              </div>
+
+              <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600">
+                <p className="font-semibold text-slate-700 mb-2">Template Columns:</p>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">DAProviderID</code> — Transporter ID <span className="text-red-500">*</span></span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">Legal_Firstname</code> — First name <span className="text-red-500">*</span></span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">Legal_Lastname</code> — Last name <span className="text-red-500">*</span></span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">Employee_Code</code> — Amazon employee code</span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">DriversLicense</code> — License number</span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">Birth_Date_(MM/DD/YYYY)</code> — Date of birth</span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">DLExpirationDate</code> — License expiration</span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">Hire_Date</code> — Hire date</span>
+                </div>
+              </div>
+
+              <input ref={driverImportRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleDriverImport} />
+              <button
+                onClick={() => { setImportResult(null); driverImportRef.current?.click(); }}
+                disabled={importDriversMutation.isPending}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors text-slate-700 w-fit"
+              >
+                <Upload size={14} /> {importDriversMutation.isPending ? 'Importing…' : 'Upload Driver File'}
+              </button>
+
+              {importResult && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
+                  <CheckCircle size={18} className="text-green-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 text-sm">
+                    <p className="font-semibold text-green-800">Driver import complete</p>
+                    <p className="text-green-700">{importResult.created} created · {importResult.updated} updated · {importResult.skipped} skipped</p>
+                    {importResult.errors?.length > 0 && (
+                      <details className="mt-1">
+                        <summary className="text-red-600 cursor-pointer text-xs">{importResult.errors.length} errors</summary>
+                        <ul className="mt-1 text-xs text-red-600 space-y-0.5">{importResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                      </details>
+                    )}
+                  </div>
+                  <button onClick={() => setImportResult(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
+                </div>
+              )}
+            </section>
+
+            {/* ── Vehicles ─────────────────────────────────────────────── */}
+            <section className={CARD}>
+              <h2 className={SH + ' pb-3 border-b border-[#E2E8F0]'}>
+                <Upload size={18} className="text-[#2563EB]" /> Import Vehicles
+              </h2>
+              <p className="text-xs text-[#6B7280]">Existing vehicles matched by <strong>VIN</strong> will be updated; new entries will be created automatically.</p>
+
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => downloadTemplate('vehicles')}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-600 border border-blue-300 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                >
+                  <Download size={14} /> Download Template
+                </button>
+                <span className="text-xs text-slate-400">Required: vin</span>
+              </div>
+
+              <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600">
+                <p className="font-semibold text-slate-700 mb-2">Template Columns:</p>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">vin</code> — Vehicle VIN <span className="text-red-500">*</span></span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">vehicleName</code> — Display name (e.g. VAN-001)</span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">licensePlateNumber</code> — License plate</span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">make</code> — Make (e.g. Mercedes)</span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">model</code> — Model (e.g. Sprinter)</span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">year</code> — Year (e.g. 2022)</span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">serviceType</code> — EDV or STEP VAN</span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">operationalStatus</code> — OPERATIONAL / other</span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">registrationExpiryDate</code> — Reg expiration</span>
+                  <span><code className="bg-white border border-slate-200 px-1 rounded">registeredState</code> — State code (e.g. FL)</span>
+                </div>
+              </div>
+
+              <input ref={fleetImportRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFleetImport} />
+              <button
+                onClick={() => { setFleetImportResult(null); fleetImportRef.current?.click(); }}
+                disabled={importVehiclesMutation.isPending}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors text-slate-700 w-fit"
+              >
+                <Upload size={14} /> {importVehiclesMutation.isPending ? 'Importing…' : 'Upload Vehicle File'}
+              </button>
+
+              {fleetImportResult && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
+                  <CheckCircle size={18} className="text-green-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 text-sm">
+                    <p className="font-semibold text-green-800">Vehicle import complete</p>
+                    <p className="text-green-700">{fleetImportResult.created} created · {fleetImportResult.updated} updated · {fleetImportResult.skipped} skipped</p>
+                    {fleetImportResult.errors?.length > 0 && (
+                      <details className="mt-1">
+                        <summary className="text-red-600 cursor-pointer text-xs">{fleetImportResult.errors.length} errors</summary>
+                        <ul className="mt-1 text-xs text-red-600 space-y-0.5">{fleetImportResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                      </details>
+                    )}
+                  </div>
+                  <button onClick={() => setFleetImportResult(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
+                </div>
+              )}
             </section>
           </>
         )}

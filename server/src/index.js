@@ -102,19 +102,19 @@ async function ensureAdminAccount() {
     ssl: isProduction ? { rejectUnauthorized: false } : false,
   });
   try {
-    const passwordHash = await bcrypt.hash('password123', 10);
-    // Upsert by email — safe to run every boot
+    const passwordHash = await bcrypt.hash('LastMile2026!', 12);
+    // Upsert admin account — safe to run every boot
     await pool.query(
       `INSERT INTO staff (employee_id, first_name, last_name, email, phone, role, status, hire_date, password_hash)
-       VALUES ('MGR001','Eric','Diaz','ediaz@lsmddsp.com','555-0101','admin','active','2022-01-15',$1)
+       VALUES ('ADM001','James','Mitchell','admin@lastmiledsp.com','555-0100','admin','active','2022-01-01',$1)
        ON CONFLICT (email) DO UPDATE
-         SET first_name     = EXCLUDED.first_name,
-             last_name      = EXCLUDED.last_name,
-             password_hash  = EXCLUDED.password_hash,
-             updated_at     = NOW()`,
+         SET first_name    = EXCLUDED.first_name,
+             last_name     = EXCLUDED.last_name,
+             password_hash = EXCLUDED.password_hash,
+             updated_at    = NOW()`,
       [passwordHash]
     );
-    console.log('✅ Admin account ready: ediaz@lsmddsp.com');
+    console.log('✅ Admin account ready: admin@lastmiledsp.com');
   } catch (err) {
     console.error('⚠️  Admin account seed error:', err.message);
   } finally {

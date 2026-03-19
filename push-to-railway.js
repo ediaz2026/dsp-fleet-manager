@@ -39,9 +39,13 @@ async function exportLocal() {
   let total = 0;
   log('\n📦 STEP 1: Exporting local database...');
 
+  // day_schedules has no id column — order by first column
+  const NO_ID = new Set(['day_schedules']);
+
   for (const table of TABLES) {
     try {
-      const { rows } = await pool.query(`SELECT * FROM ${table} ORDER BY id`);
+      const orderBy = NO_ID.has(table) ? '1' : 'id';
+      const { rows } = await pool.query(`SELECT * FROM ${table} ORDER BY ${orderBy}`);
       data[table] = rows;
       total += rows.length;
       log(`  ✓ ${table}: ${rows.length} rows`);

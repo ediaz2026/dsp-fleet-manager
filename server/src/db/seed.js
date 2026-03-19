@@ -24,7 +24,7 @@ async function seed() {
 
     // --- STAFF ---
     const staffData = [
-      ['MGR001', 'James', 'Mitchell', 'jmitchell@dspfleet.com', '555-0101', 'manager', 'active', '2022-01-15'],
+      ['MGR001', 'Eric', 'Diaz', 'ediaz@lsmddsp.com', '555-0101', 'manager', 'active', '2022-01-15'],
       ['OPS001', 'Sarah', 'Thompson', 'sthompson@dspfleet.com', '555-0102', 'dispatcher', 'active', '2022-03-01'],
       ['DRV001', 'Mike', 'Johnson', 'mjohnson@dspfleet.com', '555-0103', 'driver', 'active', '2023-02-10'],
       ['DRV002', 'Emma', 'Davis', 'edavis@dspfleet.com', '555-0104', 'driver', 'active', '2023-04-15'],
@@ -258,7 +258,7 @@ async function seed() {
 
     await client.query('COMMIT');
     console.log('\n✅ Database seeded successfully!');
-    console.log('   Login: jmitchell@dspfleet.com / password123 (manager)');
+    console.log('   Login: ediaz@lsmddsp.com / password123 (manager)');
     console.log('   Login: mjohnson@dspfleet.com / password123 (driver)\n');
   } catch (err) {
     await client.query('ROLLBACK');

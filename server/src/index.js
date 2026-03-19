@@ -6,6 +6,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -93,8 +94,36 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
+// ─── Seed/update admin account on startup ──────────────────────────────────
+async function ensureAdminAccount() {
+  const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/dsp_manager',
+    ssl: isProduction ? { rejectUnauthorized: false } : false,
+  });
+  try {
+    const passwordHash = await bcrypt.hash('password123', 10);
+    // Upsert by email — safe to run every boot
+    await pool.query(
+      `INSERT INTO staff (employee_id, first_name, last_name, email, phone, role, status, hire_date, password_hash)
+       VALUES ('MGR001','Eric','Diaz','ediaz@lsmddsp.com','555-0101','admin','active','2022-01-15',$1)
+       ON CONFLICT (email) DO UPDATE
+         SET first_name     = EXCLUDED.first_name,
+             last_name      = EXCLUDED.last_name,
+             password_hash  = EXCLUDED.password_hash,
+             updated_at     = NOW()`,
+      [passwordHash]
+    );
+    console.log('✅ Admin account ready: ediaz@lsmddsp.com');
+  } catch (err) {
+    console.error('⚠️  Admin account seed error:', err.message);
+  } finally {
+    await pool.end();
+  }
+}
+
 // Run migrations then start server
-runMigrations().then(() => {
+runMigrations().then(() => ensureAdminAccount()).then(() => {
   app.listen(PORT, () => {
     console.log(`\n🚀 DSP Fleet Manager API running on port ${PORT}`);
     console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}\n`);

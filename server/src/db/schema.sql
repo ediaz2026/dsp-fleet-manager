@@ -308,6 +308,20 @@ ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ownership_start_date DATE;
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ownership_end_date DATE;
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS registered_state VARCHAR(10);
 
+-- Expand vehicle column sizes — ALTER COLUMN TYPE is idempotent (safe to re-run).
+-- Needed because CREATE TABLE IF NOT EXISTS won't update columns on an existing Railway DB.
+ALTER TABLE vehicles ALTER COLUMN vin                  TYPE VARCHAR(50);
+ALTER TABLE vehicles ALTER COLUMN vehicle_name         TYPE VARCHAR(100);
+ALTER TABLE vehicles ALTER COLUMN license_plate        TYPE VARCHAR(20);
+ALTER TABLE vehicles ALTER COLUMN make                 TYPE VARCHAR(100);
+ALTER TABLE vehicles ALTER COLUMN model                TYPE VARCHAR(100);
+ALTER TABLE vehicles ALTER COLUMN status               TYPE VARCHAR(30);
+ALTER TABLE vehicles ALTER COLUMN registered_state     TYPE VARCHAR(10);
+ALTER TABLE vehicles ALTER COLUMN service_type         TYPE VARCHAR(50);
+ALTER TABLE vehicles ALTER COLUMN vehicle_provider     TYPE VARCHAR(100);
+ALTER TABLE vehicles ALTER COLUMN ownership_type_label TYPE VARCHAR(100);
+ALTER TABLE vehicles ALTER COLUMN ownership_type_code  TYPE VARCHAR(50);
+
 -- Shift types (used in Management > Shift Types and RecurringGrid auto-fill)
 CREATE TABLE IF NOT EXISTS shift_types (
   id                 SERIAL PRIMARY KEY,

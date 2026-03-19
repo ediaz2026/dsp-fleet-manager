@@ -1,51 +1,73 @@
-=== SSL Fix Push — 2026-03-19T01:07:06.444Z ===
+=== Fix SSL in resetAdmin — 2026-03-19T01:12:41.661Z ===
 
-$ git status
-On branch main
-Changes not staged for commit:
-  (use "git add <file>..." to update what will be committed)
-  (use "git restore <file>..." to discard changes in working directory)
-	modified:   git-production-output.txt
-	modified:   git-production-push.js
+$ git diff HEAD server/src/db/resetAdmin.js
+diff --git a/server/src/db/resetAdmin.js b/server/src/db/resetAdmin.js
+index 299cb7c..04dd115 100644
+--- a/server/src/db/resetAdmin.js
++++ b/server/src/db/resetAdmin.js
+@@ -2,10 +2,11 @@ require('dotenv').config();
+ const { Pool } = require('pg');
+ const bcrypt = require('bcryptjs');
+ 
+-// Always use SSL — this script only runs on Railway
+ const pool = new Pool({
+   connectionString: process.env.DATABASE_URL,
+-  ssl: { rejectUnauthorized: false },
++  ssl: {
++    rejectUnauthorized: false
++  }
+ });
+ 
+ async function resetAdmin() {
 
-no changes added to commit (use "git add" and/or "git commit -a")
 
-
-$ git add server/src/db/resetAdmin.js server/src/db/pool.js
+$ git add .
 (no output)
 
+$ git diff --cached server/src/db/resetAdmin.js
+diff --git a/server/src/db/resetAdmin.js b/server/src/db/resetAdmin.js
+index 299cb7c..04dd115 100644
+--- a/server/src/db/resetAdmin.js
++++ b/server/src/db/resetAdmin.js
+@@ -2,10 +2,11 @@ require('dotenv').config();
+ const { Pool } = require('pg');
+ const bcrypt = require('bcryptjs');
+ 
+-// Always use SSL — this script only runs on Railway
+ const pool = new Pool({
+   connectionString: process.env.DATABASE_URL,
+-  ssl: { rejectUnauthorized: false },
++  ssl: {
++    rejectUnauthorized: false
++  }
+ });
+ 
+ async function resetAdmin() {
+
+
 $ git status
 On branch main
-Changes not staged for commit:
-  (use "git add <file>..." to update what will be committed)
-  (use "git restore <file>..." to discard changes in working directory)
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
 	modified:   git-production-output.txt
 	modified:   git-production-push.js
+	modified:   server/src/db/resetAdmin.js
 
-no changes added to commit (use "git add" and/or "git commit -a")
 
 
-$ git commit -m "Fix SSL for Railway PostgreSQL"
-stdout: On branch main
-Changes not staged for commit:
-  (use "git add <file>..." to update what will be committed)
-  (use "git restore <file>..." to discard changes in working directory)
-	modified:   git-production-output.txt
-	modified:   git-production-push.js
+$ git commit -m "Fix SSL in resetAdmin"
+[main 23fe8a1] Fix SSL in resetAdmin
+ 3 files changed, 24 insertions(+), 58 deletions(-)
 
-no changes added to commit (use "git add" and/or "git commit -a")
-
-stderr: (none)
-exit code: 1
 
 $ git push origin main
 (no output)
 
 $ git log --oneline -4
+23fe8a1 Fix SSL in resetAdmin
 0e32aae Fix SSL for Railway PostgreSQL
 5c1f81a admin: reset admin to admin@lastmiledsp.com / LastMile2026!
 7954e2e admin: ensure Eric Diaz admin account on every server boot
-3bd2390 production: CORS allow Railway domain + serve client/dist in production
 
 
 === DONE ===

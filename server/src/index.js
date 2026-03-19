@@ -101,6 +101,7 @@ app.use('/api/repairs', require('./routes/repairs'));
 app.use('/api/driver-reports', require('./routes/driverReports'));
 app.use('/api/ops-planner', require('./routes/opsPlanner'));
 app.use('/api/cortex-sync', require('./routes/cortexSync'));
+app.use('/api/import-data', require('./routes/importData'));
 
 // Health check
 app.get('/api/health', (req, res) => res.json({

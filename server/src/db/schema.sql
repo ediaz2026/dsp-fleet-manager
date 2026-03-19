@@ -334,3 +334,68 @@ INSERT INTO shift_types (name, default_start_time, default_end_time, color, sort
   ('PTO',         '07:00', '17:00', 'teal',   10),
   ('TRAINING',    '07:00', '15:00', 'orange', 11)
 ON CONFLICT (name) DO NOTHING;
+
+-- Repairs (vehicle maintenance tickets)
+CREATE TABLE IF NOT EXISTS repairs (
+  id               SERIAL PRIMARY KEY,
+  vehicle_id       INT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  van_status       VARCHAR(10) NOT NULL DEFAULT 'active'
+                     CHECK (van_status IN ('active','inactive')),
+  amazon_status    VARCHAR(10) NOT NULL DEFAULT 'active'
+                     CHECK (amazon_status IN ('active','inactive')),
+  priority         VARCHAR(10) NOT NULL DEFAULT 'low'
+                     CHECK (priority IN ('low','medium','severe')),
+  description      TEXT NOT NULL,
+  scheduled_date   DATE,
+  vendor           VARCHAR(255),
+  status           VARCHAR(20) NOT NULL DEFAULT 'open'
+                     CHECK (status IN ('open','completed')),
+  completed_at     TIMESTAMPTZ,
+  completed_by     INT REFERENCES staff(id),
+  reported_by      INT REFERENCES staff(id),
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_repairs_vehicle_id ON repairs(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_repairs_status     ON repairs(status);
+CREATE INDEX IF NOT EXISTS idx_repairs_priority   ON repairs(priority);
+
+-- Driver reports queue (drivers report vehicle issues → converted to repairs)
+CREATE TABLE IF NOT EXISTS driver_reports (
+  id                     SERIAL PRIMARY KEY,
+  vehicle_id             INT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  driver_id              INT NOT NULL REFERENCES staff(id),
+  description            TEXT NOT NULL,
+  status                 VARCHAR(20) NOT NULL DEFAULT 'pending'
+                           CHECK (status IN ('pending','converted','dismissed')),
+  dismiss_note           TEXT,
+  converted_to_repair_id INT REFERENCES repairs(id),
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at            TIMESTAMPTZ,
+  reviewed_by            INT REFERENCES staff(id)
+);
+CREATE INDEX IF NOT EXISTS idx_driver_reports_status     ON driver_reports(status);
+CREATE INDEX IF NOT EXISTS idx_driver_reports_vehicle_id ON driver_reports(vehicle_id);
+
+-- Ops planner sessions (daily route planning)
+CREATE TABLE IF NOT EXISTS ops_planner_sessions (
+  id              SERIAL PRIMARY KEY,
+  plan_date       DATE NOT NULL UNIQUE,
+  rows            JSONB NOT NULL DEFAULT '[]',
+  route_summary   JSONB,
+  station_summary JSONB,
+  volume_summary  JSONB,
+  created_by      INT REFERENCES staff(id),
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Week schedules (uploaded weekly schedule files)
+CREATE TABLE IF NOT EXISTS week_schedules (
+  id         SERIAL PRIMARY KEY,
+  week_start DATE NOT NULL UNIQUE,
+  file_name  VARCHAR(255),
+  rows       JSONB NOT NULL DEFAULT '[]',
+  created_by INT REFERENCES staff(id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);

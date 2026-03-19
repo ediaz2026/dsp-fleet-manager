@@ -11,12 +11,15 @@ const bcrypt = require('bcryptjs');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Use SSL whenever DATABASE_URL is set (Railway always provides it).
+// Local dev uses fallback URL and no SSL.
+const isRailway = !!process.env.DATABASE_URL;
+
 // ─── Auto-migrate on startup ───────────────────────────────────────────────
 async function runMigrations() {
-  const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/dsp_manager',
-    ssl: isProduction ? { rejectUnauthorized: false } : false,
+    ssl: isRailway ? { rejectUnauthorized: false } : false,
   });
   try {
     const schema = fs.readFileSync(path.join(__dirname, 'db/schema.sql'), 'utf8');
@@ -24,6 +27,32 @@ async function runMigrations() {
     console.log('✅ Database schema applied');
   } catch (err) {
     console.error('❌ Migration error:', err.message);
+  } finally {
+    await pool.end();
+  }
+}
+
+// ─── Seed/update admin account on startup ──────────────────────────────────
+async function ensureAdminAccount() {
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/dsp_manager',
+    ssl: isRailway ? { rejectUnauthorized: false } : false,
+  });
+  try {
+    const passwordHash = await bcrypt.hash('LastMile2026!', 12);
+    await pool.query(
+      `INSERT INTO staff (employee_id, first_name, last_name, email, phone, role, status, hire_date, password_hash)
+       VALUES ('ADM001','James','Mitchell','admin@lastmiledsp.com','555-0100','admin','active','2022-01-01',$1)
+       ON CONFLICT (email) DO UPDATE
+         SET first_name    = EXCLUDED.first_name,
+             last_name     = EXCLUDED.last_name,
+             password_hash = EXCLUDED.password_hash,
+             updated_at    = NOW()`,
+      [passwordHash]
+    );
+    console.log('✅ Admin account ready: admin@lastmiledsp.com');
+  } catch (err) {
+    console.error('⚠️  Admin account seed error:', err.message);
   } finally {
     await pool.end();
   }
@@ -45,7 +74,6 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (server-to-server, mobile apps, curl)
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
     callback(new Error(`CORS: origin ${origin} not allowed`));
   },
@@ -75,14 +103,17 @@ app.use('/api/ops-planner', require('./routes/opsPlanner'));
 app.use('/api/cortex-sync', require('./routes/cortexSync'));
 
 // Health check
-app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
+app.get('/api/health', (req, res) => res.json({
+  status: 'ok',
+  timestamp: new Date(),
+  railway: isRailway,
+  env: process.env.NODE_ENV || 'development',
+}));
 
-// In production, serve the built React client from client/dist
-// This must come AFTER all /api routes
-if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
-  const clientDist = path.join(__dirname, '../../client/dist');
+// Serve the built React client — check if client/dist exists
+const clientDist = path.join(__dirname, '../../client/dist');
+if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
-  // Catch-all: send index.html for all non-API routes (client-side routing)
   app.get('*', (req, res) => {
     res.sendFile(path.join(clientDist, 'index.html'));
   });
@@ -94,38 +125,13 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
-// ─── Seed/update admin account on startup ──────────────────────────────────
-async function ensureAdminAccount() {
-  const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/dsp_manager',
-    ssl: isProduction ? { rejectUnauthorized: false } : false,
+// Run migrations → seed admin → start server
+runMigrations()
+  .then(() => ensureAdminAccount())
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`\n🚀 DSP Fleet Manager API running on port ${PORT}`);
+      console.log(`🗄️  Database: ${isRailway ? 'Railway PostgreSQL (SSL)' : 'Local PostgreSQL'}`);
+      console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}\n`);
+    });
   });
-  try {
-    const passwordHash = await bcrypt.hash('LastMile2026!', 12);
-    // Upsert admin account — safe to run every boot
-    await pool.query(
-      `INSERT INTO staff (employee_id, first_name, last_name, email, phone, role, status, hire_date, password_hash)
-       VALUES ('ADM001','James','Mitchell','admin@lastmiledsp.com','555-0100','admin','active','2022-01-01',$1)
-       ON CONFLICT (email) DO UPDATE
-         SET first_name    = EXCLUDED.first_name,
-             last_name     = EXCLUDED.last_name,
-             password_hash = EXCLUDED.password_hash,
-             updated_at    = NOW()`,
-      [passwordHash]
-    );
-    console.log('✅ Admin account ready: admin@lastmiledsp.com');
-  } catch (err) {
-    console.error('⚠️  Admin account seed error:', err.message);
-  } finally {
-    await pool.end();
-  }
-}
-
-// Run migrations then start server
-runMigrations().then(() => ensureAdminAccount()).then(() => {
-  app.listen(PORT, () => {
-    console.log(`\n🚀 DSP Fleet Manager API running on port ${PORT}`);
-    console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}\n`);
-  });
-});

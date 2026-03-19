@@ -1,0 +1,69 @@
+Checking git locations... 
+FOUND: C:\Program Files\Git\cmd\git.exe 
+NOT FOUND: Program Files x86 
+NOT FOUND: LocalAppData Git 
+NOT FOUND: UserProfile AppData Git 
+ 
+Checking if .git folder exists: 
+.git folder EXISTS - this IS a git repo 
+ 
+Directory listing: 
+.claude
+.env.example
+.gitignore
+AssociateData (2).csv
+backend.log
+check-git.bat
+client
+commit-production-config.bat
+commit-railway.bat
+debug-backend.bat
+debug-output.txt
+fleet-import-result.json
+fleet-import.bat
+full-import-log.txt
+full-import-result.json
+full-import.bat
+git-check2.bat
+git-commit-push.js
+git-output.txt
+git-ps-push.ps1
+git-push-log.bat
+git-push-output.txt
+git-push-railway.bat
+git-status-log.bat
+import-associates.bat
+import-log.txt
+install-xlsx.bat
+migrate-auth-columns.bat
+migrate-change-log.bat
+migrate-day-recurring.bat
+migrate-driver-recurring.bat
+migrate-management.bat
+migrate-publish-status.bat
+migrate-repairs.bat
+migrate-schedule.bat
+migrate-shift-types.bat
+nixpacks.toml
+node-test-output.txt
+node_modules
+package-lock.json
+package.json
+push-to-github.bat
+railway.json
+README.md
+restart-backend.bat
+run-backend.bat
+run-git-push.bat
+server
+setup-github.bat
+start-backend.bat
+start-dev-simple.bat
+start-dev.bat
+test-node-out.txt
+test-node-output.bat
+test-node.bat
+wipe-and-reimport.bat
+wipe-reimport-log.txt
+wipe-reimport-result.json
+wipe-reimport-run.bat

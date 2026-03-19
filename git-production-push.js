@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const cwd = path.join(__dirname);
-const logFile = path.join(__dirname, 'git-push-output.txt');
+const logFile = path.join(__dirname, 'git-production-output.txt');
 const lines = [];
 const gitEnv = {
   ...process.env,
@@ -27,19 +27,16 @@ function run(cmd) {
   lines.push('');
 }
 
-lines.push('=== ' + new Date().toISOString() + ' ===');
+lines.push('=== Reset Admin Push — ' + new Date().toISOString() + ' ===');
 lines.push('');
 
-// Show last 5 commits and what files changed
-run('git log --oneline -5');
-run('git show --stat HEAD');
-run('git show --stat HEAD~1');
-
-// Show full diff of server files to confirm they match what we expect
-run('git diff HEAD server/src/index.js');
-run('git diff HEAD server/src/db/pool.js');
-run('git diff HEAD server/src/db/migrate.js');
+run('git status');
+run('git add server/src/index.js server/src/db/resetAdmin.js');
+run('git status');
+run('git commit -m "admin: reset admin to admin@lastmiledsp.com / LastMile2026!"');
+run('git push origin main');
+run('git log --oneline -4');
 
 lines.push('=== DONE ===');
 fs.writeFileSync(logFile, lines.join('\n'), 'utf8');
-process.stdout.write('Done.\n');
+process.stdout.write('Done. Check git-production-output.txt\n');

@@ -144,6 +144,30 @@
       "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
       "runtimeArgs": ["/c", "run-git-push.bat"],
       "port": 9978
+    },
+    {
+      "name": "Commit Production Config",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "commit-production-config.bat"],
+      "port": 9977
+    },
+    {
+      "name": "Git Status Log",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "git-status-log.bat"],
+      "port": 9976
+    },
+    {
+      "name": "Push Production Config",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "run-production-push.bat"],
+      "port": 9975
+    },
+    {
+      "name": "Update Manager Account",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "update-manager.bat"],
+      "port": 9974
     }
   ]
 }

@@ -1,0 +1,13 @@
+=== Update Manager Account — 2026-03-19T00:44:23.413Z ===
+
+$ node src/db/updateManagerAccount.js
+✅ Account already exists, password refreshed: {
+  id: [33m1[39m,
+  first_name: [32m'Eric'[39m,
+  last_name: [32m'Diaz'[39m,
+  email: [32m'ediaz@lsmddsp.com'[39m,
+  role: [32m'admin'[39m
+}
+
+
+=== DONE ===

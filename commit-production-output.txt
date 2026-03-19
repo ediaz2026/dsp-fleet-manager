@@ -1,0 +1,16 @@
+=== Commit Production Config === 
+ 
+ 
+[status before] 
+ 
+[add] 
+ 
+[status after add] 
+ 
+[commit] 
+ 
+[push] 
+ 
+[log after push] 
+ 
+DONE 

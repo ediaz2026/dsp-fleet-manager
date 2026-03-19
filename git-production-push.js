@@ -27,13 +27,20 @@ function run(cmd) {
   lines.push('');
 }
 
-lines.push('=== Reset Admin Push — ' + new Date().toISOString() + ' ===');
+lines.push('=== Fix SSL in resetAdmin — ' + new Date().toISOString() + ' ===');
 lines.push('');
 
+// Show what resetAdmin.js looks like right now
+run('git diff HEAD server/src/db/resetAdmin.js');
+
+// Stage everything
+run('git add .');
+
+// Show staged diff for resetAdmin.js to confirm it's there
+run('git diff --cached server/src/db/resetAdmin.js');
+
 run('git status');
-run('git add server/src/index.js server/src/db/resetAdmin.js');
-run('git status');
-run('git commit -m "admin: reset admin to admin@lastmiledsp.com / LastMile2026!"');
+run('git commit -m "Fix SSL in resetAdmin"');
 run('git push origin main');
 run('git log --oneline -4');
 

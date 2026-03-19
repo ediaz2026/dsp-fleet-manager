@@ -2,10 +2,11 @@ require('dotenv').config();
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 
-// Always use SSL — this script only runs on Railway
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 async function resetAdmin() {

@@ -6,16 +6,62 @@ const { authMiddleware, managerOnly } = require('../middleware/auth');
 
 router.use(authMiddleware);
 
+// ─── helper: create/resolve status-driven fleet alerts ────────────────────────
+async function handleStatusAlerts(vehicleId, vehicleName, { van_status, amazon_status }) {
+  const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+  if (amazon_status === 'Grounded') {
+    const { rows: existing } = await pool.query(
+      `SELECT id FROM fleet_alerts WHERE vehicle_id=$1 AND alert_type='amazon_grounded' AND is_resolved=false`,
+      [vehicleId]
+    );
+    if (!existing.length) {
+      await pool.query(
+        `INSERT INTO fleet_alerts (vehicle_id, alert_type, alert_message, severity)
+         VALUES ($1, 'amazon_grounded', $2, 'critical')`,
+        [vehicleId, `${vehicleName} has been grounded by Amazon on ${today}`]
+      );
+    }
+  } else if (amazon_status === 'Active') {
+    await pool.query(
+      `UPDATE fleet_alerts SET is_resolved=true, resolved_at=NOW()
+       WHERE vehicle_id=$1 AND alert_type='amazon_grounded' AND is_resolved=false`,
+      [vehicleId]
+    );
+  }
+
+  if (van_status === 'Out of Service') {
+    const { rows: existing } = await pool.query(
+      `SELECT id FROM fleet_alerts WHERE vehicle_id=$1 AND alert_type='out_of_service' AND is_resolved=false`,
+      [vehicleId]
+    );
+    if (!existing.length) {
+      await pool.query(
+        `INSERT INTO fleet_alerts (vehicle_id, alert_type, alert_message, severity)
+         VALUES ($1, 'out_of_service', $2, 'warning')`,
+        [vehicleId, `${vehicleName} marked out of service on ${today}`]
+      );
+    }
+  } else if (van_status === 'Active') {
+    await pool.query(
+      `UPDATE fleet_alerts SET is_resolved=true, resolved_at=NOW()
+       WHERE vehicle_id=$1 AND alert_type='out_of_service' AND is_resolved=false`,
+      [vehicleId]
+    );
+  }
+}
+
 // GET /api/vehicles
 router.get('/', async (req, res) => {
-  const { status, search } = req.query;
+  const { van_status, amazon_status, search } = req.query;
   let q = `SELECT v.*,
     CASE WHEN v.insurance_expiration <= CURRENT_DATE + 30 THEN true ELSE false END as insurance_expiring,
     CASE WHEN v.registration_expiration <= CURRENT_DATE + 30 THEN true ELSE false END as registration_expiring,
     CASE WHEN v.next_inspection_date <= CURRENT_DATE + 14 THEN true ELSE false END as inspection_due
     FROM vehicles v WHERE 1=1`;
   const params = [];
-  if (status) { params.push(status); q += ` AND v.status = $${params.length}`; }
+  if (van_status) { params.push(van_status); q += ` AND v.van_status = $${params.length}`; }
+  if (amazon_status) { params.push(amazon_status); q += ` AND v.amazon_status = $${params.length}`; }
   if (search) {
     params.push(`%${search}%`);
     q += ` AND (v.vehicle_name ILIKE $${params.length} OR v.license_plate ILIKE $${params.length} OR v.vin ILIKE $${params.length})`;
@@ -62,13 +108,16 @@ router.get('/:id/qr', async (req, res) => {
 // POST /api/vehicles
 router.post('/', managerOnly, async (req, res) => {
   const { vehicle_name, license_plate, vin, make, model, year, color, transponder_id,
-    insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date, status, notes } = req.body;
+    insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date,
+    van_status, amazon_status, notes } = req.body;
   const { rows } = await pool.query(
     `INSERT INTO vehicles (vehicle_name, license_plate, vin, make, model, year, color, transponder_id,
-      insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date, status, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+      insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date,
+      van_status, amazon_status, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
     [vehicle_name, license_plate, vin, make, model, year, color, transponder_id,
-     insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date, status || 'active', notes]
+     insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date,
+     van_status || 'Active', amazon_status || 'Active', notes]
   );
   res.status(201).json(rows[0]);
 });
@@ -76,13 +125,16 @@ router.post('/', managerOnly, async (req, res) => {
 // PUT /api/vehicles/:id
 router.put('/:id', managerOnly, async (req, res) => {
   const { vehicle_name, license_plate, vin, make, model, year, color, transponder_id,
-    insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date, status, notes } = req.body;
+    insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date,
+    van_status, amazon_status, notes } = req.body;
   const { rows } = await pool.query(
     `UPDATE vehicles SET vehicle_name=$1, license_plate=$2, vin=$3, make=$4, model=$5, year=$6, color=$7,
      transponder_id=$8, insurance_expiration=$9, registration_expiration=$10, last_inspection_date=$11,
-     next_inspection_date=$12, status=$13, notes=$14, updated_at=NOW() WHERE id=$15 RETURNING *`,
+     next_inspection_date=$12, van_status=$13, amazon_status=$14, notes=$15, updated_at=NOW()
+     WHERE id=$16 RETURNING *`,
     [vehicle_name, license_plate, vin, make, model, year, color, transponder_id,
-     insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date, status, notes, req.params.id]
+     insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date,
+     van_status || 'Active', amazon_status || 'Active', notes, req.params.id]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found' });
   res.json(rows[0]);
@@ -90,8 +142,34 @@ router.put('/:id', managerOnly, async (req, res) => {
 
 // DELETE /api/vehicles/:id
 router.delete('/:id', managerOnly, async (req, res) => {
-  await pool.query("UPDATE vehicles SET status='retired', updated_at=NOW() WHERE id=$1", [req.params.id]);
-  res.json({ message: 'Vehicle retired' });
+  await pool.query('DELETE FROM vehicles WHERE id=$1', [req.params.id]);
+  res.json({ message: 'Vehicle deleted' });
+});
+
+// PATCH /api/vehicles/:id/status — instant update van_status and/or amazon_status
+// Also auto-creates / auto-resolves fleet alerts for status changes
+router.patch('/:id/status', managerOnly, async (req, res) => {
+  const { van_status, amazon_status } = req.body;
+  const sets = []; const vals = [];
+  if (van_status    !== undefined) { sets.push(`van_status=$${vals.length + 1}`);    vals.push(van_status); }
+  if (amazon_status !== undefined) { sets.push(`amazon_status=$${vals.length + 1}`); vals.push(amazon_status); }
+  if (!sets.length) return res.status(400).json({ error: 'van_status or amazon_status required' });
+
+  const vehicleRes = await pool.query('SELECT vehicle_name FROM vehicles WHERE id=$1', [req.params.id]);
+  if (!vehicleRes.rows[0]) return res.status(404).json({ error: 'Not found' });
+  const vehicleName = vehicleRes.rows[0].vehicle_name;
+
+  vals.push(req.params.id);
+  const { rows } = await pool.query(
+    `UPDATE vehicles SET ${sets.join(', ')}, updated_at=NOW() WHERE id=$${vals.length} RETURNING *`,
+    vals
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+
+  // Auto-create / auto-resolve fleet alerts
+  await handleStatusAlerts(req.params.id, vehicleName, { van_status, amazon_status });
+
+  res.json(rows[0]);
 });
 
 // POST /api/vehicles/:id/alerts
@@ -146,14 +224,16 @@ router.post('/import', managerOnly, async (req, res) => {
       const vin = String(row['vin'] || '').trim();
       if (!vin) { skipped++; continue; }
 
-      const service_type   = parseServiceType(row['serviceType'] || row['type']);
-      const status         = (row['operationalStatus'] || '').toUpperCase() === 'OPERATIONAL' ? 'active' : 'inactive';
-      const vehicle_name   = row['vehicleName']          || vin;
-      const license_plate  = row['licensePlateNumber']   || null;
-      const make           = row['make']                 || null;
-      const model          = row['model']                || null;
-      const year           = row['year']                 ? parseInt(row['year']) : null;
-      const status_note    = row['statusReasonMessage']  || null;
+      const isOperational   = (row['operationalStatus'] || '').toUpperCase() === 'OPERATIONAL';
+      const van_status      = isOperational ? 'Active' : 'Out of Service';
+      const amazon_status   = 'Active'; // Import doesn't carry Amazon grounded status
+      const service_type    = parseServiceType(row['serviceType'] || row['type']);
+      const vehicle_name    = row['vehicleName']          || vin;
+      const license_plate   = row['licensePlateNumber']   || null;
+      const make            = row['make']                 || null;
+      const model           = row['model']                || null;
+      const year            = row['year']                 ? parseInt(row['year']) : null;
+      const status_note     = row['statusReasonMessage']  || null;
       const vehicle_provider = row['vehicleProvider']    || null;
       const ownership_type_label = row['ownershipType']  || null;
       const ownership_start_date = parseDate(row['ownershipStartDate']);
@@ -166,24 +246,24 @@ router.post('/import', managerOnly, async (req, res) => {
       if (existing[0]) {
         await pool.query(
           `UPDATE vehicles SET vehicle_name=$1, license_plate=$2, make=$3, model=$4, year=$5,
-           service_type=$6, status=$7, status_note=$8, vehicle_provider=$9,
-           ownership_type_label=$10, ownership_start_date=$11, ownership_end_date=$12,
-           registration_expiration=$13, registered_state=$14, updated_at=NOW()
-           WHERE vin=$15`,
-          [vehicle_name, license_plate, make, model, year, service_type, status, status_note,
-           vehicle_provider, ownership_type_label, ownership_start_date, ownership_end_date,
+           service_type=$6, van_status=$7, amazon_status=$8, status_note=$9, vehicle_provider=$10,
+           ownership_type_label=$11, ownership_start_date=$12, ownership_end_date=$13,
+           registration_expiration=$14, registered_state=$15, updated_at=NOW()
+           WHERE vin=$16`,
+          [vehicle_name, license_plate, make, model, year, service_type, van_status, amazon_status,
+           status_note, vehicle_provider, ownership_type_label, ownership_start_date, ownership_end_date,
            registration_expiration, registered_state, vin]
         );
         updated++;
       } else {
         await pool.query(
           `INSERT INTO vehicles (vehicle_name, license_plate, vin, make, model, year,
-           service_type, status, status_note, vehicle_provider,
+           service_type, van_status, amazon_status, status_note, vehicle_provider,
            ownership_type_label, ownership_start_date, ownership_end_date,
            registration_expiration, registered_state)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-          [vehicle_name, license_plate, vin, make, model, year, service_type, status, status_note,
-           vehicle_provider, ownership_type_label, ownership_start_date, ownership_end_date,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+          [vehicle_name, license_plate, vin, make, model, year, service_type, van_status, amazon_status,
+           status_note, vehicle_provider, ownership_type_label, ownership_start_date, ownership_end_date,
            registration_expiration, registered_state]
         );
         created++;
@@ -201,7 +281,7 @@ router.post('/check-expirations', managerOnly, async (req, res) => {
   const vehicles = await pool.query(
     `SELECT id, vehicle_name,
        insurance_expiration, registration_expiration, next_inspection_date
-     FROM vehicles WHERE status = 'active'`
+     FROM vehicles WHERE van_status = 'Active'`
   );
 
   let created = 0;

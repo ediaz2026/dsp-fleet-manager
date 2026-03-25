@@ -16,6 +16,27 @@ router.use((req, res, next) => {
 // GET /api/admin/ping
 router.get('/ping', (req, res) => res.json({ ok: true }));
 
+// POST /api/admin/run-migrations — re-run schema.sql to create any missing tables
+router.post('/run-migrations', async (req, res) => {
+  try {
+    const schema = fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8');
+    await pool.query(schema);
+    // Also explicitly ensure recurring_skip exists (sometimes missed if schema runs as one block)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS recurring_skip (
+        staff_id  INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+        skip_date DATE    NOT NULL,
+        PRIMARY KEY (staff_id, skip_date)
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_skip_date ON recurring_skip(skip_date)`);
+    res.json({ ok: true, message: 'Migrations applied successfully' });
+  } catch (err) {
+    console.error('Migration error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/admin/wipe-reimport
 router.post('/wipe-reimport', async (req, res) => {
   const client = await pool.connect();

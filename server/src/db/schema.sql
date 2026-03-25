@@ -274,6 +274,14 @@ CREATE TABLE IF NOT EXISTS shift_change_log (
 CREATE INDEX IF NOT EXISTS idx_change_log_week  ON shift_change_log(week_start);
 CREATE INDEX IF NOT EXISTS idx_change_log_shift ON shift_change_log(shift_id);
 
+-- Tracks explicitly deleted recurring shifts so auto-apply won't recreate them
+CREATE TABLE IF NOT EXISTS recurring_skip (
+  staff_id  INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+  skip_date DATE    NOT NULL,
+  PRIMARY KEY (staff_id, skip_date)
+);
+CREATE INDEX IF NOT EXISTS idx_recurring_skip_date ON recurring_skip(skip_date);
+
 -- Per-driver recurring schedule rows (multi-shift-type, per-day checkboxes)
 CREATE TABLE IF NOT EXISTS driver_recurring_shifts (
   id         SERIAL PRIMARY KEY,
@@ -413,3 +421,87 @@ CREATE TABLE IF NOT EXISTS week_schedules (
   created_by INT REFERENCES staff(id),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ─── Ops Planner v2: per-day file storage ─────────────────────────────────────
+
+-- Step 1: Amazon week schedule roster
+CREATE TABLE IF NOT EXISTS ops_roster (
+  id              SERIAL PRIMARY KEY,
+  plan_date       DATE NOT NULL UNIQUE,
+  file_name       VARCHAR(255),
+  drivers_by_date JSONB NOT NULL DEFAULT '{}',
+  available_dates JSONB NOT NULL DEFAULT '[]',
+  created_by      INT REFERENCES staff(id),
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Step 2: Amazon routes file
+CREATE TABLE IF NOT EXISTS ops_daily_routes (
+  id          SERIAL PRIMARY KEY,
+  plan_date   DATE NOT NULL UNIQUE,
+  file_name   VARCHAR(255),
+  routes      JSONB NOT NULL DEFAULT '[]',
+  created_by  INT REFERENCES staff(id),
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Step 3: DMF5 Loadout file (LSMD rows only)
+CREATE TABLE IF NOT EXISTS ops_loadout (
+  id          SERIAL PRIMARY KEY,
+  plan_date   DATE NOT NULL UNIQUE,
+  file_name   VARCHAR(255),
+  loadout     JSONB NOT NULL DEFAULT '[]',
+  created_by  INT REFERENCES staff(id),
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Step 4: Vehicle & device assignments per driver per day
+CREATE TABLE IF NOT EXISTS ops_assignments (
+  id          SERIAL PRIMARY KEY,
+  plan_date   DATE NOT NULL,
+  staff_id    INT NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+  vehicle_id  INT REFERENCES vehicles(id) ON DELETE SET NULL,
+  device_id   VARCHAR(100),
+  notes       TEXT,
+  UNIQUE(plan_date, staff_id),
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ops_assignments_date  ON ops_assignments(plan_date);
+CREATE INDEX IF NOT EXISTS idx_ops_staff_date        ON ops_assignments(staff_id, plan_date);
+
+-- Shifts composite index for status-filtered date queries
+CREATE INDEX IF NOT EXISTS idx_shifts_date_status    ON shifts(shift_date, status);
+
+-- Master Driver Record: extended staff columns (idempotent)
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS personal_email VARCHAR(255);
+
+-- Shift publish-tracking columns (idempotent)
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS was_published BOOLEAN DEFAULT FALSE;
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS prev_shift_type VARCHAR(50);
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS prev_start_time TIME;
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS prev_end_time TIME;
+
+-- Vendors (repair/maintenance shops)
+CREATE TABLE IF NOT EXISTS vendors (
+  id           SERIAL PRIMARY KEY,
+  name         VARCHAR(255) NOT NULL,
+  vendor_type  VARCHAR(50) NOT NULL DEFAULT 'other',
+  phone        VARCHAR(20),
+  email        VARCHAR(255),
+  address      TEXT,
+  notes        TEXT,
+  status       VARCHAR(10) NOT NULL DEFAULT 'active',
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_vendors_status ON vendors(status);
+
+-- Migrate vehicle status: 'maintenance' → 'out_of_service' (idempotent)
+UPDATE vehicles SET status = 'out_of_service' WHERE status = 'maintenance';
+
+-- Migrate repair priority: 'medium' → 'low' (idempotent)
+UPDATE repairs SET priority = 'low' WHERE priority = 'medium';

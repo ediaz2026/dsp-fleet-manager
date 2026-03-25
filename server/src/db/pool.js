@@ -1,7 +1,7 @@
 const { Pool } = require('pg');
 
-// Use SSL whenever DATABASE_URL is set (Railway always sets it).
-// Local dev uses the fallback connection string and no SSL.
+// Railway injects DATABASE_URL automatically — use that to detect production and enable SSL.
+// Local dev never sets DATABASE_URL, so SSL is always off locally.
 const isRailway = !!process.env.DATABASE_URL;
 
 const pool = new Pool({

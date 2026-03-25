@@ -21,7 +21,13 @@
       "Bash(node server/src/index.js)",
       "Bash(node server/src/db/migrateDriverRecurring.js)",
       "Bash(node server/src/db/wipeAndReimport.js)",
-      "Bash(findstr \"ChevronsUpDown\\\\|ArrowUpDown\")"
+      "Bash(findstr \"ChevronsUpDown\\\\|ArrowUpDown\")",
+      "Bash(powershell -Command \"psql -U postgres -d dsp_manager -c \"\"CREATE TABLE IF NOT EXISTS recurring_skip \\(staff_id INTEGER NOT NULL REFERENCES staff\\(id\\) ON DELETE CASCADE, skip_date DATE NOT NULL, PRIMARY KEY \\(staff_id, skip_date\\)\\); CREATE INDEX IF NOT EXISTS idx_recurring_skip_date ON recurring_skip\\(skip_date\\);\"\" 2>&1\")",
+      "Bash(node ../analyze_files.js)",
+      "Bash(node analyze_files2.js)",
+      "Bash(node check_bullet_char.js)",
+      "Bash(npm install:*)",
+      "Bash(\"C:\\\\Program Files\\\\nodejs\\\\npm.cmd\" install --prefix \"C:\\\\Users\\\\arace\\\\OneDrive\\\\Desktop\\\\DSP Scheduler\\\\server\" express-rate-limit)"
     ]
   }
 }

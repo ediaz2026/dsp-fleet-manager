@@ -2,22 +2,24 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Truck, Bell, LogOut, User, LayoutDashboard, Calendar, ClipboardCheck,
   DollarSign, Car, Users, Search, Cpu, Settings,
-  ChevronDown, Star, Lock, AlertTriangle, X
+  ChevronDown, Star, Lock, AlertTriangle, X, BarChart2, Check,
 } from 'lucide-react';
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { useAuth } from '../App';
-import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '../context/AuthContext';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
+import { formatDistanceToNow } from 'date-fns';
 
 // ─── Dropdown group config ────────────────────────────────────────────────────
 const navGroups = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', exact: true, mgmtOnly: true },
   { to: '/schedule', icon: Calendar, label: 'Schedule', mgmtOnly: true },
   { to: '/drivers', icon: Users, label: 'Drivers', mgmtOnly: true },
-  { to: '/attendance', icon: ClipboardCheck, label: 'Attendance' },
+  { to: '/attendance', icon: ClipboardCheck, label: 'Attendance', adminOnly: true },
   { to: '/payroll', icon: DollarSign, label: 'Payroll', adminOnly: true },
   { to: '/vehicles', icon: Car, label: 'Fleet', mgmtOnly: true },
   { to: '/scorecard', icon: Star, label: 'Scorecard' },
+  { to: '/analytics', icon: BarChart2, label: 'Analytics', mgmtOnly: true },
   { to: '/management', icon: Settings, label: 'Management', adminOnly: true },
 ];
 
@@ -105,6 +107,29 @@ export default function TopNav() {
   const isDriver = user?.role === 'driver';
   const isMgmt = ['manager', 'admin', 'dispatcher'].includes(user?.role);
   const isAdmin = user?.role === 'admin';
+  const qc = useQueryClient();
+
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notifRef = useRef();
+
+  // Driver notification bell
+  const { data: notifData } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => api.get('/notifications').then(r => r.data),
+    refetchInterval: 30000,
+    enabled: isDriver,
+  });
+  const notifications = notifData?.notifications || [];
+  const unreadCount   = notifData?.unread || 0;
+
+  const markRead = useMutation({
+    mutationFn: (id) => api.put(`/notifications/${id}/read`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+  const markAllRead = useMutation({
+    mutationFn: () => api.put('/notifications/read-all'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  });
 
   const { data: alerts = [] } = useQuery({
     queryKey: ['fleet-alerts'],
@@ -154,6 +179,7 @@ export default function TopNav() {
     const handler = (e) => {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target)) setShowUserMenu(false);
       if (alertsRef.current && !alertsRef.current.contains(e.target)) setShowAlerts(false);
+      if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotifications(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -169,8 +195,8 @@ export default function TopNav() {
   // Drivers get a minimal nav
   const driverNav = [
     { to: '/my-schedule', icon: Calendar, label: 'My Schedule' },
-    { to: '/attendance', icon: ClipboardCheck, label: 'My Attendance' },
-    { to: '/scorecard', icon: Star, label: 'Scorecard' },
+    { to: '/my-attendance', icon: ClipboardCheck, label: 'My Attendance' },
+    { to: '/my-scorecard', icon: Star, label: 'My Scorecard' },
   ];
 
   const activeNavItems = isDriver ? driverNav : visibleNavGroups;
@@ -220,6 +246,96 @@ export default function TopNav() {
 
         {/* ── Right side ──────────────────────────────────────────── */}
         <div className="flex items-center gap-2 flex-shrink-0">
+
+          {/* Driver notification bell — visible for drivers only */}
+          {isDriver && (
+            <div className="relative" ref={notifRef}>
+              <button
+                onClick={() => setShowNotifications(o => !o)}
+                className="relative p-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                title="Notifications"
+              >
+                <Bell size={17} />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold leading-none">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div className="absolute right-0 top-full mt-1.5 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden">
+                  {/* Header */}
+                  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                    <div className="flex items-center gap-2">
+                      <Bell size={14} className="text-slate-500" />
+                      <p className="font-semibold text-slate-800 text-sm">Notifications</p>
+                      {unreadCount > 0 && (
+                        <span className="bg-red-100 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{unreadCount} new</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={() => markAllRead.mutate()}
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                      <button onClick={() => setShowNotifications(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Notification list */}
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <Bell size={24} className="text-slate-200 mx-auto mb-2" />
+                      <p className="text-sm text-slate-400">No notifications yet</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                      {notifications.slice(0, 10).map(n => (
+                        <div
+                          key={n.id}
+                          onClick={() => { if (!n.is_read) markRead.mutate(n.id); }}
+                          className={`px-4 py-3 flex items-start gap-3 transition-colors cursor-pointer
+                            ${n.is_read ? 'opacity-50 bg-slate-50' : 'hover:bg-blue-50/50'}`}
+                        >
+                          <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${n.is_read ? 'bg-slate-300' : 'bg-blue-500'}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm leading-snug ${n.is_read ? 'text-slate-500 font-normal' : 'text-slate-800 font-semibold'}`}>
+                              {n.title}
+                            </p>
+                            {n.message && (
+                              <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{n.message}</p>
+                            )}
+                            <p className="text-[10px] text-slate-400 mt-1">
+                              {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
+                            </p>
+                          </div>
+                          {!n.is_read && (
+                            <Check size={12} className="text-blue-400 flex-shrink-0 mt-1" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Footer */}
+                  {notifications.length > 0 && (
+                    <div className="px-4 py-2 border-t border-slate-100 bg-slate-50">
+                      <p className="text-[11px] text-slate-400 text-center">
+                        {notifications.length} notification{notifications.length !== 1 ? 's' : ''} · {notifications.length - unreadCount} read
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Fleet alerts bell — hidden for drivers */}
           {!isDriver && (

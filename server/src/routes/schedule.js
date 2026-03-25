@@ -181,16 +181,17 @@ router.get('/route-commitments', async (req, res) => {
 });
 
 router.post('/route-commitments', managerOnly, async (req, res) => {
-  const { week_start, amazon_week, edv_count, step_van_count, total_routes, notes } = req.body;
+  const { week_start, amazon_week, edv_count, step_van_count, total_routes, notes, daily_targets } = req.body;
   const { rows } = await pool.query(
-    `INSERT INTO route_commitments (week_start, amazon_week, edv_count, step_van_count, total_routes, notes)
-     VALUES ($1,$2,$3,$4,$5,$6)
+    `INSERT INTO route_commitments (week_start, amazon_week, edv_count, step_van_count, total_routes, notes, daily_targets)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
      ON CONFLICT (week_start) DO UPDATE
        SET amazon_week=EXCLUDED.amazon_week, edv_count=EXCLUDED.edv_count,
            step_van_count=EXCLUDED.step_van_count, total_routes=EXCLUDED.total_routes,
-           notes=EXCLUDED.notes, updated_at=NOW()
+           notes=EXCLUDED.notes, daily_targets=EXCLUDED.daily_targets, updated_at=NOW()
      RETURNING *`,
-    [week_start, amazon_week, edv_count || 0, step_van_count || 0, total_routes || 0, notes]
+    [week_start, amazon_week, edv_count || 0, step_van_count || 0, total_routes || 0, notes,
+     JSON.stringify(daily_targets || {})]
   );
   res.status(201).json(rows[0]);
 });
@@ -414,6 +415,13 @@ router.post('/day-recurring/apply', managerOnly, async (req, res) => {
         targetDate.setDate(weekDate.getDate() + dow);
         const dateStr = targetDate.toISOString().split('T')[0];
 
+        // Skip if manager explicitly deleted this shift for this date
+        const { rows: skipCheck } = await client.query(
+          'SELECT 1 FROM recurring_skip WHERE staff_id=$1 AND skip_date=$2',
+          [row.staff_id, dateStr]
+        );
+        if (skipCheck.length > 0) { skipped++; continue; }
+
         const { rows: existing } = await client.query(
           'SELECT id FROM shifts WHERE staff_id=$1 AND shift_date=$2',
           [row.staff_id, dateStr]
@@ -440,6 +448,13 @@ router.post('/day-recurring/apply', managerOnly, async (req, res) => {
 
       for (const dr of dayDrivers) {
         if (absentStaffIds.has(dr.staff_id)) { skipped++; continue; }
+
+        // Skip if manager explicitly deleted this shift for this date
+        const { rows: skipCheck } = await client.query(
+          'SELECT 1 FROM recurring_skip WHERE staff_id=$1 AND skip_date=$2',
+          [dr.staff_id, dateStr]
+        );
+        if (skipCheck.length > 0) { skipped++; continue; }
 
         const { rows: existing } = await client.query(
           'SELECT id FROM shifts WHERE staff_id=$1 AND shift_date=$2',

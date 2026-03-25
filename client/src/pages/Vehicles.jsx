@@ -3,8 +3,17 @@ import { useState, useEffect } from 'react';
 import {
   Plus, QrCode, AlertTriangle, CheckCircle, Wrench, Edit2, RefreshCw,
   Trash2, Check, X, ChevronDown, Car, ClipboardList, MessageSquareWarning,
-  ChevronUp, ChevronsUpDown, Bell, Search as SearchIcon,
+  ChevronUp, ChevronsUpDown, Bell, Search as SearchIcon, Building2,
 } from 'lucide-react';
+
+const VENDOR_TYPE_LABELS = {
+  mechanic: 'Mechanic',
+  body_shop: 'Body Shop',
+  tire_shop: 'Tire Shop',
+  cleaning: 'Cleaning',
+  parts_supplier: 'Parts Supplier',
+  other: 'Other',
+};
 import api from '../api/client';
 import Badge from '../components/Badge';
 import Modal from '../components/Modal';
@@ -12,7 +21,7 @@ import SortableHeader from '../components/SortableHeader';
 import { useSort } from '../hooks/useSort';
 import toast from 'react-hot-toast';
 import { format, differenceInDays } from 'date-fns';
-import { useAuth } from '../App';
+import { useAuth } from '../context/AuthContext';
 import { useSearchParams, useLocation } from 'react-router-dom';
 
 // ─── Vehicle SortableHeader ───────────────────────────────────────────────────
@@ -46,8 +55,7 @@ function DaysLeft({ date, warnDays = 30 }) {
 function PriorityBadge({ priority }) {
   const map = {
     severe: 'bg-red-100 text-red-700 border border-red-200',
-    medium: 'bg-amber-100 text-amber-700 border border-amber-200',
-    low:    'bg-emerald-100 text-emerald-700 border border-emerald-200',
+    low:    'bg-slate-100 text-slate-600 border border-slate-200',
   };
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${map[priority] || map.low}`}>
@@ -57,12 +65,11 @@ function PriorityBadge({ priority }) {
 }
 
 // ─── Van / Amazon Status badge ───────────────────────────────────────────────
-function StatusPill({ value, activeLabel = 'Active', inactiveLabel = 'Inactive' }) {
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${value === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-      {value === 'active' ? activeLabel : inactiveLabel}
-    </span>
-  );
+function StatusPill({ value }) {
+  if (value === 'Active')          return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700">Active</span>;
+  if (value === 'Out of Service')  return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700">Out of Service</span>;
+  if (value === 'Grounded')        return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-100 text-orange-700">Grounded</span>;
+  return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-500">{value || '—'}</span>;
 }
 
 // ─── Repair Form Modal ────────────────────────────────────────────────────────
@@ -71,8 +78,10 @@ const emptyRepair = {
   priority: 'low', description: '', scheduled_date: '', vendor: '',
 };
 
-function RepairModal({ isOpen, onClose, vehicles, editing, prefill, onSuccess }) {
+function RepairModal({ isOpen, onClose, vehicles, editing, prefill, onSuccess, vendors = [], viewOnly = false }) {
   const [form, setForm] = useState(emptyRepair);
+  const [showQuickVendor, setShowQuickVendor] = useState(false);
+  const [qvForm, setQvForm] = useState({ name: '', vendor_type: 'mechanic' });
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -82,7 +91,7 @@ function RepairModal({ isOpen, onClose, vehicles, editing, prefill, onSuccess })
           vehicle_id:     String(editing.vehicle_id),
           van_status:     editing.van_status,
           amazon_status:  editing.amazon_status,
-          priority:       editing.priority,
+          priority:       editing.priority === 'medium' ? 'low' : editing.priority,
           description:    editing.description,
           scheduled_date: editing.scheduled_date?.split('T')[0] || '',
           vendor:         editing.vendor || '',
@@ -92,6 +101,7 @@ function RepairModal({ isOpen, onClose, vehicles, editing, prefill, onSuccess })
       } else {
         setForm(emptyRepair);
       }
+      setShowQuickVendor(false);
     }
   }, [isOpen, editing, prefill]);
 
@@ -113,24 +123,42 @@ function RepairModal({ isOpen, onClose, vehicles, editing, prefill, onSuccess })
     onError: err => toast.error(err.response?.data?.error || 'Failed to save'),
   });
 
+  const quickVendorMutation = useMutation({
+    mutationFn: data => api.post('/vendors', data),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['vendors'] });
+      setForm(prev => ({ ...prev, vendor: res.data.name }));
+      setShowQuickVendor(false);
+      setQvForm({ name: '', vendor_type: 'mechanic' });
+      toast.success('Vendor added');
+    },
+    onError: err => toast.error(err.response?.data?.error || 'Failed to add vendor'),
+  });
+
   const f = (field) => (e) => setForm(prev => ({ ...prev, [field]: e.target.value }));
 
+  const modalTitle = viewOnly ? 'Repair Details' : editing ? 'Edit Repair Report' : 'New Repair Report';
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={editing ? 'Edit Repair Report' : 'New Repair Report'} size="lg">
-      <form className="space-y-4" onSubmit={e => { e.preventDefault(); saveMutation.mutate({ ...form, vehicle_id: Number(form.vehicle_id) }); }}>
+    <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
+      <form className="space-y-4" onSubmit={e => { e.preventDefault(); if (!viewOnly) saveMutation.mutate({ ...form, vehicle_id: Number(form.vehicle_id) }); }}>
 
         {/* 1. Vehicle */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="modal-label">Vehicle *</label>
-            <select className="select" required value={form.vehicle_id} onChange={f('vehicle_id')}>
-              <option value="">Select vehicle…</option>
-              {vehicles.map(v => <option key={v.id} value={v.id}>{v.vehicle_name}</option>)}
-            </select>
+            <label className="modal-label">Vehicle</label>
+            {viewOnly ? (
+              <p className="input bg-slate-50 text-slate-700">{selectedVehicle?.vehicle_name || editing?.vehicle_name || '—'}</p>
+            ) : (
+              <select className="select" required value={form.vehicle_id} onChange={f('vehicle_id')}>
+                <option value="">Select vehicle…</option>
+                {vehicles.map(v => <option key={v.id} value={v.id}>{v.vehicle_name}</option>)}
+              </select>
+            )}
           </div>
           <div>
             <label className="modal-label">Last 6 of VIN</label>
-            <input className="input bg-slate-50" readOnly value={vin6} placeholder="Auto-filled" />
+            <input className="input bg-slate-50" readOnly value={viewOnly ? (editing?.vin?.slice(-6) || '—') : vin6} placeholder="Auto-filled" />
           </div>
         </div>
 
@@ -138,69 +166,143 @@ function RepairModal({ isOpen, onClose, vehicles, editing, prefill, onSuccess })
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="modal-label">Van Status</label>
-            <select className="select" value={form.van_status} onChange={f('van_status')}>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive (Out of Service)</option>
-            </select>
-            {form.van_status === 'inactive' && (
-              <p className="text-xs text-amber-600 mt-1">⚠ Vehicle will be marked out of service in the fleet</p>
+            {viewOnly ? (
+              <StatusPill value={form.van_status} activeLabel="Active" inactiveLabel="Inactive (Out of Service)" />
+            ) : (
+              <>
+                <select className="select" value={form.van_status} onChange={f('van_status')}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive (Out of Service)</option>
+                </select>
+                {form.van_status === 'inactive' && (
+                  <p className="text-xs text-amber-600 mt-1">⚠ Vehicle will be marked out of service in the fleet</p>
+                )}
+              </>
             )}
           </div>
           <div>
             <label className="modal-label">Amazon Status</label>
-            <select className="select" value={form.amazon_status} onChange={f('amazon_status')}>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
+            {viewOnly ? (
+              <StatusPill value={form.amazon_status} />
+            ) : (
+              <select className="select" value={form.amazon_status} onChange={f('amazon_status')}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            )}
           </div>
         </div>
 
         {/* 3. Priority */}
         <div>
           <label className="modal-label">Priority</label>
-          <div className="flex gap-3">
-            {['low', 'medium', 'severe'].map(p => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setForm(prev => ({ ...prev, priority: p }))}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-all ${
-                  form.priority === p
-                    ? p === 'severe' ? 'bg-red-600 text-white border-red-600'
-                    : p === 'medium' ? 'bg-amber-500 text-white border-amber-500'
-                    : 'bg-emerald-600 text-white border-emerald-600'
-                    : 'bg-white text-[#374151] border-[#D1D5DB] hover:border-slate-400'
-                }`}
-              >
-                {p.charAt(0).toUpperCase() + p.slice(1)}
-              </button>
-            ))}
-          </div>
+          {viewOnly ? (
+            <PriorityBadge priority={form.priority} />
+          ) : (
+            <div className="flex gap-3">
+              {['low', 'severe'].map(p => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setForm(prev => ({ ...prev, priority: p }))}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-all ${
+                    form.priority === p
+                      ? p === 'severe' ? 'bg-red-600 text-white border-red-600'
+                      : 'bg-slate-600 text-white border-slate-600'
+                      : 'bg-white text-[#374151] border-[#D1D5DB] hover:border-slate-400'
+                  }`}
+                >
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* 4. Description */}
         <div>
-          <label className="modal-label">Repair Description *</label>
-          <textarea className="input min-h-20 resize-none" required value={form.description} onChange={f('description')} placeholder="Describe the repair needed…" />
+          <label className="modal-label">Repair Description</label>
+          {viewOnly ? (
+            <p className="input bg-slate-50 text-slate-700 min-h-16 whitespace-pre-wrap">{form.description || '—'}</p>
+          ) : (
+            <textarea className="input min-h-20 resize-none" required value={form.description} onChange={f('description')} placeholder="Describe the repair needed…" />
+          )}
         </div>
 
         {/* 5. Date + Vendor */}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="modal-label">Scheduled Repair Date</label>
-            <input type="date" className="input" value={form.scheduled_date} onChange={f('scheduled_date')} />
+            {viewOnly ? (
+              <p className="input bg-slate-50 text-slate-700">{form.scheduled_date || '—'}</p>
+            ) : (
+              <input type="date" className="input" value={form.scheduled_date} onChange={f('scheduled_date')} />
+            )}
           </div>
           <div>
-            <label className="modal-label">Vendor</label>
-            <input className="input" value={form.vendor} onChange={f('vendor')} placeholder="Repair shop name…" />
+            <label className="modal-label">Vendor/Shop</label>
+            {viewOnly ? (
+              <p className="input bg-slate-50 text-slate-700">{form.vendor || '—'}</p>
+            ) : showQuickVendor ? (
+              <div className="border border-blue-200 rounded-lg p-3 bg-blue-50 space-y-2">
+                <p className="text-xs font-semibold text-blue-700">Quick-Add Vendor</p>
+                <input
+                  className="input text-sm"
+                  placeholder="Vendor name *"
+                  value={qvForm.name}
+                  onChange={e => setQvForm(f => ({ ...f, name: e.target.value }))}
+                />
+                <select className="select text-sm" value={qvForm.vendor_type} onChange={e => setQvForm(f => ({ ...f, vendor_type: e.target.value }))}>
+                  {Object.entries(VENDOR_TYPE_LABELS).map(([val, label]) => (
+                    <option key={val} value={val}>{label}</option>
+                  ))}
+                </select>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={!qvForm.name || quickVendorMutation.isPending}
+                    onClick={() => quickVendorMutation.mutate(qvForm)}
+                    className="flex-1 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {quickVendorMutation.isPending ? 'Saving…' : 'Save Vendor'}
+                  </button>
+                  <button type="button" onClick={() => setShowQuickVendor(false)} className="flex-1 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg hover:bg-slate-50">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <select
+                className="select"
+                value={form.vendor}
+                onChange={e => {
+                  if (e.target.value === '__add__') { setShowQuickVendor(true); }
+                  else { f('vendor')(e); }
+                }}
+              >
+                <option value="">No vendor selected</option>
+                {vendors.filter(v => v.status === 'active').map(v => (
+                  <option key={v.id} value={v.name}>
+                    {v.name}{v.vendor_type ? ` – ${VENDOR_TYPE_LABELS[v.vendor_type] || v.vendor_type}` : ''}
+                  </option>
+                ))}
+                <option value="__add__">+ Add New Vendor</option>
+              </select>
+            )}
           </div>
         </div>
 
         <div className="flex gap-3 pt-1">
-          <button type="button" className="btn-secondary flex-1" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn-primary flex-1" disabled={saveMutation.isPending}>
-            {saveMutation.isPending ? 'Saving…' : editing ? 'Update Repair' : 'Create Repair Report'}
-          </button>
+          {viewOnly ? (
+            <button type="button" className="btn-secondary flex-1" onClick={onClose}>Close</button>
+          ) : (
+            <>
+              <button type="button" className="btn-secondary flex-1" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn-primary flex-1" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? 'Saving…' : editing ? 'Update Repair' : 'Create Repair Report'}
+              </button>
+            </>
+          )}
         </div>
       </form>
     </Modal>
@@ -212,14 +314,16 @@ const emptyVehicle = {
   vehicle_name: '', license_plate: '', vin: '', make: '', model: '',
   year: new Date().getFullYear(), color: 'White', transponder_id: '',
   insurance_expiration: '', registration_expiration: '',
-  last_inspection_date: '', next_inspection_date: '', status: 'active', notes: '',
+  last_inspection_date: '', next_inspection_date: '',
+  van_status: 'Active', amazon_status: 'Active', notes: '',
 };
 
 const FLEET_SIDEBAR = [
-  { id: 'vehicles',       label: 'Vehicles',             icon: Car },
-  { id: 'repairs',        label: 'Repair & Maintenance', icon: Wrench },
-  { id: 'driver-reports', label: 'Driver Reports Queue', icon: MessageSquareWarning },
-  { id: 'fleet-alerts',   label: 'Fleet Alerts',         icon: Bell },
+  { id: 'vehicles',       label: 'Vehicles',         icon: Car },
+  { id: 'repairs',        label: 'Vehicle Tracker',  icon: Wrench },
+  { id: 'driver-reports', label: 'Driver Reports',   icon: MessageSquareWarning },
+  { id: 'fleet-alerts',   label: 'Fleet Alerts',     icon: Bell },
+  { id: 'vendors',        label: 'Vendors',          icon: Building2 },
 ];
 
 export default function Vehicles() {
@@ -234,6 +338,7 @@ export default function Vehicles() {
   const [activeSection, setActiveSection] = useState(() => {
     if (urlTab === 'repairs') return 'repairs';
     if (urlTab === 'driver-reports') return 'driver-reports';
+    if (urlTab === 'fleet-alerts') return 'fleet-alerts';
     return localStorage.getItem('fleet_section') || 'vehicles';
   });
   // Keep backward-compat alias
@@ -247,17 +352,40 @@ export default function Vehicles() {
   const [qrVehicle, setQrVehicle] = useState(null);
   const [showAlertsOnly, setShowAlertsOnly] = useState(() => !!location.state?.showAlertsOnly);
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState(() => location.state?.statusFilter || 'all');
+  const [vanStatusFilter, setVanStatusFilter] = useState(() => {
+    const s = location.state?.statusFilter || location.state?.vanStatusFilter;
+    if (s === 'active') return 'Active';
+    if (s === 'inactive') return 'Out of Service';
+    return s || 'all';
+  });
+  const [amazonStatusFilter, setAmazonStatusFilter] = useState('all');
   const [vehicleSearch, setVehicleSearch] = useState('');
+
+  // Sync filter when navigating here from another page (e.g. Dashboard widgets)
+  useEffect(() => {
+    const s = location.state?.statusFilter || location.state?.vanStatusFilter;
+    if (s === 'active')   { setVanStatusFilter('Active'); }
+    else if (s === 'inactive') { setVanStatusFilter('Out of Service'); }
+    else if (s)           { setVanStatusFilter(s); }
+  }, [location.state?.statusFilter, location.state?.vanStatusFilter]);
 
   // ── Repair state
   const [showRepairModal, setShowRepairModal] = useState(false);
   const [editingRepair, setEditingRepair] = useState(null);
+  const [viewingRepair, setViewingRepair] = useState(null);
   const [repairPrefill, setRepairPrefill] = useState(null);
   const [filterPriority, setFilterPriority] = useState('');
   const [filterVanStatus, setFilterVanStatus] = useState('');
   const [filterAmazonStatus, setFilterAmazonStatus] = useState('');
   const [showCompleted, setShowCompleted] = useState(false);
+  const [confirmDeleteRepairId, setConfirmDeleteRepairId] = useState(null);
+
+  // ── Vendor state
+  const [showVendorModal, setShowVendorModal] = useState(false);
+  const [editingVendor, setEditingVendor] = useState(null);
+  const [vendorForm, setVendorForm] = useState({ name: '', vendor_type: 'mechanic', phone: '', email: '', address: '', notes: '', status: 'active' });
+  const [confirmDeleteVendorId, setConfirmDeleteVendorId] = useState(null);
+  const [confirmDeleteVendorName, setConfirmDeleteVendorName] = useState('');
 
   // ── Driver report state
   const [dismissId, setDismissId] = useState(null);
@@ -289,7 +417,16 @@ export default function Vehicles() {
     enabled: activeSection === 'driver-reports',
   });
 
+  const { data: vendors = [], isLoading: vendorsLoading } = useQuery({
+    queryKey: ['vendors'],
+    queryFn: () => api.get('/vendors').then(r => r.data),
+  });
+
   const pendingCount = driverReports.filter(r => r.status === 'pending').length;
+
+  // ── Vehicle delete confirm state
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [confirmDeleteName, setConfirmDeleteName] = useState('');
 
   // ── Vehicle mutations
   const saveVehicleMutation = useMutation({
@@ -300,6 +437,30 @@ export default function Vehicles() {
       setShowVehicleModal(false); setEditingVehicle(null);
     },
     onError: err => toast.error(err.response?.data?.error || 'Failed'),
+  });
+
+  const deleteVehicleMutation = useMutation({
+    mutationFn: id => api.delete(`/vehicles/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vehicles'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      toast.success('Vehicle deleted');
+      setConfirmDeleteId(null);
+    },
+    onError: err => toast.error(err.response?.data?.error || 'Failed to delete'),
+  });
+
+  const statusVehicleMutation = useMutation({
+    mutationFn: ({ id, van_status, amazon_status }) =>
+      api.patch(`/vehicles/${id}/status`, { van_status, amazon_status }),
+    onSuccess: (_, { van_status, amazon_status }) => {
+      qc.invalidateQueries({ queryKey: ['vehicles'] });
+      qc.invalidateQueries({ queryKey: ['fleet-alerts'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      if (van_status    !== undefined) toast.success('Van status updated');
+      if (amazon_status !== undefined) toast.success('Amazon status updated');
+    },
+    onError: err => toast.error(err.response?.data?.error || 'Failed to update status'),
   });
 
   const checkExpMutation = useMutation({
@@ -320,7 +481,33 @@ export default function Vehicles() {
 
   const deleteRepairMutation = useMutation({
     mutationFn: id => api.delete(`/repairs/${id}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['repairs'] }); toast.success('Repair deleted'); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['repairs'] });
+      qc.invalidateQueries({ queryKey: ['vehicles'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      toast.success('Repair deleted');
+      setConfirmDeleteRepairId(null);
+    },
+  });
+
+  const saveVendorMutation = useMutation({
+    mutationFn: data => editingVendor ? api.put(`/vendors/${editingVendor.id}`, data) : api.post('/vendors', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vendors'] });
+      toast.success(editingVendor ? 'Vendor updated' : 'Vendor added');
+      setShowVendorModal(false); setEditingVendor(null);
+    },
+    onError: err => toast.error(err.response?.data?.error || 'Failed'),
+  });
+
+  const deleteVendorMutation = useMutation({
+    mutationFn: id => api.delete(`/vendors/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vendors'] });
+      toast.success('Vendor deleted');
+      setConfirmDeleteVendorId(null);
+    },
+    onError: err => toast.error(err.response?.data?.error || 'Failed to delete'),
   });
 
   // ── Driver report mutations
@@ -348,8 +535,8 @@ export default function Vehicles() {
   const displayed = vehicles.filter(v => {
     if (showAlertsOnly && !(v.insurance_expiring || v.registration_expiring || v.inspection_due)) return false;
     if (categoryFilter !== 'all' && v.service_type !== categoryFilter) return false;
-    if (statusFilter === 'active' && v.status !== 'active') return false;
-    if (statusFilter === 'grounded' && v.status !== 'inactive') return false;
+    if (vanStatusFilter    !== 'all' && (v.van_status    || 'Active') !== vanStatusFilter)    return false;
+    if (amazonStatusFilter !== 'all' && (v.amazon_status || 'Active') !== amazonStatusFilter) return false;
     if (vehicleSearch) {
       const q = vehicleSearch.toLowerCase();
       return (v.vehicle_name || '').toLowerCase().includes(q)
@@ -374,7 +561,7 @@ export default function Vehicles() {
   const { sorted: sortedDR, sortKey: drKey, sortDir: drDir, toggle: drToggle } = useSort(driverReports, 'created_at', 'desc');
   const { sorted: sortedVehicles, sortKey: vKey, sortDir: vDir, toggle: vToggle } = useSort(displayed, 'vehicle_name');
 
-  const priorityOrder = { severe: 1, medium: 2, low: 3 };
+  const priorityOrder = { severe: 1, low: 2 };
 
   // When using priority sort we need custom comparator — inject a numeric key
   const repairsWithOrder = sortedRepairs.map(r => ({ ...r, _p: priorityOrder[r.priority] || 9 }));
@@ -396,9 +583,11 @@ export default function Vehicles() {
     const items = [];
     const today = new Date();
     vehicles.forEach(v => {
-      if (v.status === 'inactive') {
-        items.push({ id: `gr-${v.id}`, vehicle: v, type: 'grounded', label: 'Grounded', urgency: 0, color: 'red' });
-        return;
+      if ((v.van_status || 'Active') === 'Out of Service') {
+        items.push({ id: `oos-${v.id}`, vehicle: v, type: 'out_of_service', label: 'Out of Service', urgency: 0, color: 'red' });
+      }
+      if ((v.amazon_status || 'Active') === 'Grounded') {
+        items.push({ id: `grounded-${v.id}`, vehicle: v, type: 'amazon_grounded', label: 'Amazon Grounded', urgency: 0, color: 'orange' });
       }
       [
         { key: 'insurance_expiration',    label: 'Insurance',    urgency: 1 },
@@ -499,20 +688,35 @@ export default function Vehicles() {
               </button>
             ))}
             <span className="w-px h-5 bg-slate-200 mx-1" />
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Van</span>
             {[
-              { key: 'all',      label: 'All Status', count: null },
-              { key: 'active',   label: 'Active',     count: vehicles.filter(v => v.status === 'active').length },
-              { key: 'grounded', label: 'Grounded',   count: vehicles.filter(v => v.status === 'inactive').length },
+              { key: 'all',            label: 'All',          activeClass: 'bg-blue-600 text-white border-blue-600', count: null },
+              { key: 'Active',         label: 'Active',       activeClass: 'bg-emerald-600 text-white border-emerald-600', count: vehicles.filter(v => (v.van_status || 'Active') === 'Active').length },
+              { key: 'Out of Service', label: 'Out of Svc',  activeClass: 'bg-red-500 text-white border-red-500',     count: vehicles.filter(v => v.van_status === 'Out of Service').length },
             ].map(f => (
-              <button key={f.key} onClick={() => setStatusFilter(f.key)}
+              <button key={f.key} onClick={() => setVanStatusFilter(f.key)}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                  statusFilter === f.key
-                    ? f.key === 'grounded' ? 'bg-red-500 text-white border-red-500' : 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'
+                  vanStatusFilter === f.key ? f.activeClass : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'
                 }`}
               >
                 {f.label}
-                {f.count !== null && <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${statusFilter === f.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>{f.count}</span>}
+                {f.count !== null && <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${vanStatusFilter === f.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>{f.count}</span>}
+              </button>
+            ))}
+            <span className="w-px h-5 bg-slate-200 mx-1" />
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Amazon</span>
+            {[
+              { key: 'all',      label: 'All',      activeClass: 'bg-blue-600 text-white border-blue-600',    count: null },
+              { key: 'Active',   label: 'Active',   activeClass: 'bg-emerald-600 text-white border-emerald-600', count: vehicles.filter(v => (v.amazon_status || 'Active') === 'Active').length },
+              { key: 'Grounded', label: 'Grounded', activeClass: 'bg-orange-500 text-white border-orange-500', count: vehicles.filter(v => v.amazon_status === 'Grounded').length },
+            ].map(f => (
+              <button key={f.key} onClick={() => setAmazonStatusFilter(f.key)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                  amazonStatusFilter === f.key ? f.activeClass : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'
+                }`}
+              >
+                {f.label}
+                {f.count !== null && <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${amazonStatusFilter === f.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>{f.count}</span>}
               </button>
             ))}
             <div className="relative ml-auto">
@@ -545,23 +749,27 @@ export default function Vehicles() {
                     <VSortableHeader label="Insurance Exp" col="insurance_expiration"  sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
                     <VSortableHeader label="Reg. Exp"      col="registration_expiration" sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
                     <VSortableHeader label="Next Insp."    col="next_inspection_date"  sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
-                    <VSortableHeader label="Status"        col="status"                sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
+                    <VSortableHeader label="Van Status"    col="van_status"            sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
+                    <VSortableHeader label="Amazon Status" col="amazon_status"         sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
                     {isManager && <th className="px-3 py-2.5 w-20" />}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {sortedVehicles.map(v => {
-                    const isInactive = v.status === 'inactive' || v.status === 'maintenance';
-                    const hasAlert = v.insurance_expiring || v.registration_expiring || v.inspection_due;
+                    const isOOS      = (v.van_status    || 'Active') === 'Out of Service';
+                    const isGrounded = (v.amazon_status || 'Active') === 'Grounded';
+                    const hasAlert   = v.insurance_expiring || v.registration_expiring || v.inspection_due;
                     return (
-                      <tr key={v.id} className={`hover:bg-blue-50/40 transition-colors ${isInactive ? 'bg-red-50/30' : ''}`}>
+                      <tr key={v.id} className={`hover:bg-blue-50/40 transition-colors ${isOOS ? 'bg-red-50/30' : isGrounded ? 'bg-orange-50/30' : ''}`}>
                         <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2">
-                            {isInactive
+                            {isOOS
                               ? <AlertTriangle size={12} className="text-red-500 flex-shrink-0" />
-                              : hasAlert
-                                ? <AlertTriangle size={12} className="text-amber-500 flex-shrink-0" />
-                                : <CheckCircle size={12} className="text-emerald-500 flex-shrink-0" />
+                              : isGrounded
+                                ? <AlertTriangle size={12} className="text-orange-500 flex-shrink-0" />
+                                : hasAlert
+                                  ? <AlertTriangle size={12} className="text-amber-500 flex-shrink-0" />
+                                  : <CheckCircle size={12} className="text-emerald-500 flex-shrink-0" />
                             }
                             <span className="font-medium text-slate-800">{v.vehicle_name}</span>
                           </div>
@@ -575,12 +783,44 @@ export default function Vehicles() {
                         <td className="px-3 py-2.5"><DaysLeft date={v.insurance_expiration} /> {v.insurance_expiration && <span className="text-[11px] text-slate-400 ml-1">{format(new Date(v.insurance_expiration), 'MM/dd/yy')}</span>}</td>
                         <td className="px-3 py-2.5"><DaysLeft date={v.registration_expiration} /> {v.registration_expiration && <span className="text-[11px] text-slate-400 ml-1">{format(new Date(v.registration_expiration), 'MM/dd/yy')}</span>}</td>
                         <td className="px-3 py-2.5"><DaysLeft date={v.next_inspection_date} warnDays={14} /> {v.next_inspection_date && <span className="text-[11px] text-slate-400 ml-1">{format(new Date(v.next_inspection_date), 'MM/dd/yy')}</span>}</td>
-                        <td className="px-3 py-2.5"><Badge status={v.status} /></td>
+                        <td className="px-3 py-2.5">
+                          {isManager ? (
+                            <select
+                              value={v.van_status || 'Active'}
+                              onChange={e => statusVehicleMutation.mutate({ id: v.id, van_status: e.target.value })}
+                              className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-600 cursor-pointer hover:border-blue-400 transition-colors focus:outline-none"
+                            >
+                              <option value="Active">Active</option>
+                              <option value="Out of Service">Out of Service</option>
+                            </select>
+                          ) : (
+                            <StatusPill value={v.van_status || 'Active'} />
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {isManager ? (
+                            <select
+                              value={v.amazon_status || 'Active'}
+                              onChange={e => statusVehicleMutation.mutate({ id: v.id, amazon_status: e.target.value })}
+                              className={`text-xs border rounded-lg px-2 py-1 bg-white cursor-pointer hover:border-blue-400 transition-colors focus:outline-none ${
+                                (v.amazon_status || 'Active') === 'Grounded'
+                                  ? 'border-orange-300 text-orange-700'
+                                  : 'border-slate-200 text-slate-600'
+                              }`}
+                            >
+                              <option value="Active">Active</option>
+                              <option value="Grounded">Grounded</option>
+                            </select>
+                          ) : (
+                            <StatusPill value={v.amazon_status || 'Active'} />
+                          )}
+                        </td>
                         {isManager && (
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-1">
                               <button onClick={() => openVehicleEdit(v)} className="p-1.5 rounded hover:bg-blue-50 text-blue-500 transition-colors" title="Edit"><Edit2 size={13} /></button>
                               <button onClick={() => setQrVehicle(v)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 transition-colors" title="QR Code"><QrCode size={13} /></button>
+                              <button onClick={() => { setConfirmDeleteId(v.id); setConfirmDeleteName(v.vehicle_name); }} className="p-1.5 rounded hover:bg-red-50 text-red-400 transition-colors" title="Delete"><Trash2 size={13} /></button>
                             </div>
                           </td>
                         )}
@@ -595,13 +835,13 @@ export default function Vehicles() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════
-          SECTION: REPAIRS & MAINTENANCE
+          SECTION: VEHICLE TRACKER
       ══════════════════════════════════════════════════════════════ */}
       {activeSection === 'repairs' && (
         <>
           {/* Header */}
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-bold text-slate-900">Repair & Maintenance</h1>
+            <h1 className="text-xl font-bold text-slate-900">Vehicle Tracker</h1>
             {isManager && (
               <button className="btn-primary" onClick={() => { setEditingRepair(null); setRepairPrefill(null); setShowRepairModal(true); }}>
                 <Plus size={15} /> Add New
@@ -613,7 +853,6 @@ export default function Vehicles() {
             <select className="select w-auto" value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
               <option value="">All Priorities</option>
               <option value="severe">Severe</option>
-              <option value="medium">Medium</option>
               <option value="low">Low</option>
             </select>
             <select className="select w-auto" value={filterVanStatus} onChange={e => setFilterVanStatus(e.target.value)}>
@@ -665,9 +904,13 @@ export default function Vehicles() {
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {sortedRepairs.map(r => (
-                        <tr key={r.id} className={`hover:bg-blue-50/30 transition-colors ${
-                          r.priority === 'severe' ? 'bg-red-50/40' : r.priority === 'medium' ? 'bg-amber-50/30' : ''
-                        }`}>
+                        <tr
+                          key={r.id}
+                          onClick={() => setViewingRepair(r)}
+                          className={`cursor-pointer hover:bg-blue-50/40 transition-colors ${
+                            r.priority === 'severe' ? 'bg-red-50/40' : ''
+                          }`}
+                        >
                           <td className="px-3 py-2.5 font-medium text-slate-900 whitespace-nowrap">{r.vehicle_name}</td>
                           <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{r.vin?.slice(-6) || '—'}</td>
                           <td className="px-3 py-2.5"><StatusPill value={r.van_status} /></td>
@@ -684,11 +927,11 @@ export default function Vehicles() {
                             {format(new Date(r.created_at), 'MM/dd/yy')}
                           </td>
                           <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{r.reported_by_name || '—'}</td>
-                          <td className="px-3 py-2.5">
+                          <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center gap-1">
                               <button onClick={() => { setEditingRepair(r); setRepairPrefill(null); setShowRepairModal(true); }} className="p-1.5 rounded hover:bg-blue-50 text-blue-500 transition-colors" title="Edit"><Edit2 size={13} /></button>
                               <button onClick={() => completeMutation.mutate(r.id)} className="p-1.5 rounded hover:bg-emerald-50 text-emerald-600 transition-colors" title="Mark complete"><Check size={13} /></button>
-                              <button onClick={() => { if (confirm('Delete this repair report?')) deleteRepairMutation.mutate(r.id); }} className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors" title="Delete"><Trash2 size={13} /></button>
+                              <button onClick={() => setConfirmDeleteRepairId(r.id)} className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors" title="Delete"><Trash2 size={13} /></button>
                             </div>
                           </td>
                         </tr>
@@ -872,9 +1115,10 @@ export default function Vehicles() {
               {/* Summary counts */}
               <div className="flex gap-3 flex-wrap">
                 {[
-                  { label: 'Grounded', count: fleetAlertItems.filter(i => i.type === 'grounded').length, color: 'bg-red-100 text-red-700 border-red-200' },
-                  { label: 'Expired Docs', count: fleetAlertItems.filter(i => i.type !== 'grounded' && i.days < 0).length, color: 'bg-red-100 text-red-700 border-red-200' },
-                  { label: 'Expiring Soon', count: fleetAlertItems.filter(i => i.type !== 'grounded' && i.days >= 0).length, color: 'bg-amber-100 text-amber-700 border-amber-200' },
+                  { label: 'Out of Service',  count: fleetAlertItems.filter(i => i.type === 'out_of_service').length,  color: 'bg-red-100 text-red-700 border-red-200' },
+                  { label: 'Amazon Grounded', count: fleetAlertItems.filter(i => i.type === 'amazon_grounded').length, color: 'bg-orange-100 text-orange-700 border-orange-200' },
+                  { label: 'Expired Docs',    count: fleetAlertItems.filter(i => i.days !== undefined && i.days < 0).length,  color: 'bg-red-100 text-red-700 border-red-200' },
+                  { label: 'Expiring Soon',   count: fleetAlertItems.filter(i => i.days !== undefined && i.days >= 0).length, color: 'bg-amber-100 text-amber-700 border-amber-200' },
                 ].filter(s => s.count > 0).map(s => (
                   <div key={s.label} className={`px-4 py-2 rounded-xl border text-sm font-semibold ${s.color}`}>
                     {s.count} {s.label}
@@ -895,7 +1139,7 @@ export default function Vehicles() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {fleetAlertItems.map(item => (
-                      <tr key={item.id} className={`${item.color === 'red' ? 'bg-red-50/40' : 'bg-amber-50/30'} hover:bg-blue-50/40 transition-colors`}>
+                      <tr key={item.id} className={`${item.color === 'red' ? 'bg-red-50/40' : item.color === 'orange' ? 'bg-orange-50/30' : 'bg-amber-50/30'} hover:bg-blue-50/40 transition-colors`}>
                         <td className="px-4 py-3">
                           <span className="font-medium text-slate-800">{item.vehicle.vehicle_name}</span>
                           <div className="text-xs text-slate-400">{item.vehicle.service_type}</div>
@@ -903,14 +1147,21 @@ export default function Vehicles() {
                         <td className="px-4 py-3 text-slate-600 text-xs">{[item.vehicle.year, item.vehicle.make, item.vehicle.model].filter(Boolean).join(' ')}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full ${
-                            item.color === 'red' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                            item.color === 'red' ? 'bg-red-100 text-red-700' : item.color === 'orange' ? 'bg-orange-100 text-orange-700' : 'bg-amber-100 text-amber-700'
                           }`}>
                             <AlertTriangle size={11} />
                             {item.label}
                             {item.days !== undefined && ` (${item.days < 0 ? Math.abs(item.days) + 'd ago' : item.days + 'd left'})`}
                           </span>
                         </td>
-                        <td className="px-4 py-3"><Badge status={item.vehicle.status} /></td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col gap-1">
+                            <StatusPill value={item.vehicle.van_status || 'Active'} />
+                            {(item.vehicle.amazon_status || 'Active') === 'Grounded' && (
+                              <StatusPill value="Grounded" />
+                            )}
+                          </div>
+                        </td>
                         {isManager && (
                           <td className="px-4 py-3">
                             <button onClick={() => openVehicleEdit(item.vehicle)} className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors">
@@ -928,16 +1179,126 @@ export default function Vehicles() {
         </>
       )}
 
+      {/* ══════════════════════════════════════════════════════════════
+          SECTION: VENDORS
+      ══════════════════════════════════════════════════════════════ */}
+      {activeSection === 'vendors' && (
+        <>
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-bold text-slate-900">Vendors</h1>
+            {isManager && (
+              <button className="btn-primary" onClick={() => { setEditingVendor(null); setVendorForm({ name: '', vendor_type: 'mechanic', phone: '', email: '', address: '', notes: '', status: 'active' }); setShowVendorModal(true); }}>
+                <Plus size={15} /> Add Vendor
+              </button>
+            )}
+          </div>
+
+          {vendorsLoading ? (
+            <div className="card h-40 animate-pulse bg-slate-100" />
+          ) : vendors.length === 0 ? (
+            <div className="text-center py-16 text-slate-400">
+              <Building2 size={32} className="mx-auto mb-2 opacity-30" />
+              <p className="text-sm">No vendors yet. Add a vendor to get started.</p>
+            </div>
+          ) : (
+            <div className="card p-0 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Vendor Name</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Type</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Phone</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Email</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Address</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Notes</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Status</th>
+                    {isManager && <th className="px-3 py-2.5 w-20" />}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {vendors.map(v => (
+                    <tr key={v.id} className="hover:bg-blue-50/40 transition-colors">
+                      <td className="px-3 py-2.5 font-medium text-slate-900">{v.name}</td>
+                      <td className="px-3 py-2.5">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium border border-blue-100">
+                          {VENDOR_TYPE_LABELS[v.vendor_type] || v.vendor_type}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600">{v.phone || '—'}</td>
+                      <td className="px-3 py-2.5 text-slate-600">{v.email || '—'}</td>
+                      <td className="px-3 py-2.5 text-slate-500 max-w-xs truncate">{v.address || '—'}</td>
+                      <td className="px-3 py-2.5 text-slate-400 max-w-xs truncate text-xs italic">{v.notes || '—'}</td>
+                      <td className="px-3 py-2.5">
+                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${v.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {v.status === 'active' ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      {isManager && (
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => { setEditingVendor(v); setVendorForm({ name: v.name, vendor_type: v.vendor_type, phone: v.phone || '', email: v.email || '', address: v.address || '', notes: v.notes || '', status: v.status }); setShowVendorModal(true); }}
+                              className="p-1.5 rounded hover:bg-blue-50 text-blue-500 transition-colors" title="Edit"
+                            >
+                              <Edit2 size={13} />
+                            </button>
+                            <button
+                              onClick={() => { setConfirmDeleteVendorId(v.id); setConfirmDeleteVendorName(v.name); }}
+                              className="p-1.5 rounded hover:bg-red-50 text-red-400 transition-colors" title="Delete"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
       {/* ── Vehicle Add/Edit Modal ───────────────────────────────── */}
       <Modal isOpen={showVehicleModal} onClose={() => { setShowVehicleModal(false); setEditingVehicle(null); }} title={editingVehicle ? `Edit ${editingVehicle.vehicle_name}` : 'Add Vehicle'} size="lg">
         <form className="space-y-4" onSubmit={e => { e.preventDefault(); saveVehicleMutation.mutate(vehicleForm); }}>
+          {editingVehicle && (
+            <div className="grid grid-cols-2 gap-4 pb-1">
+              <div>
+                <label className="modal-label">Van Status</label>
+                <select
+                  className="select"
+                  value={vehicleForm.van_status || 'Active'}
+                  onChange={e => {
+                    setVehicleForm(f => ({ ...f, van_status: e.target.value }));
+                    statusVehicleMutation.mutate({ id: editingVehicle.id, van_status: e.target.value });
+                  }}
+                >
+                  <option value="Active">Active</option>
+                  <option value="Out of Service">Out of Service</option>
+                </select>
+                <p className="text-[10px] text-slate-400 mt-0.5">Saves instantly</p>
+              </div>
+              <div>
+                <label className="modal-label">Amazon Status</label>
+                <select
+                  className="select"
+                  value={vehicleForm.amazon_status || 'Active'}
+                  onChange={e => {
+                    setVehicleForm(f => ({ ...f, amazon_status: e.target.value }));
+                    statusVehicleMutation.mutate({ id: editingVehicle.id, amazon_status: e.target.value });
+                  }}
+                >
+                  <option value="Active">Active</option>
+                  <option value="Grounded">Grounded</option>
+                </select>
+                <p className="text-[10px] text-slate-400 mt-0.5">Saves instantly · auto-creates fleet alert</p>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div><label className="modal-label">Vehicle Name *</label><input className="input" required value={vehicleForm.vehicle_name} onChange={e => setVehicleForm(f => ({ ...f, vehicle_name: e.target.value }))} placeholder="VAN-001" /></div>
-            <div><label className="modal-label">Status</label>
-              <select className="select" value={vehicleForm.status} onChange={e => setVehicleForm(f => ({ ...f, status: e.target.value }))}>
-                <option value="active">Active</option><option value="maintenance">Maintenance</option><option value="inactive">Inactive</option>
-              </select>
-            </div>
             <div><label className="modal-label">License Plate</label><input className="input" value={vehicleForm.license_plate} onChange={e => setVehicleForm(f => ({ ...f, license_plate: e.target.value }))} /></div>
             <div><label className="modal-label">VIN</label><input className="input" value={vehicleForm.vin} onChange={e => setVehicleForm(f => ({ ...f, vin: e.target.value }))} /></div>
             <div><label className="modal-label">Make</label><input className="input" value={vehicleForm.make} onChange={e => setVehicleForm(f => ({ ...f, make: e.target.value }))} /></div>
@@ -950,6 +1311,24 @@ export default function Vehicles() {
             <div><label className="modal-label">Last Inspection</label><input type="date" className="input" value={vehicleForm.last_inspection_date} onChange={e => setVehicleForm(f => ({ ...f, last_inspection_date: e.target.value }))} /></div>
             <div><label className="modal-label">Next Inspection</label><input type="date" className="input" value={vehicleForm.next_inspection_date} onChange={e => setVehicleForm(f => ({ ...f, next_inspection_date: e.target.value }))} /></div>
           </div>
+          {!editingVehicle && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="modal-label">Van Status</label>
+                <select className="select" value={vehicleForm.van_status || 'Active'} onChange={e => setVehicleForm(f => ({ ...f, van_status: e.target.value }))}>
+                  <option value="Active">Active</option>
+                  <option value="Out of Service">Out of Service</option>
+                </select>
+              </div>
+              <div>
+                <label className="modal-label">Amazon Status</label>
+                <select className="select" value={vehicleForm.amazon_status || 'Active'} onChange={e => setVehicleForm(f => ({ ...f, amazon_status: e.target.value }))}>
+                  <option value="Active">Active</option>
+                  <option value="Grounded">Grounded</option>
+                </select>
+              </div>
+            </div>
+          )}
           <div><label className="modal-label">Notes</label><textarea className="input min-h-16 resize-none" value={vehicleForm.notes} onChange={e => setVehicleForm(f => ({ ...f, notes: e.target.value }))} /></div>
           <div className="flex gap-3 pt-2">
             <button type="button" className="btn-secondary flex-1" onClick={() => setShowVehicleModal(false)}>Cancel</button>
@@ -958,14 +1337,136 @@ export default function Vehicles() {
         </form>
       </Modal>
 
-      {/* ── Repair Modal ─────────────────────────────────────────── */}
+      {/* ── Delete Confirm Modal ─────────────────────────────────── */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={() => setConfirmDeleteId(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-slate-800 mb-2">Delete Vehicle</h3>
+            <p className="text-sm text-slate-600 mb-5">Are you sure you want to permanently delete <strong>{confirmDeleteName}</strong>? This cannot be undone.</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmDeleteId(null)} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors">Cancel</button>
+              <button
+                onClick={() => deleteVehicleMutation.mutate(confirmDeleteId)}
+                disabled={deleteVehicleMutation.isPending}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors"
+              >
+                {deleteVehicleMutation.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Repair Delete Confirm ───────────────────────────────── */}
+      {confirmDeleteRepairId && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={() => setConfirmDeleteRepairId(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-slate-800 mb-2">Delete this record?</h3>
+            <p className="text-sm text-slate-600 mb-5">This cannot be undone.</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmDeleteRepairId(null)} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors">Cancel</button>
+              <button
+                onClick={() => deleteRepairMutation.mutate(confirmDeleteRepairId)}
+                disabled={deleteRepairMutation.isPending}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors"
+              >
+                {deleteRepairMutation.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Repair View Modal ───────────────────────────────────── */}
+      <RepairModal
+        isOpen={!!viewingRepair}
+        onClose={() => setViewingRepair(null)}
+        vehicles={vehicles}
+        editing={viewingRepair}
+        vendors={vendors}
+        viewOnly
+      />
+
+      {/* ── Repair Add/Edit Modal ────────────────────────────────── */}
       <RepairModal
         isOpen={showRepairModal}
         onClose={() => { setShowRepairModal(false); setEditingRepair(null); setRepairPrefill(null); }}
         vehicles={vehicles}
         editing={editingRepair}
         prefill={repairPrefill}
+        vendors={vendors}
       />
+
+      {/* ── Vendor Add/Edit Modal ────────────────────────────────── */}
+      <Modal isOpen={showVendorModal} onClose={() => { setShowVendorModal(false); setEditingVendor(null); }} title={editingVendor ? `Edit ${editingVendor.name}` : 'Add Vendor'} size="md">
+        <form className="space-y-4" onSubmit={e => { e.preventDefault(); saveVendorMutation.mutate(vendorForm); }}>
+          <div>
+            <label className="modal-label">Vendor Name *</label>
+            <input className="input" required value={vendorForm.name} onChange={e => setVendorForm(f => ({ ...f, name: e.target.value }))} placeholder="AutoShop Miami" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="modal-label">Vendor Type</label>
+              <select className="select" value={vendorForm.vendor_type} onChange={e => setVendorForm(f => ({ ...f, vendor_type: e.target.value }))}>
+                {Object.entries(VENDOR_TYPE_LABELS).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="modal-label">Status</label>
+              <select className="select" value={vendorForm.status} onChange={e => setVendorForm(f => ({ ...f, status: e.target.value }))}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="modal-label">Phone</label>
+              <input className="input" value={vendorForm.phone} onChange={e => setVendorForm(f => ({ ...f, phone: e.target.value }))} placeholder="305-555-0100" />
+            </div>
+            <div>
+              <label className="modal-label">Email</label>
+              <input type="email" className="input" value={vendorForm.email} onChange={e => setVendorForm(f => ({ ...f, email: e.target.value }))} placeholder="contact@shop.com" />
+            </div>
+          </div>
+          <div>
+            <label className="modal-label">Address</label>
+            <input className="input" value={vendorForm.address} onChange={e => setVendorForm(f => ({ ...f, address: e.target.value }))} placeholder="123 Main St, Miami FL 33101" />
+          </div>
+          <div>
+            <label className="modal-label">Notes</label>
+            <textarea className="input min-h-16 resize-none" value={vendorForm.notes} onChange={e => setVendorForm(f => ({ ...f, notes: e.target.value }))} placeholder="Preferred contact, hours, etc…" />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button type="button" className="btn-secondary flex-1" onClick={() => { setShowVendorModal(false); setEditingVendor(null); }}>Cancel</button>
+            <button type="submit" className="btn-primary flex-1" disabled={saveVendorMutation.isPending}>
+              {saveVendorMutation.isPending ? 'Saving…' : editingVendor ? 'Update Vendor' : 'Add Vendor'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ── Vendor Delete Confirm ───────────────────────────────── */}
+      {confirmDeleteVendorId && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={() => setConfirmDeleteVendorId(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-slate-800 mb-2">Delete Vendor</h3>
+            <p className="text-sm text-slate-600 mb-5">Delete <strong>{confirmDeleteVendorName}</strong>? This cannot be undone.</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmDeleteVendorId(null)} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors">Cancel</button>
+              <button
+                onClick={() => deleteVendorMutation.mutate(confirmDeleteVendorId)}
+                disabled={deleteVendorMutation.isPending}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors"
+              >
+                {deleteVendorMutation.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── QR Code Modal ────────────────────────────────────────── */}
       <Modal isOpen={!!qrVehicle} onClose={() => setQrVehicle(null)} title={`QR Code — ${qrVehicle?.vehicle_name}`} size="sm">

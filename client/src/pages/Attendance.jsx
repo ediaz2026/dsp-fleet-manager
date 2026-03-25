@@ -6,7 +6,7 @@ import api from '../api/client';
 import Badge from '../components/Badge';
 import Modal from '../components/Modal';
 import toast from 'react-hot-toast';
-import { useAuth } from '../App';
+import { useAuth } from '../context/AuthContext';
 import { useSort } from '../hooks/useSort';
 import SortableHeader from '../components/SortableHeader';
 

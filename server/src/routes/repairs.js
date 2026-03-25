@@ -7,7 +7,7 @@ router.use(authMiddleware);
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 async function syncVehicleStatus(client, vehicleId, vanStatus) {
   // When a repair marks a vehicle inactive, update the vehicle record
-  const newStatus = vanStatus === 'inactive' ? 'maintenance' : 'active';
+  const newStatus = vanStatus === 'inactive' ? 'out_of_service' : 'active';
   await client.query(
     `UPDATE vehicles SET status = $1, updated_at = NOW() WHERE id = $2`,
     [newStatus, vehicleId]
@@ -32,7 +32,7 @@ router.get('/', async (req, res) => {
     if (priority)   { params.push(priority);   q += ` AND r.priority = $${params.length}`; }
     if (vehicle_id) { params.push(vehicle_id); q += ` AND r.vehicle_id = $${params.length}`; }
     q += ` ORDER BY
-      CASE r.priority WHEN 'severe' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+      CASE r.priority WHEN 'severe' THEN 1 ELSE 2 END,
       r.created_at DESC`;
     const { rows } = await pool.query(q, params);
     res.json(rows);

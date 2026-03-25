@@ -8,7 +8,7 @@ import api from '../api/client';
 import toast from 'react-hot-toast';
 import Modal from '../components/Modal';
 import Badge from '../components/Badge';
-import { useAuth } from '../App';
+import { useAuth } from '../context/AuthContext';
 
 const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAYS_SHORT   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -200,7 +200,7 @@ export default function Settings() {
   // ── User Management (admin only) ────────────────────────────────────────────
   const [showAddUser, setShowAddUser] = useState(false);
   const [editUser, setEditUser] = useState(null);
-  const [uForm, setUForm] = useState({ first_name: '', last_name: '', email: '', role: 'driver', password: '', must_change_password: true });
+  const [uForm, setUForm] = useState({ first_name: '', last_name: '', email: '', role: 'dispatcher', password: '', must_change_password: true });
   const [editUForm, setEditUForm] = useState({ role: '', status: '', password: '' });
 
   const { data: userList = [] } = useQuery({
@@ -211,7 +211,7 @@ export default function Settings() {
 
   const createUser = useMutation({
     mutationFn: d => api.post('/auth/users', d),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); setShowAddUser(false); setUForm({ first_name: '', last_name: '', email: '', role: 'driver', password: '', must_change_password: true }); toast.success('User created'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); setShowAddUser(false); setUForm({ first_name: '', last_name: '', email: '', role: 'dispatcher', password: '', must_change_password: true }); toast.success('User created'); },
     onError: err => toast.error(err.response?.data?.error || 'Failed to create user'),
   });
 
@@ -892,9 +892,12 @@ export default function Settings() {
       {/* ── User Management (admin only) ─────────────────────────────────── */}
       {isAdmin && (
         <section className={CARD}>
-          <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
-            <h2 className={SH}><Users size={18} className="text-[#2563EB]" /> User Management</h2>
-            <button className="btn-primary text-xs" onClick={() => setShowAddUser(true)}>
+          <div className="flex items-start justify-between pb-3 border-b border-[#E2E8F0]">
+            <div>
+              <h2 className={SH}><Users size={18} className="text-[#2563EB]" /> User Management</h2>
+              <p className="text-xs text-[#6B7280] mt-1">Manage admin, manager, and dispatcher accounts. Driver accounts are managed from the <span className="font-medium text-[#2563EB]">Driver Profile</span>.</p>
+            </div>
+            <button className="btn-primary text-xs shrink-0 ml-4" onClick={() => setShowAddUser(true)}>
               <UserPlus size={14} /> Add User
             </button>
           </div>
@@ -912,33 +915,40 @@ export default function Settings() {
                 </tr>
               </thead>
               <tbody>
-                {userList.map(u => (
-                  <tr key={u.id} className="border-b border-[#E2E8F0] hover:bg-blue-50/40 transition-colors">
-                    <td className="px-3 py-2.5 font-medium text-[#111827]">
-                      {u.first_name} {u.last_name}
-                      {u.must_change_password && (
-                        <span className="ml-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
-                          Temp PW
+                {userList.map(u => {
+                  const isDriverRole = u.role === 'driver';
+                  return (
+                    <tr key={u.id} className={`border-b border-[#E2E8F0] transition-colors ${isDriverRole ? 'bg-slate-50/60' : 'hover:bg-blue-50/40'}`}>
+                      <td className="px-3 py-2.5 font-medium text-[#111827]">
+                        {u.first_name} {u.last_name}
+                        {!isDriverRole && u.must_change_password && (
+                          <span className="ml-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
+                            Temp PW
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-[#475569]">{u.email}</td>
+                      <td className="px-3 py-2.5 text-center">
+                        <Badge status={u.role === 'manager' ? 'dispatcher' : u.role} label={u.role === 'manager' ? 'Dispatcher' : u.role} />
+                      </td>
+                      <td className="px-3 py-2.5 text-center text-xs text-[#475569]">
+                        {u.last_login ? format(new Date(u.last_login), 'MM/dd/yy h:mm a') : 'Never'}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <span className={`badge text-xs ${u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {u.status}
                         </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-[#475569]">{u.email}</td>
-                    <td className="px-3 py-2.5 text-center">
-                      <Badge status={u.role === 'manager' ? 'dispatcher' : u.role} label={u.role === 'manager' ? 'Dispatcher' : u.role} />
-                    </td>
-                    <td className="px-3 py-2.5 text-center text-xs text-[#475569]">
-                      {u.last_login ? format(new Date(u.last_login), 'MM/dd/yy h:mm a') : 'Never'}
-                    </td>
-                    <td className="px-3 py-2.5 text-center">
-                      <span className={`badge text-xs ${u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {u.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <button className="btn-ghost text-xs" onClick={() => openEditUser(u)}>Edit</button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {isDriverRole ? (
+                          <span className="text-[11px] text-[#94a3b8] italic">Manage from Driver Profile</span>
+                        ) : (
+                          <button className="btn-ghost text-xs" onClick={() => openEditUser(u)}>Edit</button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {userList.length === 0 && (
                   <tr><td colSpan={6} className="px-3 py-6 text-center text-[#94a3b8]">No users found</td></tr>
                 )}
@@ -968,8 +978,8 @@ export default function Settings() {
           <div>
             <label className="modal-label">Role *</label>
             <select className="select" required value={uForm.role} onChange={e => setUForm(f => ({ ...f, role: e.target.value }))}>
-              <option value="driver">Driver</option>
               <option value="dispatcher">Dispatcher</option>
+              <option value="manager">Manager</option>
               <option value="admin">Admin</option>
             </select>
           </div>
@@ -1001,8 +1011,8 @@ export default function Settings() {
           <div>
             <label className="modal-label">Role</label>
             <select className="select" value={editUForm.role} onChange={e => setEditUForm(f => ({ ...f, role: e.target.value }))}>
-              <option value="driver">Driver</option>
               <option value="dispatcher">Dispatcher</option>
+              <option value="manager">Manager</option>
               <option value="admin">Admin</option>
             </select>
           </div>

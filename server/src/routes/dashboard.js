@@ -115,10 +115,10 @@ router.get('/', async (req, res) => {
     // Vehicle fleet health
     pool.query(`
       SELECT
-        COUNT(*) FILTER (WHERE status = 'active')                        AS active_vehicles,
-        COUNT(*) FILTER (WHERE status IN ('inactive','maintenance'))      AS inactive_vehicles,
-        COUNT(*) FILTER (WHERE status = 'retired')                       AS retired_vehicles,
-        COUNT(*)                                                          AS total_vehicles
+        COUNT(*) FILTER (WHERE van_status = 'Active')                                      AS active_vehicles,
+        COUNT(*) FILTER (WHERE van_status = 'Out of Service')                              AS inactive_vehicles,
+        COUNT(*) FILTER (WHERE van_status = 'Active' AND amazon_status = 'Grounded')       AS grounded_by_amazon,
+        COUNT(*)                                                                            AS total_vehicles
       FROM vehicles
     `),
 

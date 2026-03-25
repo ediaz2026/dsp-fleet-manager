@@ -6,7 +6,11 @@ set "PATH=%NODE_BIN%;%APPDATA%\npm;%PATH%"
 
 echo Stopping any running Node.js processes...
 taskkill /f /im node.exe >nul 2>&1
-timeout /t 2 /nobreak >nul
+timeout /t 1 /nobreak >nul
+
+echo Freeing port 3001...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :3001 ^| findstr LISTENING 2^>nul') do taskkill /f /pid %%a >nul 2>&1
+timeout /t 1 /nobreak >nul
 
 echo Starting DSP Backend on port 3001...
 start "DSP Backend" /min "%~dp0run-backend.bat"

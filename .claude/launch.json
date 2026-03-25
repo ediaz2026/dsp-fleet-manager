@@ -164,10 +164,46 @@
       "port": 9975
     },
     {
+      "name": "Push Data to Railway",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "push-to-railway.bat"],
+      "port": 9973
+    },
+    {
       "name": "Update Manager Account",
       "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
       "runtimeArgs": ["/c", "update-manager.bat"],
       "port": 9974
+    },
+    {
+      "name": "Push Bulk Import",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "run-bulk-import-push.bat"],
+      "port": 9972
+    },
+    {
+      "name": "Analyze Files",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "run-analyze.bat"],
+      "port": 9971
+    },
+    {
+      "name": "Analyze Files 2",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "run-analyze2.bat"],
+      "port": 9970
+    },
+    {
+      "name": "Install Rate Limit",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "install-rate-limit.bat"],
+      "port": 9969
+    },
+    {
+      "name": "Git Commit and Push",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "git-push.bat"],
+      "port": 9968
     }
   ]
 }

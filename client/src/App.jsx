@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useState, createContext, useContext } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -15,14 +15,13 @@ import Settings from './pages/Settings';
 import Management from './pages/Management';
 import OperationalPlanner from './pages/OperationalPlanner';
 import Scorecard from './pages/Scorecard';
+import Analytics from './pages/Analytics';
 import DriverSchedule from './pages/DriverSchedule';
+import DriverAttendance from './pages/DriverAttendance';
 import ChangePassword from './pages/ChangePassword';
-
-export const AuthContext = createContext(null);
-
-export function useAuth() {
-  return useContext(AuthContext);
-}
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import AcceptInvitation from './pages/AcceptInvitation';
 
 const MGMT_ROLES = ['manager', 'admin', 'dispatcher'];
 
@@ -41,38 +40,32 @@ function roleHome(role) {
   return '/'; // admin
 }
 
+function LoginRoute() {
+  const { user } = useAuth();
+  return user ? <Navigate to={roleHome(user.role)} replace /> : <Login />;
+}
+
+function FallbackRoute() {
+  const { user } = useAuth();
+  return <Navigate to={user ? roleHome(user.role) : '/login'} replace />;
+}
+
 export default function App() {
-  const [user, setUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('dsp_user')); } catch { return null; }
-  });
-
-  const login = (userData, token) => {
-    localStorage.setItem('dsp_token', token);
-    localStorage.setItem('dsp_user', JSON.stringify(userData));
-    setUser(userData);
-  };
-
-  const logout = () => {
-    localStorage.removeItem('dsp_token');
-    localStorage.removeItem('dsp_user');
-    setUser(null);
-  };
-
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthProvider>
       <Routes>
-        {/* Public inspection route for QR codes - no auth needed */}
+        {/* Public routes — no auth needed */}
         <Route path="/inspect/:vehicleId" element={<VehicleInspection />} />
-        <Route
-          path="/login"
-          element={user ? <Navigate to={roleHome(user.role)} replace /> : <Login />}
-        />
+        <Route path="/login" element={<LoginRoute />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
+        <Route path="/accept-invitation/:token" element={<AcceptInvitation />} />
 
         {/* Protected routes */}
         <Route path="/" element={<RequireAuth allowedRoles={MGMT_ROLES}><Layout /></RequireAuth>}>
           <Route index element={<Dashboard />} />
           <Route path="schedule" element={<Schedule />} />
-          <Route path="attendance" element={<Attendance />} />
+          <Route path="attendance" element={<RequireAuth allowedRoles={['admin']}><Attendance /></RequireAuth>} />
           <Route path="payroll" element={<RequireAuth allowedRoles={['admin']}><Payroll /></RequireAuth>} />
           <Route path="operational-planner" element={<OperationalPlanner />} />
           <Route path="vehicles" element={<Vehicles />} />
@@ -82,14 +75,14 @@ export default function App() {
           <Route path="settings" element={<RequireAuth allowedRoles={['admin']}><Settings /></RequireAuth>} />
           <Route path="management" element={<RequireAuth allowedRoles={['admin']}><Management /></RequireAuth>} />
           <Route path="scorecard" element={<Scorecard />} />
+          <Route path="analytics" element={<Analytics />} />
         </Route>
 
         {/* Driver personal routes — all authenticated users can access */}
-        <Route
-          path="/my-schedule"
-          element={<RequireAuth><Layout /></RequireAuth>}
-        >
-          <Route index element={<DriverSchedule />} />
+        <Route element={<RequireAuth><Layout /></RequireAuth>}>
+          <Route path="/my-schedule" element={<DriverSchedule />} />
+          <Route path="/my-attendance" element={<DriverAttendance />} />
+          <Route path="/my-scorecard" element={<Scorecard />} />
         </Route>
 
         {/* Change password — all roles */}
@@ -100,8 +93,8 @@ export default function App() {
           <Route index element={<ChangePassword />} />
         </Route>
 
-        <Route path="*" element={<Navigate to={user ? roleHome(user?.role) : '/login'} replace />} />
+        <Route path="*" element={<FallbackRoute />} />
       </Routes>
-    </AuthContext.Provider>
+    </AuthProvider>
   );
 }

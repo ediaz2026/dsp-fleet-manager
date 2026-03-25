@@ -1,8 +1,11 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const pool = require('../db/pool');
 const { authMiddleware, adminOnly, JWT_SECRET } = require('../middleware/auth');
+const { logAudit } = require('../utils/audit');
+const { sendPasswordResetEmail, sendInvitationEmail } = require('../services/emailService');
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
@@ -10,14 +13,27 @@ router.post('/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
   const { rows } = await pool.query(
-    'SELECT * FROM staff WHERE email = $1 AND status != $2',
-    [email, 'terminated']
+    'SELECT * FROM staff WHERE email = $1',
+    [email]
   );
   const user = rows[0];
   if (!user || !user.password_hash) return res.status(401).json({ error: 'Invalid credentials' });
 
+  // Block non-active accounts before checking password
+  if (user.status !== 'active') {
+    const statusMessages = {
+      inactive:   'Your account is inactive. Contact your manager.',
+      suspended:  'Your account is suspended. Contact your manager.',
+      terminated: 'Your account has been terminated.',
+    };
+    return res.status(401).json({ error: statusMessages[user.status] || 'Account access denied.' });
+  }
+
   // Lockout check
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
+    // Fake req.user so logAudit can capture the user info
+    req.user = { id: user.id, name: `${user.first_name} ${user.last_name}`, role: user.role };
+    logAudit(req, { action_type: 'ACCOUNT_LOCKED', entity_type: 'staff', entity_id: user.id, entity_description: `Locked login attempt: ${email}` });
     return res.status(423).json({ error: 'Account locked. Try again in 30 minutes.' });
   }
 
@@ -29,6 +45,8 @@ router.post('/login', async (req, res) => {
       'UPDATE staff SET failed_login_attempts=$1, locked_until=$2 WHERE id=$3',
       [attempts, lockUntil, user.id]
     );
+    req.user = { id: user.id, name: `${user.first_name} ${user.last_name}`, role: user.role };
+    logAudit(req, { action_type: 'FAILED_LOGIN', entity_type: 'staff', entity_id: user.id, entity_description: `Failed login attempt ${attempts} for ${email}` });
     const msg = attempts >= 5
       ? 'Account locked after 5 failed attempts. Try again in 30 minutes.'
       : 'Invalid credentials';
@@ -40,6 +58,8 @@ router.post('/login', async (req, res) => {
     'UPDATE staff SET failed_login_attempts=0, locked_until=NULL, last_login=NOW() WHERE id=$1',
     [user.id]
   );
+  req.user = { id: user.id, name: `${user.first_name} ${user.last_name}`, role: user.role };
+  logAudit(req, { action_type: 'LOGIN', entity_type: 'staff', entity_id: user.id, entity_description: `${user.first_name} ${user.last_name} logged in` });
 
   const expiresIn = rememberMe ? '30d' : '8h';
   const token = jwt.sign(
@@ -99,7 +119,106 @@ router.post('/change-password', authMiddleware, async (req, res) => {
     'UPDATE staff SET password_hash=$1, must_change_password=FALSE, updated_at=NOW() WHERE id=$2',
     [hash, req.user.id]
   );
+  logAudit(req, { action_type: 'CHANGE_PASSWORD', entity_type: 'staff', entity_id: req.user.id, entity_description: `Password changed by ${req.user.name}` });
   res.json({ message: 'Password updated' });
+});
+
+// ─── Forgot Password / Reset / Invitation ──────────────────────────────────
+
+// POST /api/auth/forgot-password (PUBLIC)
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+
+  // Always return success to prevent email enumeration
+  try {
+    const { rows } = await pool.query('SELECT id, first_name FROM staff WHERE email = $1 AND status = $2', [email.toLowerCase().trim(), 'active']);
+    if (rows[0]) {
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      await pool.query(
+        'UPDATE staff SET reset_token=$1, reset_token_expiry=$2 WHERE id=$3',
+        [token, expiry, rows[0].id]
+      );
+      await sendPasswordResetEmail({ ...rows[0], email }, token);
+    }
+  } catch (err) {
+    console.error('[forgot-password]', err.message);
+  }
+
+  res.json({ message: 'If that email is registered, a reset link has been sent.' });
+});
+
+// POST /api/auth/reset-password (PUBLIC)
+router.post('/reset-password', async (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword) return res.status(400).json({ error: 'token and newPassword required' });
+  if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+  const { rows } = await pool.query(
+    'SELECT id FROM staff WHERE reset_token = $1 AND reset_token_expiry > NOW()',
+    [token]
+  );
+  if (!rows[0]) return res.status(400).json({ error: 'Invalid or expired reset link. Please request a new one.' });
+
+  const hash = await bcrypt.hash(newPassword, 10);
+  await pool.query(
+    'UPDATE staff SET password_hash=$1, reset_token=NULL, reset_token_expiry=NULL, must_change_password=FALSE, failed_login_attempts=0, locked_until=NULL WHERE id=$2',
+    [hash, rows[0].id]
+  );
+
+  res.json({ message: 'Password reset successful. You can now log in.' });
+});
+
+// GET /api/auth/verify-invitation/:token (PUBLIC) — validate before showing form
+router.get('/verify-invitation/:token', async (req, res) => {
+  const { token } = req.params;
+  const { rows } = await pool.query(
+    'SELECT first_name, email FROM staff WHERE invitation_token = $1 AND invitation_token_expiry > NOW()',
+    [token]
+  );
+  if (!rows[0]) return res.json({ valid: false });
+  res.json({ valid: true, firstName: rows[0].first_name, email: rows[0].email });
+});
+
+// POST /api/auth/accept-invitation (PUBLIC) — set password, auto-login
+router.post('/accept-invitation', async (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword) return res.status(400).json({ error: 'token and newPassword required' });
+  if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+  const { rows } = await pool.query(
+    'SELECT id, employee_id, first_name, last_name, email, role, status FROM staff WHERE invitation_token = $1 AND invitation_token_expiry > NOW()',
+    [token]
+  );
+  if (!rows[0]) return res.status(400).json({ error: 'This invitation link has expired. Contact your manager.' });
+
+  const hash = await bcrypt.hash(newPassword, 10);
+  await pool.query(
+    'UPDATE staff SET password_hash=$1, invitation_token=NULL, invitation_token_expiry=NULL, must_change_password=FALSE WHERE id=$2',
+    [hash, rows[0].id]
+  );
+
+  const user = rows[0];
+  const jwtToken = jwt.sign(
+    { id: user.id, email: user.email, role: user.role, name: `${user.first_name} ${user.last_name}` },
+    JWT_SECRET,
+    { expiresIn: '8h' }
+  );
+
+  res.json({
+    token: jwtToken,
+    user: {
+      id: user.id,
+      employeeId: user.employee_id,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      mustChangePassword: false,
+    }
+  });
 });
 
 // ─── User Management (admin only) ──────────────────────────────────────────
@@ -107,7 +226,7 @@ router.post('/change-password', authMiddleware, async (req, res) => {
 // GET /api/auth/users
 router.get('/users', authMiddleware, adminOnly, async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT id, employee_id, first_name, last_name, email, role, status, last_login, must_change_password
+    `SELECT id, employee_id, first_name, last_name, email, role, status, last_login, must_change_password, invitation_sent_at
      FROM staff
      ORDER BY first_name, last_name`
   );
@@ -137,6 +256,7 @@ router.post('/users', authMiddleware, adminOnly, async (req, res) => {
      RETURNING id, employee_id, first_name, last_name, email, role, status, must_change_password`,
     [empId, first_name || '', last_name || '', email, role, hash, must_change_password]
   );
+  logAudit(req, { action_type: 'CREATE_USER', entity_type: 'staff', entity_id: rows[0].id, entity_description: `Created user ${email} with role ${role}`, new_value: { email, role } });
   res.json(rows[0]);
 });
 
@@ -172,7 +292,60 @@ router.put('/users/:id', authMiddleware, adminOnly, async (req, res) => {
     vals
   );
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+  logAudit(req, { action_type: 'UPDATE_USER', entity_type: 'staff', entity_id: rows[0].id, entity_description: `Updated user ${rows[0].email}`, new_value: { role: rows[0].role, status: rows[0].status, password_reset: !!password } });
   res.json(rows[0]);
+});
+
+// POST /api/auth/send-invitations (adminOnly) — bulk send
+router.post('/send-invitations', authMiddleware, adminOnly, async (req, res) => {
+  const { staffIds } = req.body;
+  if (!Array.isArray(staffIds) || staffIds.length === 0) {
+    return res.status(400).json({ error: 'staffIds array required' });
+  }
+  const results = [];
+  for (const id of staffIds) {
+    try {
+      const { rows } = await pool.query(
+        'SELECT id, first_name, last_name, email, role FROM staff WHERE id=$1 AND status != $2',
+        [id, 'terminated']
+      );
+      if (!rows[0]) { results.push({ id, success: false, error: 'Not found' }); continue; }
+      const staff = rows[0];
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      await pool.query(
+        'UPDATE staff SET invitation_token=$1, invitation_token_expiry=$2, invitation_sent_at=NOW() WHERE id=$3',
+        [token, expiry, id]
+      );
+      await sendInvitationEmail({ ...staff, invitation_token: token });
+      results.push({ id, success: true, name: `${staff.first_name} ${staff.last_name}` });
+    } catch (err) {
+      results.push({ id, success: false, error: err.message });
+    }
+  }
+  const sent = results.filter(r => r.success).length;
+  logAudit(req, { action_type: 'SEND_INVITATIONS', entity_type: 'staff', entity_description: `Sent invitations to ${sent} driver(s)` });
+  res.json({ results });
+});
+
+// POST /api/auth/resend-invitation/:staffId (adminOnly) — single resend
+router.post('/resend-invitation/:staffId', authMiddleware, adminOnly, async (req, res) => {
+  const { staffId } = req.params;
+  const { rows } = await pool.query(
+    'SELECT id, first_name, last_name, email, role FROM staff WHERE id=$1 AND status != $2',
+    [staffId, 'terminated']
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Driver not found' });
+  const staff = rows[0];
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  await pool.query(
+    'UPDATE staff SET invitation_token=$1, invitation_token_expiry=$2, invitation_sent_at=NOW() WHERE id=$3',
+    [token, expiry, staffId]
+  );
+  await sendInvitationEmail({ ...staff, invitation_token: token });
+  logAudit(req, { action_type: 'RESEND_INVITATION', entity_type: 'staff', entity_id: parseInt(staffId), entity_description: `Resent invitation to ${staff.first_name} ${staff.last_name}` });
+  res.json({ success: true, name: `${staff.first_name} ${staff.last_name}` });
 });
 
 module.exports = router;

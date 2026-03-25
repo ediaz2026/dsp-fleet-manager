@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useAuth } from '../App';
-import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 import { Truck, Eye, EyeOff } from 'lucide-react';
@@ -12,7 +12,6 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const [showForgot, setShowForgot] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -81,20 +80,10 @@ export default function Login() {
               />
               Remember me
             </label>
-            <button
-              type="button"
-              onClick={() => setShowForgot(s => !s)}
-              className="text-xs text-[#2563EB] hover:text-[#1D4ED8]"
-            >
+            <Link to="/forgot-password" className="text-xs text-[#2563EB] hover:text-[#1D4ED8]">
               Forgot password?
-            </button>
+            </Link>
           </div>
-
-          {showForgot && (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700 text-center">
-              Contact your administrator to reset your password.
-            </div>
-          )}
 
           <button
             type="submit"

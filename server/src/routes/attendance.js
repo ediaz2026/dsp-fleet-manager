@@ -16,7 +16,14 @@ router.get('/', async (req, res) => {
   const params = [];
   if (date) { params.push(date); q += ` AND a.attendance_date = $${params.length}`; }
   if (start && end) { params.push(start, end); q += ` AND a.attendance_date BETWEEN $${params.length-1} AND $${params.length}`; }
-  if (staff_id) { params.push(staff_id); q += ` AND a.staff_id = $${params.length}`; }
+  if (req.user.role === 'driver') {
+    // Drivers always see only their own attendance
+    params.push(req.user.id);
+    q += ` AND a.staff_id = $${params.length}`;
+  } else if (staff_id) {
+    params.push(staff_id);
+    q += ` AND a.staff_id = $${params.length}`;
+  }
   q += ' ORDER BY a.attendance_date DESC, st.last_name';
   const { rows } = await pool.query(q, params);
   res.json(rows);
@@ -43,7 +50,7 @@ router.post('/', managerOnly, async (req, res) => {
     `INSERT INTO attendance (staff_id, shift_id, attendance_date, status, call_out_reason, late_minutes, notes, created_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      ON CONFLICT (staff_id, attendance_date)
-     DO UPDATE SET status=$4, call_out_reason=$5, late_minutes=$6, notes=$7
+     DO UPDATE SET status=$4, call_out_reason=$5, late_minutes=$6, notes=$7, created_by=$8, created_at=NOW()
      RETURNING *`,
     [staff_id, shift_id, attendance_date, status, call_out_reason, late_minutes, notes, req.user.id]
   );

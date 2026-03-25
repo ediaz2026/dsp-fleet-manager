@@ -5,14 +5,14 @@ import {
   Save, Plus, Trash2, Shield, Bell, Cpu, DollarSign, Cloud, ToggleLeft, ToggleRight,
   Tag, RepeatIcon, X, ChevronDown, ChevronUp, Search, Users, UserPlus, RefreshCw,
   Settings, Calendar, Upload, CheckCircle, AlertCircle, ChevronRight, GripVertical,
-  Download, FileSpreadsheet,
+  Download, FileSpreadsheet, ClipboardList,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 import Modal from '../components/Modal';
 import Badge from '../components/Badge';
-import { useAuth } from '../App';
+import { useAuth } from '../context/AuthContext';
 
 /* ─── Constants ───────────────────────────────────────────────────────────── */
 const DAYS_OF_WEEK = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -66,9 +66,11 @@ const SIDEBAR = [
   {
     group: 'SYSTEM',
     items: [
-      { id: 'general',       label: 'General Settings', icon: Settings },
-      { id: 'users',         label: 'User Management',  icon: Users },
-      { id: 'bulk-import',   label: 'Bulk Import',      icon: FileSpreadsheet },
+      { id: 'general',           label: 'General Settings',  icon: Settings },
+      { id: 'users',             label: 'User Management',   icon: Users },
+      { id: 'send-invitations',  label: 'Send Invitations',  icon: RefreshCw },
+      { id: 'bulk-import',       label: 'Bulk Import',       icon: FileSpreadsheet },
+      { id: 'audit-log',     label: 'Audit Log',        icon: ClipboardList },
       { id: 'notifications', label: 'Notifications',    icon: Bell },
     ],
   },
@@ -190,12 +192,126 @@ export default function Management() {
   /* ── User Management ──────────────────────────────────────────────────── */
   const [showAddUser, setShowAddUser] = useState(false);
   const [editUser,    setEditUser]    = useState(null);
-  const [uForm,       setUForm]       = useState({ first_name:'', last_name:'', email:'', role:'driver', password:'', must_change_password:true });
+  const [uForm,       setUForm]       = useState({ first_name:'', last_name:'', email:'', role:'dispatcher', password:'', must_change_password:true });
   const [editUForm,   setEditUForm]   = useState({ role:'', status:'', password:'' });
   const { data: userList = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.get('/auth/users').then(r => r.data), enabled: isAdmin });
-  const createUser = useMutation({ mutationFn: d => api.post('/auth/users', d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); setShowAddUser(false); setUForm({ first_name:'', last_name:'', email:'', role:'driver', password:'', must_change_password:true }); toast.success('User created'); }, onError: err => toast.error(err.response?.data?.error || 'Failed to create user') });
+  const createUser = useMutation({ mutationFn: d => api.post('/auth/users', d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); setShowAddUser(false); setUForm({ first_name:'', last_name:'', email:'', role:'dispatcher', password:'', must_change_password:true }); toast.success('User created'); }, onError: err => toast.error(err.response?.data?.error || 'Failed to create user') });
   const updateUser = useMutation({ mutationFn: ({ id, ...d }) => api.put(`/auth/users/${id}`, d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); setEditUser(null); toast.success('User updated'); }, onError: err => toast.error(err.response?.data?.error || 'Failed to update user') });
   const openEditUser = (u) => { setEditUser(u); setEditUForm({ role: u.role, status: u.status, password: '' }); };
+
+  /* ── Send Invitations ─────────────────────────────────────────────────── */
+  const [inviteFilter,      setInviteFilter]      = useState('all'); // 'all' | 'not_sent' | 'invited' | 'active'
+  const [inviteSearch,      setInviteSearch]      = useState('');
+  const [selectedIds,       setSelectedIds]       = useState(new Set());
+  const [showInviteConfirm, setShowInviteConfirm] = useState(false);
+  const [inviteResults,     setInviteResults]     = useState(null);
+
+  const { data: driverList = [], refetch: refetchDrivers } = useQuery({
+    queryKey: ['invite-drivers'],
+    queryFn: () => api.get('/auth/users').then(r => r.data.filter(u => u.role === 'driver')),
+    enabled: isAdmin && activeSection === 'send-invitations',
+  });
+
+  const sendInvitations = useMutation({
+    mutationFn: (staffIds) => api.post('/auth/send-invitations', { staffIds }).then(r => r.data),
+    onSuccess: (data) => {
+      setInviteResults(data.results);
+      setSelectedIds(new Set());
+      setShowInviteConfirm(false);
+      refetchDrivers();
+      const sent = data.results.filter(r => r.success).length;
+      const failed = data.results.filter(r => !r.success).length;
+      if (sent > 0) toast.success(`${sent} invitation${sent !== 1 ? 's' : ''} sent`);
+      if (failed > 0) toast.error(`${failed} failed to send`);
+    },
+    onError: err => toast.error(err.response?.data?.error || 'Failed to send invitations'),
+  });
+
+  const resendInvitation = useMutation({
+    mutationFn: (staffId) => api.post(`/auth/resend-invitation/${staffId}`).then(r => r.data),
+    onSuccess: (data) => { toast.success(`Invitation resent to ${data.name}`); refetchDrivers(); },
+    onError: err => toast.error(err.response?.data?.error || 'Failed to resend invitation'),
+  });
+
+  const getDriverInviteStatus = (d) => {
+    if (d.last_login) return 'active';
+    if (d.invitation_sent_at) return 'invited';
+    return 'not_sent';
+  };
+
+  const inviteDrivers = driverList.filter(d => {
+    const status = getDriverInviteStatus(d);
+    if (inviteFilter !== 'all' && status !== inviteFilter) return false;
+    if (inviteSearch) {
+      const q = inviteSearch.toLowerCase();
+      return `${d.first_name} ${d.last_name} ${d.email}`.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const toggleSelect = (id) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === inviteDrivers.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(inviteDrivers.map(d => d.id)));
+    }
+  };
+
+  /* ── Audit Log ────────────────────────────────────────────────────────── */
+  const [auditFilters, setAuditFilters] = useState({ date_from: '', date_to: '', user_id: '', action_type: '', entity_type: '', search: '' });
+  const [auditPage, setAuditPage] = useState(1);
+  const auditQuery = useQuery({
+    queryKey: ['audit-log', auditFilters, auditPage],
+    queryFn: () => api.get('/audit-log', { params: { ...auditFilters, page: auditPage, limit: 50 } }).then(r => r.data),
+    enabled: isAdmin && activeSection === 'audit-log',
+  });
+  const { data: auditUsers = [] } = useQuery({
+    queryKey: ['audit-users'],
+    queryFn: () => api.get('/audit-log/users').then(r => r.data),
+    enabled: isAdmin && activeSection === 'audit-log',
+  });
+  const auditData = auditQuery.data || { rows: [], total: 0, page: 1, limit: 50 };
+  const setAuditFilter = (key, val) => { setAuditFilters(f => ({ ...f, [key]: val })); setAuditPage(1); };
+
+  const ACTION_COLORS = {
+    LOGIN:           'bg-green-100 text-green-700',
+    FAILED_LOGIN:    'bg-red-100 text-red-700',
+    ACCOUNT_LOCKED:  'bg-red-200 text-red-800',
+    LOGOUT:          'bg-slate-100 text-slate-500',
+    CREATE_DRIVER:   'bg-blue-100 text-blue-700',
+    CREATE_USER:     'bg-blue-100 text-blue-700',
+    EDIT_DRIVER:     'bg-amber-100 text-amber-700',
+    UPDATE_USER:     'bg-amber-100 text-amber-700',
+    STATUS_CHANGE:   'bg-orange-100 text-orange-700',
+    RESET_PASSWORD:  'bg-purple-100 text-purple-700',
+    CHANGE_PASSWORD: 'bg-purple-100 text-purple-700',
+    DELETE:          'bg-red-100 text-red-700',
+    IMPORT:          'bg-teal-100 text-teal-700',
+    UNAUTHORIZED:    'bg-red-200 text-red-800',
+  };
+
+  const exportAuditLog = () => {
+    if (!auditData.rows.length) return;
+    const ws = XLSX.utils.json_to_sheet(auditData.rows.map(r => ({
+      Timestamp: r.timestamp ? new Date(r.timestamp).toLocaleString() : '',
+      User: r.user_name || '',
+      Role: r.user_role || '',
+      Action: r.action_type || '',
+      Entity: r.entity_type || '',
+      'Entity ID': r.entity_id || '',
+      Description: r.entity_description || '',
+      IP: r.ip_address || '',
+    })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Audit Log');
+    XLSX.writeFile(wb, `audit-log-${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   /* ── Driver Management (ASSOCIATES) ───────────────────────────────────── */
   const [driverStatusFilter, setDriverStatusFilter] = useState(
@@ -205,6 +321,8 @@ export default function Management() {
   const [driverSearch,  setDriverSearch]  = useState('');
   const [importResult,  setImportResult]  = useState(null);
   const [fleetImportResult, setFleetImportResult] = useState(null);
+  const [driverPreview,  setDriverPreview]  = useState(null); // { rows, previewRows, headers, totalRows, warnings }
+  const [vehiclePreview, setVehiclePreview] = useState(null);
   const [statusModal,   setStatusModal]   = useState(null); // { driver, newStatus }
   const driverImportRef = useRef();
   const fleetImportRef  = useRef();
@@ -263,18 +381,37 @@ export default function Management() {
     reader.readAsBinaryString(file);
   };
 
+  const DRIVER_REQUIRED_COLS  = ['DAProviderID', 'Legal_Firstname', 'Legal_Lastname'];
+  const DRIVER_OPTIONAL_COLS  = ['Employee_Code', 'DriversLicense', 'Birth_Date_(MM/DD/YYYY)', 'DLExpirationDate', 'Hire_Date'];
+  const VEHICLE_REQUIRED_COLS = ['vin'];
+  const VEHICLE_OPTIONAL_COLS = ['vehicleName','licensePlateNumber','make','model','year','serviceType','operationalStatus','registrationExpiryDate','registeredState','vehicleProvider','ownershipType','ownershipStartDate','ownershipEndDate','statusReasonMessage'];
+
+  const validateColumns = (rows, required) => {
+    if (!rows.length) return ['File is empty or has no data rows'];
+    const cols = Object.keys(rows[0]);
+    return required.filter(c => !cols.some(k => k.trim() === c)).map(c => `Missing required column: ${c}`);
+  };
+
   const handleDriverImport = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
-    parseXlsxFile(file, rows => importDriversMutation.mutate(rows));
+    parseXlsxFile(file, rows => {
+      const warnings = validateColumns(rows, DRIVER_REQUIRED_COLS);
+      setDriverPreview({ rows, previewRows: rows.slice(0, 5), headers: Object.keys(rows[0] || {}), totalRows: rows.length, warnings });
+      setImportResult(null);
+    });
   };
 
   const handleFleetImport = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
-    parseXlsxFile(file, rows => importVehiclesMutation.mutate(rows));
+    parseXlsxFile(file, rows => {
+      const warnings = validateColumns(rows, VEHICLE_REQUIRED_COLS);
+      setVehiclePreview({ rows, previewRows: rows.slice(0, 5), headers: Object.keys(rows[0] || {}), totalRows: rows.length, warnings });
+      setFleetImportResult(null);
+    });
   };
 
   const downloadTemplate = (type) => {
@@ -283,12 +420,14 @@ export default function Management() {
       data = [
         ['DAProviderID', 'Legal_Firstname', 'Legal_Lastname', 'Employee_Code', 'DriversLicense', 'Birth_Date_(MM/DD/YYYY)', 'DLExpirationDate', 'Hire_Date'],
         ['DA123456789', 'John', 'Smith', 'EMP001', 'D12345678', '01/15/1990', '12/31/2026', '03/01/2024'],
+        ['DA987654321', 'Maria', 'Garcia', 'EMP002', 'G87654321', '06/20/1992', '08/15/2027', '01/15/2023'],
       ];
       filename = 'drivers-import-template.xlsx';
     } else {
       data = [
-        ['vin', 'vehicleName', 'licensePlateNumber', 'make', 'model', 'year', 'serviceType', 'operationalStatus', 'registrationExpiryDate', 'registeredState'],
-        ['1HGBH41JXMN109186', 'VAN-001', 'ABC1234', 'Mercedes', 'Sprinter', '2022', 'EDV', 'OPERATIONAL', '12/31/2026', 'FL'],
+        ['vin','vehicleName','licensePlateNumber','make','model','year','serviceType','operationalStatus','vehicleProvider','ownershipType','ownershipStartDate','ownershipEndDate','registrationExpiryDate','registeredState','statusReasonMessage'],
+        ['1HGBH41JXMN109186','VAN-001','ABC1234','Mercedes','Sprinter','2022','Standard Parcel Step Van - US','OPERATIONAL','Last Mile DSP','OWNED','01/01/2022','','12/31/2026','FL',''],
+        ['2T1BURHE0JC042951','VAN-002','XYZ5678','Rivian','EDV','2023','Standard Parcel Electric - Rivian MEDIUM','OPERATIONAL','Last Mile DSP','OWNED','06/01/2023','','06/30/2027','FL',''],
       ];
       filename = 'vehicles-import-template.xlsx';
     }
@@ -929,9 +1068,12 @@ export default function Management() {
         {/* ══ USER MANAGEMENT ══════════════════════════════════════════════ */}
         {activeSection === 'users' && (
           <>
-            <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold text-slate-900">User Management</h1>
-              <button className="btn-primary text-xs" onClick={() => setShowAddUser(true)}><UserPlus size={14} /> Add User</button>
+            <div className="flex items-start justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">User Management</h1>
+                <p className="text-sm text-slate-500 mt-1">Manage admin, manager, and dispatcher accounts. Driver accounts are managed from the <span className="font-medium text-blue-600">Driver Profile</span>.</p>
+              </div>
+              <button className="btn-primary text-xs shrink-0 ml-4" onClick={() => setShowAddUser(true)}><UserPlus size={14} /> Add User</button>
             </div>
             <section className={CARD + ' !p-0 overflow-hidden'}>
               <table className="w-full text-sm">
@@ -946,19 +1088,27 @@ export default function Management() {
                   </tr>
                 </thead>
                 <tbody>
-                  {userList.map(u => (
-                    <tr key={u.id} className="border-b border-[#E2E8F0] hover:bg-blue-50/40 transition-colors">
-                      <td className="px-4 py-2.5 font-medium text-[#111827]">
-                        {u.first_name} {u.last_name}
-                        {u.must_change_password && <span className="ml-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">Temp PW</span>}
-                      </td>
-                      <td className="px-3 py-2.5 text-[#475569]">{u.email}</td>
-                      <td className="px-3 py-2.5 text-center"><Badge status={u.role === 'manager' ? 'dispatcher' : u.role} label={u.role === 'manager' ? 'Dispatcher' : u.role} /></td>
-                      <td className="px-3 py-2.5 text-center text-xs text-[#475569]">{u.last_login ? format(new Date(u.last_login), 'MM/dd/yy h:mm a') : 'Never'}</td>
-                      <td className="px-3 py-2.5 text-center"><span className={`badge text-xs ${u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{u.status}</span></td>
-                      <td className="px-3 py-2.5 text-right"><button className="btn-ghost text-xs" onClick={() => openEditUser(u)}>Edit</button></td>
-                    </tr>
-                  ))}
+                  {userList.map(u => {
+                    const isDriverRole = u.role === 'driver';
+                    return (
+                      <tr key={u.id} className={`border-b border-[#E2E8F0] transition-colors ${isDriverRole ? 'bg-slate-50/60' : 'hover:bg-blue-50/40'}`}>
+                        <td className="px-4 py-2.5 font-medium text-[#111827]">
+                          {u.first_name} {u.last_name}
+                          {!isDriverRole && u.must_change_password && <span className="ml-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">Temp PW</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-[#475569]">{u.email}</td>
+                        <td className="px-3 py-2.5 text-center"><Badge status={u.role === 'manager' ? 'dispatcher' : u.role} label={u.role === 'manager' ? 'Dispatcher' : u.role} /></td>
+                        <td className="px-3 py-2.5 text-center text-xs text-[#475569]">{u.last_login ? format(new Date(u.last_login), 'MM/dd/yy h:mm a') : 'Never'}</td>
+                        <td className="px-3 py-2.5 text-center"><span className={`badge text-xs ${u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{u.status}</span></td>
+                        <td className="px-3 py-2.5 text-right">
+                          {isDriverRole
+                            ? <span className="text-[11px] text-[#94a3b8] italic">Manage from Driver Profile</span>
+                            : <button className="btn-ghost text-xs" onClick={() => openEditUser(u)}>Edit</button>
+                          }
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {userList.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-[#94a3b8]">No users found</td></tr>}
                 </tbody>
               </table>
@@ -966,129 +1116,424 @@ export default function Management() {
           </>
         )}
 
+        {/* ══ SEND INVITATIONS ═════════════════════════════════════════════ */}
+        {activeSection === 'send-invitations' && (
+          <>
+            <div className="flex items-start justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">Send Invitations</h1>
+                <p className="text-sm text-slate-500 mt-1">Select drivers to send portal invitation emails. Drivers receive a 7-day link to set their password.</p>
+              </div>
+              {selectedIds.size > 0 && (
+                <button
+                  className="btn-primary text-xs shrink-0 ml-4"
+                  onClick={() => setShowInviteConfirm(true)}
+                >
+                  <RefreshCw size={14} /> Send to {selectedIds.size} Selected
+                </button>
+              )}
+            </div>
+
+            {/* Filter bar */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  className="input pl-8 py-1.5 text-sm"
+                  placeholder="Search drivers…"
+                  value={inviteSearch}
+                  onChange={e => setInviteSearch(e.target.value)}
+                />
+              </div>
+              {['all','not_sent','invited','active'].map(f => (
+                <button
+                  key={f}
+                  onClick={() => setInviteFilter(f)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    inviteFilter === f
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  {{ all: 'All', not_sent: 'Not Sent', invited: 'Invited', active: 'Active' }[f]}
+                  <span className="ml-1.5 opacity-70">
+                    {f === 'all' ? driverList.length : driverList.filter(d => getDriverInviteStatus(d) === f).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Results banner */}
+            {inviteResults && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-blue-800">Invitation results</p>
+                  <button onClick={() => setInviteResults(null)} className="text-blue-400 hover:text-blue-600"><X size={14} /></button>
+                </div>
+                {inviteResults.map(r => (
+                  <p key={r.id} className={`text-xs flex items-center gap-1.5 ${r.success ? 'text-green-700' : 'text-red-600'}`}>
+                    {r.success ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
+                    {r.name || `ID ${r.id}`} — {r.success ? 'Sent' : r.error}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {/* Driver table */}
+            <section className={CARD + ' !p-0 overflow-hidden'}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[#E2E8F0] bg-slate-50">
+                    <th className="px-4 py-3 w-8">
+                      <input
+                        type="checkbox"
+                        className="rounded accent-blue-600"
+                        checked={inviteDrivers.length > 0 && selectedIds.size === inviteDrivers.length}
+                        onChange={toggleSelectAll}
+                      />
+                    </th>
+                    <th className="th text-left px-3 py-3">Name</th>
+                    <th className="th text-left px-3 py-3">Email</th>
+                    <th className="th text-center px-3 py-3">Status</th>
+                    <th className="th text-center px-3 py-3">Invited</th>
+                    <th className="th text-center px-3 py-3">Last Login</th>
+                    <th className="th px-3 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {inviteDrivers.map(d => {
+                    const invStatus = getDriverInviteStatus(d);
+                    const statusBadge = {
+                      not_sent: <span className="badge bg-slate-100 text-slate-500 text-[10px]">Not Sent</span>,
+                      invited:  <span className="badge bg-amber-100 text-amber-700 text-[10px]">Invited</span>,
+                      active:   <span className="badge bg-green-100 text-green-700 text-[10px]">Active</span>,
+                    }[invStatus];
+                    return (
+                      <tr key={d.id} className="border-b border-[#E2E8F0] hover:bg-blue-50/30 transition-colors">
+                        <td className="px-4 py-2.5">
+                          <input
+                            type="checkbox"
+                            className="rounded accent-blue-600"
+                            checked={selectedIds.has(d.id)}
+                            onChange={() => toggleSelect(d.id)}
+                            disabled={invStatus === 'active'}
+                          />
+                        </td>
+                        <td className="px-3 py-2.5 font-medium text-[#111827]">{d.first_name} {d.last_name}</td>
+                        <td className="px-3 py-2.5 text-[#475569] text-xs">{d.email}</td>
+                        <td className="px-3 py-2.5 text-center">{statusBadge}</td>
+                        <td className="px-3 py-2.5 text-center text-xs text-[#475569]">
+                          {d.invitation_sent_at ? format(new Date(d.invitation_sent_at), 'MM/dd/yy') : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-center text-xs text-[#475569]">
+                          {d.last_login ? format(new Date(d.last_login), 'MM/dd/yy') : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          {invStatus !== 'active' && (
+                            <button
+                              className="btn-ghost text-xs"
+                              disabled={resendInvitation.isPending}
+                              onClick={() => resendInvitation.mutate(d.id)}
+                            >
+                              {invStatus === 'invited' ? 'Resend' : 'Send'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {inviteDrivers.length === 0 && (
+                    <tr><td colSpan={7} className="px-3 py-8 text-center text-[#94a3b8]">No drivers match the current filter</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </section>
+
+            {/* Confirm modal */}
+            <Modal isOpen={showInviteConfirm} onClose={() => setShowInviteConfirm(false)} title="Confirm Send Invitations">
+              <div className="space-y-4">
+                <p className="text-sm text-slate-600">
+                  Send portal invitation emails to <strong>{selectedIds.size}</strong> driver{selectedIds.size !== 1 ? 's' : ''}? Each driver will receive a unique link valid for 7 days.
+                </p>
+                <div className="bg-slate-50 rounded-lg p-3 max-h-40 overflow-y-auto space-y-1">
+                  {[...selectedIds].map(id => {
+                    const d = driverList.find(x => x.id === id);
+                    return d ? <p key={id} className="text-xs text-slate-700">• {d.first_name} {d.last_name} <span className="text-slate-400">({d.email})</span></p> : null;
+                  })}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button className="btn-ghost text-sm" onClick={() => setShowInviteConfirm(false)}>Cancel</button>
+                  <button
+                    className="btn-primary text-sm"
+                    disabled={sendInvitations.isPending}
+                    onClick={() => sendInvitations.mutate([...selectedIds])}
+                  >
+                    {sendInvitations.isPending ? 'Sending…' : `Send ${selectedIds.size} Invitation${selectedIds.size !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            </Modal>
+          </>
+        )}
+
         {/* ══ BULK IMPORT ══════════════════════════════════════════════════ */}
         {activeSection === 'bulk-import' && (
           <>
             <h1 className="text-2xl font-bold text-slate-900">Bulk Import</h1>
-            <p className="text-sm text-slate-500">Import multiple drivers or vehicles from an Excel or CSV spreadsheet. Download a template to see the exact column format required.</p>
+            <p className="text-sm text-slate-500">Upload a Paycom driver export or Amazon fleet export. Preview the data before importing — existing records will be updated, new ones created.</p>
 
-            {/* ── Drivers ─────────────────────────────────────────────── */}
-            <section className={CARD}>
-              <h2 className={SH + ' pb-3 border-b border-[#E2E8F0]'}>
-                <Users size={18} className="text-[#2563EB]" /> Import Drivers
-              </h2>
-              <p className="text-xs text-[#6B7280]">Existing drivers matched by <strong>DAProviderID</strong> will be updated; new entries will be created automatically.</p>
+            <div className="grid grid-cols-2 gap-5">
 
-              <div className="flex items-center gap-3 flex-wrap">
-                <button
-                  onClick={() => downloadTemplate('drivers')}
-                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-600 border border-blue-300 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-                >
-                  <Download size={14} /> Download Template
-                </button>
-                <span className="text-xs text-slate-400">Required: DAProviderID, Legal_Firstname, Legal_Lastname</span>
-              </div>
+              {/* ── LEFT: Import Drivers ───────────────────────────────── */}
+              <section className={CARD}>
+                <h2 className={SH + ' pb-3 border-b border-[#E2E8F0]'}>
+                  <Users size={18} className="text-[#2563EB]" /> Import Drivers
+                </h2>
+                <p className="text-xs text-[#6B7280]">
+                  Matched by <strong>DAProviderID</strong>. New drivers get an auto-generated work email
+                  (<code className="bg-slate-100 px-1 rounded">firstname.lastname@lastmiledsp.com</code>) and a temporary login account.
+                </p>
 
-              <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600">
-                <p className="font-semibold text-slate-700 mb-2">Template Columns:</p>
-                <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">DAProviderID</code> — Transporter ID <span className="text-red-500">*</span></span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">Legal_Firstname</code> — First name <span className="text-red-500">*</span></span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">Legal_Lastname</code> — Last name <span className="text-red-500">*</span></span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">Employee_Code</code> — Amazon employee code</span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">DriversLicense</code> — License number</span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">Birth_Date_(MM/DD/YYYY)</code> — Date of birth</span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">DLExpirationDate</code> — License expiration</span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">Hire_Date</code> — Hire date</span>
-                </div>
-              </div>
-
-              <input ref={driverImportRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleDriverImport} />
-              <button
-                onClick={() => { setImportResult(null); driverImportRef.current?.click(); }}
-                disabled={importDriversMutation.isPending}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors text-slate-700 w-fit"
-              >
-                <Upload size={14} /> {importDriversMutation.isPending ? 'Importing…' : 'Upload Driver File'}
-              </button>
-
-              {importResult && (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
-                  <CheckCircle size={18} className="text-green-500 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 text-sm">
-                    <p className="font-semibold text-green-800">Driver import complete</p>
-                    <p className="text-green-700">{importResult.created} created · {importResult.updated} updated · {importResult.skipped} skipped</p>
-                    {importResult.errors?.length > 0 && (
-                      <details className="mt-1">
-                        <summary className="text-red-600 cursor-pointer text-xs">{importResult.errors.length} errors</summary>
-                        <ul className="mt-1 text-xs text-red-600 space-y-0.5">{importResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
-                      </details>
-                    )}
+                {/* Column reference */}
+                <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+                  <p className="font-semibold text-slate-700">Required columns (exact Paycom names):</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['DAProviderID','Legal_Firstname','Legal_Lastname'].map(c => (
+                      <code key={c} className="bg-white border border-red-200 text-red-700 px-1.5 py-0.5 rounded text-[11px]">{c}</code>
+                    ))}
                   </div>
-                  <button onClick={() => setImportResult(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
-                </div>
-              )}
-            </section>
-
-            {/* ── Vehicles ─────────────────────────────────────────────── */}
-            <section className={CARD}>
-              <h2 className={SH + ' pb-3 border-b border-[#E2E8F0]'}>
-                <Upload size={18} className="text-[#2563EB]" /> Import Vehicles
-              </h2>
-              <p className="text-xs text-[#6B7280]">Existing vehicles matched by <strong>VIN</strong> will be updated; new entries will be created automatically.</p>
-
-              <div className="flex items-center gap-3 flex-wrap">
-                <button
-                  onClick={() => downloadTemplate('vehicles')}
-                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-600 border border-blue-300 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-                >
-                  <Download size={14} /> Download Template
-                </button>
-                <span className="text-xs text-slate-400">Required: vin</span>
-              </div>
-
-              <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600">
-                <p className="font-semibold text-slate-700 mb-2">Template Columns:</p>
-                <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">vin</code> — Vehicle VIN <span className="text-red-500">*</span></span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">vehicleName</code> — Display name (e.g. VAN-001)</span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">licensePlateNumber</code> — License plate</span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">make</code> — Make (e.g. Mercedes)</span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">model</code> — Model (e.g. Sprinter)</span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">year</code> — Year (e.g. 2022)</span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">serviceType</code> — EDV or STEP VAN</span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">operationalStatus</code> — OPERATIONAL / other</span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">registrationExpiryDate</code> — Reg expiration</span>
-                  <span><code className="bg-white border border-slate-200 px-1 rounded">registeredState</code> — State code (e.g. FL)</span>
-                </div>
-              </div>
-
-              <input ref={fleetImportRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFleetImport} />
-              <button
-                onClick={() => { setFleetImportResult(null); fleetImportRef.current?.click(); }}
-                disabled={importVehiclesMutation.isPending}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors text-slate-700 w-fit"
-              >
-                <Upload size={14} /> {importVehiclesMutation.isPending ? 'Importing…' : 'Upload Vehicle File'}
-              </button>
-
-              {fleetImportResult && (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
-                  <CheckCircle size={18} className="text-green-500 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 text-sm">
-                    <p className="font-semibold text-green-800">Vehicle import complete</p>
-                    <p className="text-green-700">{fleetImportResult.created} created · {fleetImportResult.updated} updated · {fleetImportResult.skipped} skipped</p>
-                    {fleetImportResult.errors?.length > 0 && (
-                      <details className="mt-1">
-                        <summary className="text-red-600 cursor-pointer text-xs">{fleetImportResult.errors.length} errors</summary>
-                        <ul className="mt-1 text-xs text-red-600 space-y-0.5">{fleetImportResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
-                      </details>
-                    )}
+                  <p className="font-semibold text-slate-700 pt-1">Optional columns:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Employee_Code','DriversLicense','Birth_Date_(MM/DD/YYYY)','DLExpirationDate','Hire_Date'].map(c => (
+                      <code key={c} className="bg-white border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded text-[11px]">{c}</code>
+                    ))}
                   </div>
-                  <button onClick={() => setFleetImportResult(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
                 </div>
-              )}
-            </section>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => downloadTemplate('drivers')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-300 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                  >
+                    <Download size={13} /> Download Template
+                  </button>
+                  <input ref={driverImportRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleDriverImport} />
+                  <button
+                    onClick={() => { setDriverPreview(null); setImportResult(null); driverImportRef.current?.click(); }}
+                    disabled={importDriversMutation.isPending}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors text-slate-700"
+                  >
+                    <Upload size={13} /> Select File
+                  </button>
+                </div>
+
+                {/* Preview */}
+                {driverPreview && !importResult && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-slate-700">
+                        Preview — {driverPreview.totalRows} row{driverPreview.totalRows !== 1 ? 's' : ''} detected
+                        {driverPreview.totalRows > 5 && <span className="text-slate-400 font-normal"> (showing first 5)</span>}
+                      </p>
+                      <button onClick={() => setDriverPreview(null)} className="text-slate-400 hover:text-slate-600"><X size={13} /></button>
+                    </div>
+
+                    {driverPreview.warnings.length > 0 && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-800 space-y-0.5">
+                        {driverPreview.warnings.map((w, i) => (
+                          <p key={i} className="flex items-center gap-1.5"><AlertCircle size={12} className="flex-shrink-0" /> {w}</p>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="overflow-x-auto rounded-lg border border-slate-200">
+                      <table className="w-full text-[11px]">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            {['DAProviderID','Legal_Firstname','Legal_Lastname','DLExpirationDate','Hire_Date'].map(h => (
+                              <th key={h} className="px-2 py-1.5 text-left font-semibold text-slate-500 whitespace-nowrap border-b border-slate-200">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {driverPreview.previewRows.map((row, i) => (
+                            <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                              <td className="px-2 py-1 font-mono text-slate-600">{row['DAProviderID'] || '—'}</td>
+                              <td className="px-2 py-1 text-slate-700">{row['Legal_Firstname'] || '—'}</td>
+                              <td className="px-2 py-1 text-slate-700">{row['Legal_Lastname'] || '—'}</td>
+                              <td className="px-2 py-1 text-slate-500">{row['DLExpirationDate'] || '—'}</td>
+                              <td className="px-2 py-1 text-slate-500">{row['Hire_Date'] || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => { importDriversMutation.mutate(driverPreview.rows); setDriverPreview(null); }}
+                        disabled={importDriversMutation.isPending || driverPreview.warnings.some(w => w.startsWith('Missing required'))}
+                        className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-[#1E3A5F] text-white rounded-lg hover:bg-[#162d4a] disabled:opacity-50 transition-colors"
+                      >
+                        <CheckCircle size={14} /> {importDriversMutation.isPending ? 'Importing…' : `Confirm Import (${driverPreview.totalRows} rows)`}
+                      </button>
+                      <button onClick={() => setDriverPreview(null)} className="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Result */}
+                {importResult && (
+                  <div className={`rounded-xl p-4 flex items-start gap-3 ${importResult.errors?.length > 0 ? 'bg-amber-50 border border-amber-200' : 'bg-green-50 border border-green-200'}`}>
+                    <CheckCircle size={18} className={`flex-shrink-0 mt-0.5 ${importResult.errors?.length > 0 ? 'text-amber-500' : 'text-green-500'}`} />
+                    <div className="flex-1 text-sm">
+                      <p className="font-semibold text-slate-800">Driver import complete</p>
+                      <p className="text-slate-700">
+                        <span className="text-green-700 font-semibold">{importResult.created} created</span>
+                        {importResult.accounts_created > 0 && <span className="text-blue-700 font-semibold"> · {importResult.accounts_created} accounts created</span>}
+                        <span> · {importResult.updated} updated · {importResult.skipped} skipped</span>
+                      </p>
+                      {importResult.accounts_created > 0 && (
+                        <p className="text-xs text-blue-600 mt-1">New drivers can log in with their work email and the default temporary password. They will be prompted to change it on first login.</p>
+                      )}
+                      {importResult.errors?.length > 0 && (
+                        <details className="mt-1">
+                          <summary className="text-red-600 cursor-pointer text-xs">{importResult.errors.length} error{importResult.errors.length !== 1 ? 's' : ''}</summary>
+                          <ul className="mt-1 text-xs text-red-600 space-y-0.5">{importResult.errors.map((e, i) => <li key={i}>• {e}</li>)}</ul>
+                        </details>
+                      )}
+                    </div>
+                    <button onClick={() => setImportResult(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
+                  </div>
+                )}
+              </section>
+
+              {/* ── RIGHT: Import Vehicles ─────────────────────────────── */}
+              <section className={CARD}>
+                <h2 className={SH + ' pb-3 border-b border-[#E2E8F0]'}>
+                  <FileSpreadsheet size={18} className="text-[#2563EB]" /> Import Vehicles
+                </h2>
+                <p className="text-xs text-[#6B7280]">
+                  Matched by <strong>VIN</strong>. Service type is mapped automatically:
+                  Step Van → <strong>STEP VAN</strong>, Rivian / Electric → <strong>EDV</strong>.
+                </p>
+
+                {/* Column reference */}
+                <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+                  <p className="font-semibold text-slate-700">Required columns:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <code className="bg-white border border-red-200 text-red-700 px-1.5 py-0.5 rounded text-[11px]">vin</code>
+                  </div>
+                  <p className="font-semibold text-slate-700 pt-1">Optional (Amazon fleet export names):</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['vehicleName','licensePlateNumber','make','model','year','serviceType','operationalStatus','registrationExpiryDate','registeredState','vehicleProvider','ownershipType','ownershipStartDate','ownershipEndDate'].map(c => (
+                      <code key={c} className="bg-white border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded text-[11px]">{c}</code>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => downloadTemplate('vehicles')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-300 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                  >
+                    <Download size={13} /> Download Template
+                  </button>
+                  <input ref={fleetImportRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFleetImport} />
+                  <button
+                    onClick={() => { setVehiclePreview(null); setFleetImportResult(null); fleetImportRef.current?.click(); }}
+                    disabled={importVehiclesMutation.isPending}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors text-slate-700"
+                  >
+                    <Upload size={13} /> Select File
+                  </button>
+                </div>
+
+                {/* Preview */}
+                {vehiclePreview && !fleetImportResult && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-slate-700">
+                        Preview — {vehiclePreview.totalRows} row{vehiclePreview.totalRows !== 1 ? 's' : ''} detected
+                        {vehiclePreview.totalRows > 5 && <span className="text-slate-400 font-normal"> (showing first 5)</span>}
+                      </p>
+                      <button onClick={() => setVehiclePreview(null)} className="text-slate-400 hover:text-slate-600"><X size={13} /></button>
+                    </div>
+
+                    {vehiclePreview.warnings.length > 0 && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-800 space-y-0.5">
+                        {vehiclePreview.warnings.map((w, i) => (
+                          <p key={i} className="flex items-center gap-1.5"><AlertCircle size={12} className="flex-shrink-0" /> {w}</p>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="overflow-x-auto rounded-lg border border-slate-200">
+                      <table className="w-full text-[11px]">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            {['vin','vehicleName','make','model','serviceType','operationalStatus'].map(h => (
+                              <th key={h} className="px-2 py-1.5 text-left font-semibold text-slate-500 whitespace-nowrap border-b border-slate-200">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {vehiclePreview.previewRows.map((row, i) => (
+                            <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                              <td className="px-2 py-1 font-mono text-slate-600 text-[10px]">{(row['vin'] || '—').slice(0, 17)}</td>
+                              <td className="px-2 py-1 text-slate-700">{row['vehicleName'] || '—'}</td>
+                              <td className="px-2 py-1 text-slate-600">{row['make'] || '—'}</td>
+                              <td className="px-2 py-1 text-slate-600">{row['model'] || '—'}</td>
+                              <td className="px-2 py-1 text-slate-500 text-[10px]">{row['serviceType'] || '—'}</td>
+                              <td className="px-2 py-1">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${(row['operationalStatus'] || '').toUpperCase() === 'OPERATIONAL' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                                  {row['operationalStatus'] || '—'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => { importVehiclesMutation.mutate(vehiclePreview.rows); setVehiclePreview(null); }}
+                        disabled={importVehiclesMutation.isPending || vehiclePreview.warnings.some(w => w.startsWith('Missing required'))}
+                        className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-[#1E3A5F] text-white rounded-lg hover:bg-[#162d4a] disabled:opacity-50 transition-colors"
+                      >
+                        <CheckCircle size={14} /> {importVehiclesMutation.isPending ? 'Importing…' : `Confirm Import (${vehiclePreview.totalRows} rows)`}
+                      </button>
+                      <button onClick={() => setVehiclePreview(null)} className="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Result */}
+                {fleetImportResult && (
+                  <div className={`rounded-xl p-4 flex items-start gap-3 ${fleetImportResult.errors?.length > 0 ? 'bg-amber-50 border border-amber-200' : 'bg-green-50 border border-green-200'}`}>
+                    <CheckCircle size={18} className={`flex-shrink-0 mt-0.5 ${fleetImportResult.errors?.length > 0 ? 'text-amber-500' : 'text-green-500'}`} />
+                    <div className="flex-1 text-sm">
+                      <p className="font-semibold text-slate-800">Vehicle import complete</p>
+                      <p className="text-slate-700">
+                        <span className="text-green-700 font-semibold">{fleetImportResult.created} created</span>
+                        <span> · {fleetImportResult.updated} updated · {fleetImportResult.skipped} skipped</span>
+                      </p>
+                      {fleetImportResult.errors?.length > 0 && (
+                        <details className="mt-1">
+                          <summary className="text-red-600 cursor-pointer text-xs">{fleetImportResult.errors.length} error{fleetImportResult.errors.length !== 1 ? 's' : ''}</summary>
+                          <ul className="mt-1 text-xs text-red-600 space-y-0.5">{fleetImportResult.errors.map((e, i) => <li key={i}>• {e}</li>)}</ul>
+                        </details>
+                      )}
+                    </div>
+                    <button onClick={() => setFleetImportResult(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
+                  </div>
+                )}
+              </section>
+
+            </div>
           </>
         )}
 
@@ -1101,6 +1546,128 @@ export default function Management() {
                 <Bell size={32} className="text-slate-200 mx-auto mb-3" />
                 <p className="text-slate-400 text-sm">Notification preferences coming soon.</p>
               </div>
+            </section>
+          </>
+        )}
+
+        {/* ══ AUDIT LOG ════════════════════════════════════════════════ */}
+        {activeSection === 'audit-log' && (
+          <>
+            <div className="flex items-center justify-between">
+              <h1 className="text-2xl font-bold text-slate-900">Audit Log</h1>
+              <button onClick={exportAuditLog} className="btn-secondary flex items-center gap-2 text-sm" disabled={!auditData.rows.length}>
+                <Download size={14} /> Export Excel
+              </button>
+            </div>
+
+            {/* Filters */}
+            <section className={CARD}>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className={FL}>From Date</label>
+                  <input type="date" className="input" value={auditFilters.date_from} onChange={e => setAuditFilter('date_from', e.target.value)} />
+                </div>
+                <div>
+                  <label className={FL}>To Date</label>
+                  <input type="date" className="input" value={auditFilters.date_to} onChange={e => setAuditFilter('date_to', e.target.value)} />
+                </div>
+                <div>
+                  <label className={FL}>User</label>
+                  <select className="select" value={auditFilters.user_id} onChange={e => setAuditFilter('user_id', e.target.value)}>
+                    <option value="">All Users</option>
+                    {auditUsers.map(u => <option key={u.user_id} value={u.user_id}>{u.user_name} ({u.user_role})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={FL}>Action Type</label>
+                  <select className="select" value={auditFilters.action_type} onChange={e => setAuditFilter('action_type', e.target.value)}>
+                    <option value="">All Actions</option>
+                    {Object.keys(ACTION_COLORS).map(a => <option key={a} value={a}>{a.replace(/_/g, ' ')}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={FL}>Entity Type</label>
+                  <select className="select" value={auditFilters.entity_type} onChange={e => setAuditFilter('entity_type', e.target.value)}>
+                    <option value="">All Entities</option>
+                    {['staff','drivers','vehicles','shifts','attendance'].map(e => <option key={e} value={e}>{e}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={FL}>Search</label>
+                  <div className="relative">
+                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input className="input pl-7" placeholder="Search description, user…" value={auditFilters.search} onChange={e => setAuditFilter('search', e.target.value)} />
+                  </div>
+                </div>
+              </div>
+              {Object.values(auditFilters).some(Boolean) && (
+                <button className="text-xs text-blue-600 hover:text-blue-700 font-medium mt-1" onClick={() => { setAuditFilters({ date_from:'', date_to:'', user_id:'', action_type:'', entity_type:'', search:'' }); setAuditPage(1); }}>
+                  Clear filters
+                </button>
+              )}
+            </section>
+
+            {/* Table */}
+            <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Timestamp</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">User</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Action</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Entity</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">IP</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {auditQuery.isLoading ? (
+                      <tr><td colSpan={6} className="py-12 text-center text-slate-400 text-sm">Loading…</td></tr>
+                    ) : auditData.rows.length === 0 ? (
+                      <tr><td colSpan={6} className="py-12 text-center text-slate-400 text-sm">No audit entries found</td></tr>
+                    ) : auditData.rows.map(r => (
+                      <tr key={r.id} className="hover:bg-slate-50/60">
+                        <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">
+                          {r.timestamp ? new Date(r.timestamp).toLocaleString() : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <p className="text-xs font-medium text-slate-700">{r.user_name || '—'}</p>
+                          <p className="text-[11px] text-slate-400 capitalize">{r.user_role || ''}</p>
+                        </td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${ACTION_COLORS[r.action_type] || 'bg-slate-100 text-slate-600'}`}>
+                            {(r.action_type || '').replace(/_/g, ' ')}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">
+                          {r.entity_type}{r.entity_id ? ` #${r.entity_id}` : ''}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-slate-600 max-w-xs truncate" title={r.entity_description}>
+                          {r.entity_description || '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-slate-400 font-mono whitespace-nowrap">
+                          {r.ip_address || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {auditData.total > auditData.limit && (
+                <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50">
+                  <p className="text-xs text-slate-500">
+                    Showing {((auditData.page - 1) * auditData.limit) + 1}–{Math.min(auditData.page * auditData.limit, auditData.total)} of {auditData.total} entries
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button className="btn-secondary text-xs py-1 px-2.5" disabled={auditData.page <= 1} onClick={() => setAuditPage(p => p - 1)}>Prev</button>
+                    <span className="text-xs text-slate-600">Page {auditData.page}</span>
+                    <button className="btn-secondary text-xs py-1 px-2.5" disabled={auditData.page * auditData.limit >= auditData.total} onClick={() => setAuditPage(p => p + 1)}>Next</button>
+                  </div>
+                </div>
+              )}
             </section>
           </>
         )}
@@ -1166,8 +1733,8 @@ export default function Management() {
           <div><label className="modal-label">Email *</label><input type="email" className="input" required value={uForm.email} onChange={e => setUForm(f => ({ ...f, email: e.target.value }))} /></div>
           <div><label className="modal-label">Role *</label>
             <select className="select" required value={uForm.role} onChange={e => setUForm(f => ({ ...f, role: e.target.value }))}>
-              <option value="driver">Driver</option>
               <option value="dispatcher">Dispatcher</option>
+              <option value="manager">Manager</option>
               <option value="admin">Admin</option>
             </select>
           </div>
@@ -1188,7 +1755,7 @@ export default function Management() {
         <form onSubmit={e => { e.preventDefault(); const payload = { id: editUser.id, role: editUForm.role, status: editUForm.status }; if (editUForm.password) payload.password = editUForm.password; updateUser.mutate(payload); }} className="space-y-4">
           <div><label className="modal-label">Role</label>
             <select className="select" value={editUForm.role} onChange={e => setEditUForm(f => ({ ...f, role: e.target.value }))}>
-              <option value="driver">Driver</option><option value="dispatcher">Dispatcher</option><option value="admin">Admin</option>
+              <option value="dispatcher">Dispatcher</option><option value="manager">Manager</option><option value="admin">Admin</option>
             </select>
           </div>
           <div><label className="modal-label">Status</label>

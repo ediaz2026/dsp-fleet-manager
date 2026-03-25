@@ -7,6 +7,9 @@
 const router = require('express').Router();
 const pool   = require('../db/pool');
 const bcrypt = require('bcryptjs');
+const { authMiddleware, adminOnly } = require('../middleware/auth');
+
+router.use(authMiddleware, adminOnly);
 
 // FK-safe insertion order
 const TABLE_ORDER = [
@@ -22,11 +25,6 @@ const TABLE_ORDER = [
 const NO_SERIAL_ID = new Set(['day_schedules']);
 
 router.post('/', async (req, res) => {
-  const secret = process.env.IMPORT_SECRET || 'import-secret-2026';
-  if (req.body.secret !== secret) {
-    return res.status(403).json({ error: 'Invalid import secret' });
-  }
-
   const { tables } = req.body;
   if (!tables) return res.status(400).json({ error: 'No tables payload' });
 

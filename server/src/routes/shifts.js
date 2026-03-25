@@ -1,8 +1,13 @@
 const router = require('express').Router();
 const pool = require('../db/pool');
 const { authMiddleware, managerOnly } = require('../middleware/auth');
+const { logAudit } = require('../utils/audit');
 
 router.use(authMiddleware);
+
+// Ensure reject-tracking columns exist (idempotent — safe to run on every startup)
+pool.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS prev_start_time TIME`).catch(() => {});
+pool.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS prev_end_time TIME`).catch(() => {});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 async function getVisibilityDays() {
@@ -51,16 +56,26 @@ router.get('/', async (req, res) => {
 
   let q = `
     SELECT s.*, st.first_name, st.last_name, st.employee_id, st.role,
-           a.status as attendance_status, a.clock_in, a.clock_out, a.hours_worked, a.id as attendance_id
+           a.status as attendance_status, a.clock_in, a.clock_out, a.hours_worked, a.id as attendance_id,
+           a.notes as attendance_notes, a.created_at as attendance_marked_at,
+           att_st.first_name as attendance_marked_by_first, att_st.last_name as attendance_marked_by_last
     FROM shifts s
     JOIN staff st ON st.id = s.staff_id
     LEFT JOIN attendance a ON a.shift_id = s.id
-    WHERE s.shift_date BETWEEN $1 AND $2`;
+    LEFT JOIN staff att_st ON att_st.id = a.created_by
+    WHERE s.shift_date BETWEEN $1 AND $2
+      AND st.status NOT IN ('terminated', 'deleted')`;
   const params = [startDate, endDate];
 
-  if (isDriver) q += " AND s.publish_status = 'published'";
-
-  if (staff_id) { params.push(staff_id); q += ' AND s.staff_id = $' + params.length; }
+  if (isDriver) {
+    // Drivers always see only their own shifts, regardless of query param
+    q += " AND s.publish_status = 'published'";
+    params.push(req.user.id);
+    q += ' AND s.staff_id = $' + params.length;
+  } else if (staff_id) {
+    params.push(staff_id);
+    q += ' AND s.staff_id = $' + params.length;
+  }
   q += ' ORDER BY s.shift_date, s.start_time, st.last_name';
   const { rows } = await pool.query(q, params);
   res.json(rows);
@@ -132,10 +147,10 @@ router.post('/publish-week', managerOnly, async (req, res) => {
 
   let q, params;
   if (days && days.length > 0) {
-    q = "UPDATE shifts SET publish_status='published' WHERE shift_date = ANY($1::date[]) RETURNING id";
+    q = "UPDATE shifts SET publish_status='published', was_published=TRUE, prev_shift_type=NULL WHERE shift_date = ANY($1::date[]) RETURNING id";
     params = [days];
   } else {
-    q = "UPDATE shifts SET publish_status='published' WHERE shift_date BETWEEN $1 AND $2 RETURNING id";
+    q = "UPDATE shifts SET publish_status='published', was_published=TRUE, prev_shift_type=NULL WHERE shift_date BETWEEN $1 AND $2 RETURNING id";
     params = [week_start, weekEndStr];
   }
 
@@ -148,6 +163,7 @@ router.post('/publish-week', managerOnly, async (req, res) => {
     [week_start]
   );
 
+  logAudit(req, { action_type: 'PUBLISH_WEEK', entity_type: 'shifts', entity_description: `Published ${rows.length} shifts for week of ${week_start}`, new_value: { week_start, published: rows.length } });
   res.json({ published: rows.length });
 });
 
@@ -175,12 +191,16 @@ router.post('/unpublish-week', managerOnly, async (req, res) => {
 
 // ── POST /api/shifts/publish-selected ────────────────────────────────────────
 router.post('/publish-selected', managerOnly, async (req, res) => {
-  const { shift_ids } = req.body;
+  const { shift_ids, notify = false } = req.body;
   if (!Array.isArray(shift_ids) || shift_ids.length === 0) {
     return res.status(400).json({ error: 'shift_ids array required' });
   }
+
+  // 1. Publish the shifts
   const { rows } = await pool.query(
-    `UPDATE shifts SET publish_status='published' WHERE id = ANY($1::int[]) RETURNING id`,
+    `UPDATE shifts SET publish_status='published', was_published=TRUE,
+       prev_shift_type=NULL, prev_start_time=NULL, prev_end_time=NULL
+     WHERE id = ANY($1::int[]) RETURNING id`,
     [shift_ids]
   );
   await pool.query(
@@ -188,7 +208,93 @@ router.post('/publish-selected', managerOnly, async (req, res) => {
      WHERE shift_id = ANY($1::int[]) AND publish_status = 'draft'`,
     [shift_ids]
   );
-  res.json({ published: rows.length });
+
+  const publishedCount = rows.length;
+  let notifiedDrivers = [];
+
+  // 2. If notify requested, email each affected driver + create in-app notifications
+  if (notify && publishedCount > 0) {
+    try {
+      // Fetch full shift + driver details for the published shifts
+      const { rows: shiftDetails } = await pool.query(
+        `SELECT s.id, s.shift_date, s.shift_type, s.start_time, s.end_time,
+                st.id AS staff_id, st.first_name, st.last_name, st.email
+         FROM shifts s
+         JOIN staff st ON st.id = s.staff_id
+         WHERE s.id = ANY($1::int[])
+         ORDER BY s.shift_date`,
+        [shift_ids]
+      );
+
+      // Group shifts by driver
+      const driverMap = new Map();
+      for (const row of shiftDetails) {
+        if (!driverMap.has(row.staff_id)) {
+          driverMap.set(row.staff_id, {
+            staff_id:   row.staff_id,
+            first_name: row.first_name,
+            last_name:  row.last_name,
+            email:      row.email,
+            shifts:     [],
+          });
+        }
+        driverMap.get(row.staff_id).shifts.push(row);
+      }
+
+      // Build a week-range label from the shift dates
+      const allDates = shiftDetails
+        .map(s => String(s.shift_date).slice(0, 10))
+        .sort();
+      const fmtShort = (iso) => {
+        const d = new Date(iso + 'T12:00:00Z');
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+      };
+      const weekLabel = allDates.length
+        ? `${fmtShort(allDates[0])} – ${fmtShort(allDates[allDates.length - 1])}`
+        : '';
+
+      const { sendScheduleNotification } = require('../services/emailService');
+
+      for (const [, driver] of driverMap) {
+        // Create in-app notification record
+        await pool.query(
+          `INSERT INTO notifications (staff_id, title, message, type)
+           VALUES ($1, $2, $3, $4)`,
+          [
+            driver.staff_id,
+            'Schedule Updated',
+            `Your schedule for ${weekLabel} has been updated.`,
+            'schedule_published',
+          ]
+        );
+
+        // Send email (fire-and-forget; errors are logged inside the service)
+        sendScheduleNotification(driver, weekLabel, driver.shifts).catch(() => {});
+
+        notifiedDrivers.push(`${driver.first_name} ${driver.last_name}`);
+      }
+    } catch (notifyErr) {
+      // Notification failure must NOT roll back the publish — just log
+      console.error('[publish-selected] notification error (non-fatal):', notifyErr.message);
+    }
+  }
+
+  // 3. Audit log
+  const action = notify ? 'PUBLISH_WITH_NOTIFY' : 'PUBLISH_WITHOUT_NOTIFY';
+  const desc   = `${publishedCount} shift${publishedCount !== 1 ? 's' : ''} published` +
+                 (notify && notifiedDrivers.length
+                   ? ` · ${notifiedDrivers.length} driver${notifiedDrivers.length !== 1 ? 's' : ''} notified`
+                   : '');
+  logAudit(req, {
+    action_type:        action,
+    entity_type:        'shifts',
+    entity_description: desc,
+    new_value:          notify
+      ? { published: publishedCount, notified: notifiedDrivers }
+      : { published: publishedCount },
+  });
+
+  res.json({ published: publishedCount, notified: notifiedDrivers.length });
 });
 
 // ── POST /api/shifts ──────────────────────────────────────────────────────────
@@ -226,6 +332,7 @@ router.post('/', managerOnly, async (req, res) => {
     console.error('Change log insert failed (non-fatal):', logErr.message);
   }
 
+  logAudit(req, { action_type: 'CREATE_SHIFT', entity_type: 'shifts', entity_id: shift.id, entity_description: `${type} shift on ${shift_date}`, new_value: { staff_id, shift_date, shift_type: type } });
   res.status(201).json(shift);
 });
 
@@ -254,13 +361,19 @@ router.put('/:id', managerOnly, async (req, res) => {
 
   // If core fields changed, force back to draft (edit = needs re-publishing)
   const resolvedPublishStatus = coreChanged ? 'draft' : (publish_status || null);
+  // Track when a previously-published shift is reverted to draft so the UI can show yellow indicator
+  const isRevertingToDraft = coreChanged && old.was_published;
 
   const { rows } = await pool.query(
     `UPDATE shifts
      SET start_time=$1, end_time=$2, shift_type=$3, status=$4, notes=$5,
-         publish_status=COALESCE($6, publish_status)
-     WHERE id=$7 RETURNING *`,
-    [start_time, end_time, shift_type, status, notes, resolvedPublishStatus, req.params.id]
+         publish_status=COALESCE($6, publish_status),
+         prev_shift_type  = CASE WHEN $7 AND prev_shift_type  IS NULL THEN $8  ELSE prev_shift_type  END,
+         prev_start_time  = CASE WHEN $7 AND prev_start_time  IS NULL THEN $9  ELSE prev_start_time  END,
+         prev_end_time    = CASE WHEN $7 AND prev_end_time    IS NULL THEN $10 ELSE prev_end_time    END
+     WHERE id=$11 RETURNING *`,
+    [start_time, end_time, shift_type, status, notes, resolvedPublishStatus,
+     isRevertingToDraft, oldType, oldStart, oldEnd, req.params.id]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Shift not found' });
 
@@ -301,8 +414,78 @@ router.put('/:id', managerOnly, async (req, res) => {
 
 // ── DELETE /api/shifts/:id ────────────────────────────────────────────────────
 router.delete('/:id', managerOnly, async (req, res) => {
+  // Fetch before delete so we can record a recurring_skip
+  const { rows: pre } = await pool.query(
+    'SELECT staff_id, shift_date FROM shifts WHERE id = $1', [req.params.id]
+  );
   await pool.query('DELETE FROM shifts WHERE id = $1', [req.params.id]);
+  if (pre[0]) {
+    const dateStr = pre[0].shift_date instanceof Date
+      ? pre[0].shift_date.toISOString().split('T')[0]
+      : String(pre[0].shift_date).slice(0, 10);
+    // Record skip for the whole current + any future week.
+    // Use week-start comparison (not individual date) so that deleting a Monday
+    // shift on a Friday still records the skip for the current week's auto-apply.
+    const todayD = new Date();
+    const todaySunday = new Date(Date.UTC(todayD.getUTCFullYear(), todayD.getUTCMonth(), todayD.getUTCDate() - todayD.getUTCDay()));
+    const todayWeekStartStr = todaySunday.toISOString().split('T')[0];
+    if (dateStr >= todayWeekStartStr) {
+      try {
+        await pool.query(
+          'INSERT INTO recurring_skip (staff_id, skip_date) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+          [pre[0].staff_id, dateStr]
+        );
+      } catch (skipErr) {
+        console.warn('[delete] Could not record recurring_skip:', skipErr.message);
+      }
+    }
+  }
+  if (pre[0]) logAudit(req, { action_type: 'DELETE_SHIFT', entity_type: 'shifts', entity_id: parseInt(req.params.id), entity_description: `Deleted shift for staff #${pre[0].staff_id} on ${String(pre[0].shift_date).slice(0,10)}` });
   res.json({ message: 'Shift deleted' });
+});
+
+// ── POST /api/shifts/:id/reject ───────────────────────────────────────────────
+// Reject a pending shift from the Publish modal:
+//   • NEW shift (was_published=false) → delete entirely
+//   • CHANGED shift (was_published=true) → restore prev_shift_type/start/end, mark published
+router.post('/:id/reject', managerOnly, async (req, res) => {
+  const { rows: cur } = await pool.query('SELECT * FROM shifts WHERE id = $1', [req.params.id]);
+  const shift = cur[0];
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+
+  if (!shift.was_published) {
+    // New draft shift — delete it entirely
+    await pool.query('DELETE FROM shifts WHERE id = $1', [shift.id]);
+    const dateStr = shift.shift_date instanceof Date
+      ? shift.shift_date.toISOString().split('T')[0]
+      : String(shift.shift_date).slice(0, 10);
+    const todayD = new Date();
+    const todaySunday = new Date(Date.UTC(todayD.getUTCFullYear(), todayD.getUTCMonth(), todayD.getUTCDate() - todayD.getUTCDay()));
+    if (dateStr >= todaySunday.toISOString().split('T')[0]) {
+      try {
+        await pool.query(
+          'INSERT INTO recurring_skip (staff_id, skip_date) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+          [shift.staff_id, dateStr]
+        );
+      } catch (_) {}
+    }
+    return res.json({ deleted: true, id: shift.id });
+  }
+
+  // Changed shift — restore to previously published state, clear prev_ fields
+  const { rows } = await pool.query(
+    `UPDATE shifts SET
+       shift_type      = COALESCE(prev_shift_type,  shift_type),
+       start_time      = COALESCE(prev_start_time,  start_time),
+       end_time        = COALESCE(prev_end_time,    end_time),
+       publish_status  = 'published',
+       prev_shift_type = NULL,
+       prev_start_time = NULL,
+       prev_end_time   = NULL
+     WHERE id = $1 RETURNING *`,
+    [shift.id]
+  );
+  res.json(rows[0]);
 });
 
 // ── POST /api/shifts/bulk-apply ───────────────────────────────────────────────
@@ -399,12 +582,173 @@ router.post('/bulk-delete', managerOnly, async (req, res) => {
     if (!Array.isArray(shift_ids) || shift_ids.length === 0) return res.status(400).json({ error: 'shift_ids required' });
     const intIds = shift_ids.map(Number).filter(n => !isNaN(n));
     if (intIds.length === 0) return res.status(400).json({ error: 'No valid shift IDs' });
+
+    // Fetch before delete to record recurring_skip entries
+    const { rows: preRows } = await pool.query(
+      'SELECT staff_id, shift_date FROM shifts WHERE id = ANY($1::int[])', [intIds]
+    );
+
     await pool.query('DELETE FROM shifts WHERE id = ANY($1::int[])', [intIds]);
+
+    // Use week-start comparison so current-week past-days are also skipped
+    const todayD = new Date();
+    const todaySunday = new Date(Date.UTC(todayD.getUTCFullYear(), todayD.getUTCMonth(), todayD.getUTCDate() - todayD.getUTCDay()));
+    const todayWeekStartStr = todaySunday.toISOString().split('T')[0];
+    for (const s of preRows) {
+      const dateStr = s.shift_date instanceof Date
+        ? s.shift_date.toISOString().split('T')[0]
+        : String(s.shift_date).slice(0, 10);
+      if (dateStr >= todayWeekStartStr) {
+        try {
+          await pool.query(
+            'INSERT INTO recurring_skip (staff_id, skip_date) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+            [s.staff_id, dateStr]
+          );
+        } catch (skipErr) {
+          console.warn('[bulk-delete] Could not record recurring_skip:', skipErr.message);
+        }
+      }
+    }
+
     res.json({ deleted: intIds.length });
   } catch (err) {
     console.error('bulk-delete error:', err);
     res.status(500).json({ error: err.message || 'Failed to delete shifts' });
   }
+});
+
+// ── POST /api/shifts/copy-last-week ───────────────────────────────────────────
+// Copies all shifts from last week into the current week as draft.
+// For each driver+day, reverts to their recurring profile shift type if one exists.
+router.post('/copy-last-week', managerOnly, async (req, res) => {
+  const { week_start } = req.body;
+  if (!week_start) return res.status(400).json({ error: 'week_start required' });
+
+  // Ensure recurring_skip table exists — run without silently swallowing the error
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS recurring_skip (
+        staff_id  INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+        skip_date DATE    NOT NULL,
+        PRIMARY KEY (staff_id, skip_date)
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_skip_date ON recurring_skip(skip_date)`);
+  } catch (tableErr) {
+    console.warn('[copy-last-week] Could not ensure recurring_skip table:', tableErr.message);
+  }
+
+  const thisWeek  = new Date(week_start + 'T12:00:00Z');
+  const lastWeek  = new Date(thisWeek);
+  lastWeek.setDate(lastWeek.getDate() - 7);
+  const lastEnd   = new Date(lastWeek);
+  lastEnd.setDate(lastEnd.getDate() + 6);
+  const lastStartStr = lastWeek.toISOString().split('T')[0];
+  const lastEndStr   = lastEnd.toISOString().split('T')[0];
+
+  const { rows: lastShifts } = await pool.query(
+    `SELECT staff_id, shift_date, shift_type, start_time, end_time
+     FROM shifts WHERE shift_date BETWEEN $1 AND $2 AND publish_status = 'published'`,
+    [lastStartStr, lastEndStr]
+  );
+
+  const { rows: recurring } = await pool.query('SELECT * FROM driver_recurring_shifts');
+  const DAY_COLS = ['sun','mon','tue','wed','thu','fri','sat'];
+
+  let created = 0, skipped = 0;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const ls of lastShifts) {
+      const lastDate = ls.shift_date instanceof Date
+        ? ls.shift_date.toISOString().split('T')[0]
+        : String(ls.shift_date).slice(0, 10);
+      const dow = new Date(lastDate + 'T12:00:00Z').getDay();
+
+      const thisDate = new Date(thisWeek);
+      thisDate.setDate(thisDate.getDate() + dow);
+      const thisDateStr = thisDate.toISOString().split('T')[0];
+
+      // Skip if shift already exists for this driver on this date
+      const { rows: existing } = await client.query(
+        'SELECT id FROM shifts WHERE staff_id=$1 AND shift_date=$2',
+        [ls.staff_id, thisDateStr]
+      );
+      if (existing.length > 0) { skipped++; continue; }
+
+      // Use recurring profile type/times for this driver+day if available
+      const rec = recurring.find(r => r.staff_id === ls.staff_id && r[DAY_COLS[dow]]);
+      const shiftType = rec ? rec.shift_type  : ls.shift_type;
+      const startTime = rec ? rec.start_time  : ls.start_time;
+      const endTime   = rec ? rec.end_time    : ls.end_time;
+
+      // Clear any skip entry so the shift can persist (non-fatal if table missing)
+      try {
+        await client.query(
+          'DELETE FROM recurring_skip WHERE staff_id=$1 AND skip_date=$2',
+          [ls.staff_id, thisDateStr]
+        );
+      } catch (skipErr) { /* table may not exist yet — harmless, skip proceeds */ }
+
+      await client.query(
+        `INSERT INTO shifts (staff_id, shift_date, start_time, end_time, shift_type, status, publish_status)
+         VALUES ($1,$2,$3,$4,$5,'scheduled','draft')`,
+        [ls.staff_id, thisDateStr, startTime, endTime, shiftType]
+      );
+      created++;
+    }
+    await client.query('COMMIT');
+    res.json({ created, skipped });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('copy-last-week error:', err);
+    res.status(500).json({ error: err.message || 'Failed to copy week' });
+  } finally {
+    client.release();
+  }
+});
+
+// ── POST /api/shifts/:id/move ─────────────────────────────────────────────────
+// Drag-and-drop: reassign a shift to a different driver/day. Resets to draft.
+router.post('/:id/move', managerOnly, async (req, res) => {
+  const { staff_id, shift_date } = req.body;
+  if (!staff_id || !shift_date) return res.status(400).json({ error: 'staff_id and shift_date required' });
+
+  // Capture original location before moving (needed for recurring_skip)
+  const { rows: original } = await pool.query(
+    'SELECT staff_id, shift_date FROM shifts WHERE id=$1',
+    [req.params.id]
+  );
+  if (!original[0]) return res.status(404).json({ error: 'Shift not found' });
+
+  // Block if the target cell already has a shift
+  const { rows: conflict } = await pool.query(
+    'SELECT id FROM shifts WHERE staff_id=$1 AND shift_date=$2 AND id != $3',
+    [staff_id, shift_date, req.params.id]
+  );
+  if (conflict.length > 0) return res.status(409).json({ error: 'Driver already has a shift on that day' });
+
+  const { rows } = await pool.query(
+    `UPDATE shifts SET staff_id=$1, shift_date=$2, publish_status='draft' WHERE id=$3 RETURNING *`,
+    [staff_id, shift_date, req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Shift not found' });
+
+  // Record skip for the ORIGINAL slot so the recurring engine doesn't recreate there
+  const origDateStr = original[0].shift_date instanceof Date
+    ? original[0].shift_date.toISOString().split('T')[0]
+    : String(original[0].shift_date).slice(0, 10);
+  const origStaffId = original[0].staff_id;
+  const todayD = new Date();
+  const todaySunday = new Date(Date.UTC(todayD.getUTCFullYear(), todayD.getUTCMonth(), todayD.getUTCDate() - todayD.getUTCDay()));
+  if (origDateStr >= todaySunday.toISOString().split('T')[0]) {
+    pool.query(
+      'INSERT INTO recurring_skip (staff_id, skip_date) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+      [origStaffId, origDateStr]
+    ).catch(e => console.warn('[move] Could not record recurring_skip for source:', e.message));
+  }
+
+  res.json(rows[0]);
 });
 
 // ── POST /api/shifts/bulk ─────────────────────────────────────────────────────

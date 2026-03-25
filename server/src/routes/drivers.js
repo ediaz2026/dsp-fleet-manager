@@ -1,27 +1,41 @@
 const router = require('express').Router();
 const pool = require('../db/pool');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { authMiddleware, managerOnly } = require('../middleware/auth');
+const { logAudit } = require('../utils/audit');
+const { sendInvitationEmail } = require('../services/emailService');
 
 router.use(authMiddleware);
 
 // GET /api/drivers
 router.get('/', async (req, res) => {
+  // Drivers can only see their own profile
+  const whereClause = req.user.role === 'driver' ? 'WHERE d.staff_id = $1' : '';
+  const params = req.user.role === 'driver' ? [req.user.id] : [];
   const { rows } = await pool.query(
-    `SELECT d.*, s.first_name, s.last_name, s.employee_id, s.email, s.phone,
+    `SELECT d.*, s.first_name, s.last_name, s.employee_id,
+       s.email, s.personal_email, s.phone, s.role,
        s.status as employment_status, s.hire_date, s.is_rotating, s.employee_code,
+       s.last_login, s.must_change_password, s.invitation_sent_at,
+       (s.password_hash IS NOT NULL) as has_password,
        CASE WHEN d.license_expiration <= CURRENT_DATE + 60 THEN true ELSE false END as license_expiring
      FROM drivers d
      JOIN staff s ON s.id = d.staff_id
-     ORDER BY s.last_name, s.first_name`
+     ${whereClause}
+     ORDER BY s.last_name, s.first_name`,
+    params
   );
   res.json(rows);
 });
 
 // POST /api/drivers/create  — create a brand-new driver (staff + drivers row)
 router.post('/create', managerOnly, async (req, res) => {
-  const { first_name, last_name, hire_date, employee_code, transponder_id,
+  const { first_name, last_name, email, personal_email, phone,
+    role = 'driver', hire_date, employee_code, transponder_id,
     license_number, license_expiration, license_state, dob, notes } = req.body;
   if (!first_name || !last_name) return res.status(400).json({ error: 'first_name and last_name required' });
+  if (!email) return res.status(400).json({ error: 'Work email is required for login' });
 
   const client = await pool.connect();
   try {
@@ -29,16 +43,17 @@ router.post('/create', managerOnly, async (req, res) => {
     const emp_id = transponder_id
       ? transponder_id.slice(0, 20)
       : `DRV${Date.now()}`.slice(0, 20);
-    const email = transponder_id
-      ? `${transponder_id.toLowerCase()}@import.local`
-      : `${emp_id.toLowerCase()}@import.local`;
+    const workEmail = email.toLowerCase().trim();
 
     const { rows: sr } = await client.query(
-      `INSERT INTO staff (employee_id, first_name, last_name, email, role, status, hire_date, employee_code)
-       VALUES ($1,$2,$3,$4,'driver','active',$5,$6)
-       ON CONFLICT (email) DO UPDATE SET first_name=EXCLUDED.first_name, last_name=EXCLUDED.last_name, updated_at=NOW()
+      `INSERT INTO staff (employee_id, first_name, last_name, email, personal_email, phone,
+         role, status, hire_date, employee_code)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9)
+       ON CONFLICT (email) DO UPDATE SET first_name=EXCLUDED.first_name, last_name=EXCLUDED.last_name,
+         personal_email=EXCLUDED.personal_email, phone=EXCLUDED.phone, updated_at=NOW()
        RETURNING id`,
-      [emp_id, first_name, last_name, email, hire_date || null, employee_code || null]
+      [emp_id, first_name, last_name, workEmail,
+       personal_email || null, phone || null, role, hire_date || null, employee_code || null]
     );
     const staffId = sr[0].id;
     const { rows: dr } = await client.query(
@@ -46,10 +61,25 @@ router.post('/create', managerOnly, async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT (staff_id) DO UPDATE SET transponder_id=EXCLUDED.transponder_id, updated_at=NOW()
        RETURNING *`,
-      [staffId, transponder_id || null, license_number || null, license_expiration || null, license_state || null, dob || null, notes || null]
+      [staffId, transponder_id || null, license_number || null, license_expiration || null,
+       license_state || null, dob || null, notes || null]
     );
+    // Generate invitation token
+    const invitationToken = crypto.randomBytes(32).toString('hex');
+    const invitationExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    await client.query(
+      'UPDATE staff SET invitation_token=$1, invitation_token_expiry=$2 WHERE id=$3',
+      [invitationToken, invitationExpiry, staffId]
+    );
+
     await client.query('COMMIT');
-    res.status(201).json({ ...dr[0], first_name, last_name, hire_date, employee_code, employment_status: 'active' });
+    logAudit(req, { action_type: 'CREATE_DRIVER', entity_type: 'staff', entity_id: staffId, entity_description: `Created driver ${first_name} ${last_name} (${workEmail})` });
+
+    res.status(201).json({
+      ...dr[0], first_name, last_name, email: workEmail,
+      personal_email, phone, role, hire_date, employee_code, employment_status: 'active',
+      has_password: false, must_change_password: false, invitation_sent_at: null,
+    });
   } catch (e) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: e.message });
@@ -250,18 +280,30 @@ router.put('/:staffId/rotating', managerOnly, async (req, res) => {
 // PUT /api/drivers/:staffId/status  — change employment status
 router.put('/:staffId/status', managerOnly, async (req, res) => {
   const { status } = req.body;
-  const allowed = ['active', 'inactive', 'terminated'];
+  const allowed = ['active', 'inactive', 'suspended', 'terminated'];
   if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await client.query('UPDATE staff SET status=$1, updated_at=NOW() WHERE id=$2', [status, req.params.staffId]);
-    // Terminated: permanently delete recurring schedule
+    // Terminated: permanently delete recurring schedule + all future shifts/ops data
     if (status === 'terminated') {
       await client.query('DELETE FROM driver_recurring_shifts WHERE staff_id=$1', [req.params.staffId]);
-      await client.query('DELETE FROM day_schedule_drivers WHERE staff_id=$1', [req.params.staffId]);
+      await client.query('DELETE FROM day_schedule_drivers    WHERE staff_id=$1', [req.params.staffId]);
+      await client.query('DELETE FROM recurring_skip          WHERE staff_id=$1', [req.params.staffId]);
+      // Remove future shifts (keep historical for records)
+      await client.query(
+        'DELETE FROM shifts WHERE staff_id=$1 AND shift_date >= CURRENT_DATE',
+        [req.params.staffId]
+      );
+      // Remove future ops assignments (keep historical for records)
+      await client.query(
+        'DELETE FROM ops_assignments WHERE staff_id=$1 AND plan_date >= CURRENT_DATE',
+        [req.params.staffId]
+      );
     }
     await client.query('COMMIT');
+    logAudit(req, { action_type: 'STATUS_CHANGE', entity_type: 'staff', entity_id: parseInt(req.params.staffId), entity_description: `Driver status changed to ${status}`, new_value: { status } });
     res.json({ ok: true, status });
   } catch (e) {
     await client.query('ROLLBACK');
@@ -271,16 +313,37 @@ router.put('/:staffId/status', managerOnly, async (req, res) => {
   }
 });
 
+// POST /api/drivers/:staffId/reset-password  — generate temporary password
+router.post('/:staffId/reset-password', managerOnly, async (req, res) => {
+  // Generate a readable temp password
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const tempPassword = Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  const hash = await bcrypt.hash(tempPassword, 10);
+  await pool.query(
+    `UPDATE staff SET password_hash=$1, must_change_password=TRUE,
+       failed_login_attempts=0, locked_until=NULL, updated_at=NOW()
+     WHERE id=$2`,
+    [hash, req.params.staffId]
+  );
+  logAudit(req, { action_type: 'RESET_PASSWORD', entity_type: 'staff', entity_id: parseInt(req.params.staffId), entity_description: `Password reset by ${req.user?.name}` });
+  res.json({ ok: true, temp_password: tempPassword });
+});
+
 // PUT /api/drivers/:staffId/profile  — update both staff + drivers in one call
 router.put('/:staffId/profile', managerOnly, async (req, res) => {
-  const { first_name, last_name, hire_date, employee_code,
-    transponder_id, license_number, license_expiration, license_state, dob, notes } = req.body;
+  const { first_name, last_name, email, personal_email, phone, role,
+    hire_date, employee_code, transponder_id, license_number, license_expiration,
+    license_state, dob, notes } = req.body;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await client.query(
-      `UPDATE staff SET first_name=$1, last_name=$2, hire_date=$3, employee_code=$4, updated_at=NOW() WHERE id=$5`,
-      [first_name, last_name, hire_date || null, employee_code || null, req.params.staffId]
+      `UPDATE staff SET first_name=$1, last_name=$2, email=$3,
+         personal_email=$4, phone=$5, role=$6, hire_date=$7, employee_code=$8, updated_at=NOW()
+       WHERE id=$9`,
+      [first_name, last_name, email,
+       personal_email || null, phone || null, role || 'driver',
+       hire_date || null, employee_code || null, req.params.staffId]
     );
     const { rows } = await client.query(
       `UPDATE drivers SET transponder_id=$1, license_number=$2, license_expiration=$3,
@@ -290,6 +353,7 @@ router.put('/:staffId/profile', managerOnly, async (req, res) => {
        license_state || null, dob || null, notes || null, req.params.staffId]
     );
     await client.query('COMMIT');
+    logAudit(req, { action_type: 'EDIT_DRIVER', entity_type: 'staff', entity_id: parseInt(req.params.staffId), entity_description: `Profile updated for ${first_name} ${last_name}` });
     res.json({ ok: true, driver: rows[0] });
   } catch (e) {
     await client.query('ROLLBACK');
@@ -315,92 +379,180 @@ router.get('/:staffId/attendance', async (req, res) => {
 
 // DELETE /api/drivers/:staffId  — permanently delete driver
 router.delete('/:staffId', managerOnly, async (req, res) => {
-  // Cascade handled by FK ON DELETE CASCADE on drivers, shifts, attendance, etc.
-  await pool.query("DELETE FROM staff WHERE id=$1 AND role='driver'", [req.params.staffId]);
-  res.json({ ok: true });
+  const staffId = req.params.staffId;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Capture name for audit log before deletion
+    const { rows: who } = await client.query(
+      'SELECT first_name, last_name FROM staff WHERE id=$1', [staffId]
+    );
+    const name = who[0] ? `${who[0].first_name} ${who[0].last_name}` : `#${staffId}`;
+
+    // 1. Delete future shifts (keep historical for payroll records)
+    await client.query(
+      'DELETE FROM shifts WHERE staff_id=$1 AND shift_date >= CURRENT_DATE',
+      [staffId]
+    );
+    // 2. Delete future ops assignments
+    await client.query(
+      'DELETE FROM ops_assignments WHERE staff_id=$1 AND plan_date >= CURRENT_DATE',
+      [staffId]
+    );
+    // 3. Delete all recurring config
+    await client.query('DELETE FROM driver_recurring_shifts WHERE staff_id=$1', [staffId]);
+    await client.query('DELETE FROM recurring_skip          WHERE staff_id=$1', [staffId]);
+    await client.query('DELETE FROM day_schedule_drivers    WHERE staff_id=$1', [staffId]);
+    // 4. Nullify historical attendance + payroll (preserve records, remove FK reference)
+    await client.query('UPDATE attendance       SET staff_id=NULL WHERE staff_id=$1', [staffId]);
+    await client.query('UPDATE payroll_records  SET staff_id=NULL WHERE staff_id=$1', [staffId]);
+    // 5. Hard delete the staff row (DB CASCADE handles drivers, past shifts, audit_log, etc.)
+    await client.query("DELETE FROM staff WHERE id=$1 AND role='driver'", [staffId]);
+
+    await client.query('COMMIT');
+    logAudit(req, {
+      action_type:        'DELETE_DRIVER',
+      entity_type:        'staff',
+      entity_id:          parseInt(staffId),
+      entity_description: `Driver ${name} permanently deleted`,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
 });
 
-// POST /api/drivers/import  — bulk upsert from Excel/CSV data
+// POST /api/drivers/import  — bulk upsert from Paycom export (or our template)
+// Auto-generates work email and creates user account for new drivers.
 router.post('/import', managerOnly, async (req, res) => {
   const { rows: importRows = [] } = req.body;
-  let created = 0, updated = 0, skipped = 0;
+  let created = 0, updated = 0, skipped = 0, accounts_created = 0;
   const errors = [];
+
+  const defaultPassword = process.env.DRIVER_DEFAULT_PASSWORD || 'TempPass2026!';
+  const passwordHash = await bcrypt.hash(defaultPassword, 10);
+
+  // Generate a unique work email for a driver: firstname.lastname@lastmiledsp.com
+  const generateWorkEmail = async (firstName, lastName) => {
+    const clean = (s) => s.toLowerCase().trim()
+      .replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.').replace(/^\.|\.$/g, '');
+    const base = `${clean(firstName)}.${clean(lastName)}@lastmiledsp.com`;
+    const { rows: ex } = await pool.query('SELECT id FROM staff WHERE email=$1', [base]);
+    if (!ex.length) return base;
+    for (let i = 2; i <= 99; i++) {
+      const candidate = `${clean(firstName)}.${clean(lastName)}${i}@lastmiledsp.com`;
+      const { rows: ex2 } = await pool.query('SELECT id FROM staff WHERE email=$1', [candidate]);
+      if (!ex2.length) return candidate;
+    }
+    return base;
+  };
+
+  // Parse M/D/YYYY, MM/DD/YYYY, or ISO dates → YYYY-MM-DD
+  const parseDate = (d) => {
+    if (!d) return null;
+    try {
+      const s = String(d).trim();
+      if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+        const [m, day, yr] = s.split('/');
+        return `${yr}-${m.padStart(2,'0')}-${day.padStart(2,'0')}`;
+      }
+      const dt = new Date(s);
+      if (!isNaN(dt)) return dt.toISOString().slice(0, 10);
+    } catch {}
+    return null;
+  };
 
   for (const row of importRows) {
     try {
-      const transponder_id = String(row['DAProviderID'] || row['transponder_id'] || '').trim();
-      const first_name     = String(row['Legal_Firstname'] || row['first_name'] || '').trim();
-      const last_name      = String(row['Legal_Lastname']  || row['last_name']  || '').trim();
-      if (!transponder_id || !first_name || !last_name) { skipped++; continue; }
+      const transponder_id = String(row['DAProviderID'] || row['Transporter ID'] || row['transponder_id'] || '').trim();
+      const first_name     = String(row['Legal_Firstname'] || row['First Name'] || row['first_name'] || '').trim();
+      const last_name      = String(row['Legal_Lastname']  || row['Last Name']  || row['last_name']  || '').trim();
+      if (!first_name || !last_name) { skipped++; continue; }
 
-      const license_number    = row['DriversLicense']          || null;
-      const raw_dob           = row['Birth_Date_(MM/DD/YYYY)'] || row['dob']  || null;
-      const raw_lic_exp       = row['DLExpirationDate']        || null;
-      const raw_hire          = row['Hire_Date']               || null;
-      const employee_code     = String(row['Employee_Code']    || '').trim() || null;
+      const work_email     = String(row['Work Email'] || row['Email'] || '').trim().toLowerCase() || null;
+      const personal_email = String(row['Personal Email'] || '').trim() || null;
+      const phone          = String(row['Phone'] || row['Personal Phone Number'] || '').trim() || null;
+      const raw_status     = String(row['Status'] || 'active').trim().toUpperCase();
+      const emp_status     = raw_status === 'ACTIVE' ? 'active' : raw_status === 'SUSPENDED' ? 'suspended' : 'inactive';
+      const license_number = row['DriversLicense'] || row['License Number'] || null;
+      const raw_dob        = row['Birth_Date_(MM/DD/YYYY)'] || row['DOB'] || row['dob'] || null;
+      const raw_lic_exp    = row['DLExpirationDate'] || row['License Expiration'] || null;
+      const raw_hire       = row['Hire_Date'] || row['Hire Date'] || null;
+      const employee_code  = String(row['Employee_Code'] || row['Employee Code'] || '').trim() || null;
 
-      // Parse M/D/YYYY or ISO dates to YYYY-MM-DD
-      const parseDate = (d) => {
-        if (!d) return null;
-        try {
-          const s = String(d).trim();
-          // M/D/YYYY or MM/DD/YYYY
-          if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
-            const [m, day, yr] = s.split('/');
-            return `${yr}-${m.padStart(2,'0')}-${day.padStart(2,'0')}`;
-          }
-          const dt = new Date(s);
-          if (!isNaN(dt)) return dt.toISOString().slice(0, 10);
-        } catch {}
-        return null;
-      };
-
-      const dob               = parseDate(raw_dob);
+      const dob              = parseDate(raw_dob);
       const license_expiration = parseDate(raw_lic_exp);
-      const hire_date         = parseDate(raw_hire) || new Date().toISOString().slice(0, 10);
+      const hire_date        = parseDate(raw_hire) || new Date().toISOString().slice(0, 10);
 
-      // Check if driver exists by transponder_id
-      const { rows: existing } = await pool.query(
-        'SELECT d.id as driver_id, d.staff_id FROM drivers d WHERE d.transponder_id = $1',
-        [transponder_id]
-      );
+      // Find existing driver by transponder_id OR work email
+      let existing = null;
+      if (transponder_id) {
+        const { rows: byId } = await pool.query(
+          'SELECT d.id AS driver_id, d.staff_id FROM drivers d WHERE d.transponder_id=$1',
+          [transponder_id]
+        );
+        existing = byId[0] || null;
+      }
+      if (!existing && work_email) {
+        const { rows: byEmail } = await pool.query(
+          'SELECT d.id AS driver_id, d.staff_id FROM drivers d JOIN staff s ON s.id=d.staff_id WHERE s.email=$1',
+          [work_email]
+        );
+        existing = byEmail[0] || null;
+      }
 
-      if (existing[0]) {
+      if (existing) {
+        // Update existing driver — preserve their email/password
         await pool.query(
-          `UPDATE staff SET first_name=$1, last_name=$2, hire_date=$3, employee_code=$4, updated_at=NOW() WHERE id=$5`,
-          [first_name, last_name, hire_date, employee_code, existing[0].staff_id]
+          `UPDATE staff SET first_name=$1, last_name=$2, personal_email=$3, phone=$4,
+             status=$5, hire_date=$6, employee_code=$7, updated_at=NOW() WHERE id=$8`,
+          [first_name, last_name, personal_email, phone, emp_status, hire_date, employee_code, existing.staff_id]
         );
         await pool.query(
-          `UPDATE drivers SET license_number=$1, license_expiration=$2, dob=$3, updated_at=NOW() WHERE id=$4`,
-          [license_number, license_expiration, dob, existing[0].driver_id]
+          `UPDATE drivers SET transponder_id=COALESCE($1,transponder_id), license_number=$2,
+             license_expiration=$3, dob=$4, updated_at=NOW() WHERE id=$5`,
+          [transponder_id || null, license_number, license_expiration, dob, existing.driver_id]
         );
         updated++;
       } else {
-        // Generate unique employee_id and email
-        const emp_id = transponder_id.slice(0, 20);
-        const email  = `${transponder_id.toLowerCase()}@import.local`;
+        // New driver — auto-generate work email and create user account
+        const emp_id      = transponder_id ? transponder_id.slice(0, 20) : `DRV${Date.now()}`.slice(0, 20);
+        const emailToUse  = work_email || await generateWorkEmail(first_name, last_name);
 
         const { rows: newStaff } = await pool.query(
-          `INSERT INTO staff (employee_id, first_name, last_name, email, role, status, hire_date, employee_code)
-           VALUES ($1,$2,$3,$4,'driver','active',$5,$6)
-           ON CONFLICT (employee_id) DO UPDATE SET first_name=EXCLUDED.first_name, last_name=EXCLUDED.last_name, updated_at=NOW()
+          `INSERT INTO staff (employee_id, first_name, last_name, email, personal_email, phone,
+             role, status, hire_date, employee_code, password_hash, must_change_password, invitation_sent)
+           VALUES ($1,$2,$3,$4,$5,$6,'driver',$7,$8,$9,$10,TRUE,FALSE)
+           ON CONFLICT (email) DO UPDATE
+             SET first_name=EXCLUDED.first_name, last_name=EXCLUDED.last_name,
+                 status=EXCLUDED.status, updated_at=NOW()
            RETURNING id`,
-          [emp_id, first_name, last_name, email, hire_date, employee_code]
+          [emp_id, first_name, last_name, emailToUse, personal_email, phone,
+           emp_status, hire_date, employee_code, passwordHash]
         );
+        const staffId = newStaff[0].id;
+
         await pool.query(
           `INSERT INTO drivers (staff_id, transponder_id, license_number, license_expiration, dob)
            VALUES ($1,$2,$3,$4,$5)
            ON CONFLICT (staff_id) DO UPDATE SET transponder_id=EXCLUDED.transponder_id, updated_at=NOW()`,
-          [newStaff[0].id, transponder_id, license_number, license_expiration, dob]
+          [staffId, transponder_id || null, license_number, license_expiration, dob]
         );
         created++;
+        accounts_created++;
+        // Invitation email would be sent here when SMTP is configured (DRIVER_SMTP_HOST env var).
+        console.log(`[driver-import] Account created: ${emailToUse} (temp password set, must_change_password=true)`);
       }
     } catch (e) {
-      errors.push(`${row['Legal_Firstname'] || '?'} ${row['Legal_Lastname'] || '?'}: ${e.message}`);
+      errors.push(`Row ${row['Legal_Firstname'] || row['First Name'] || '?'} ${row['Legal_Lastname'] || row['Last Name'] || '?'}: ${e.message}`);
     }
   }
 
-  res.json({ created, updated, skipped, errors });
+  res.json({ created, updated, skipped, accounts_created, errors });
 });
 
 module.exports = router;

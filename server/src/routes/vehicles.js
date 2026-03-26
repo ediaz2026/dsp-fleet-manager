@@ -227,19 +227,21 @@ router.post('/import', managerOnly, async (req, res) => {
       const isOperational   = (row['operationalStatus'] || '').toUpperCase() === 'OPERATIONAL';
       const van_status      = isOperational ? 'Active' : 'Out of Service';
       const amazon_status   = 'Active'; // Import doesn't carry Amazon grounded status
-      const service_type    = parseServiceType(row['serviceType'] || row['type']);
+      const service_type    = parseServiceType(row['serviceType']);
       const vehicle_name    = row['vehicleName']          || vin;
       const license_plate   = row['licensePlateNumber']   || null;
       const make            = row['make']                 || null;
       const model           = row['model']                || null;
       const year            = row['year']                 ? parseInt(row['year']) : null;
-      const status_note     = row['statusReasonMessage']  || null;
-      const vehicle_provider = row['vehicleProvider']    || null;
-      const ownership_type_label = row['ownershipType']  || null;
+      const status_note          = row['statusReasonMessage']  || null;
+      const vehicle_provider     = row['vehicleProvider']       || null;
+      // Excel: 'type' = human label ("Amazon-owned"), 'ownershipType' = code ("AMAZON_OWNED")
+      const ownership_type_label = row['type']                  || null;
+      const ownership_type_code  = row['ownershipType']         || null;
       const ownership_start_date = parseDate(row['ownershipStartDate']);
       const ownership_end_date   = parseDate(row['ownershipEndDate']);
       const registration_expiration = parseDate(row['registrationExpiryDate']);
-      const registered_state = row['registeredState']    || null;
+      const registered_state     = row['registeredState']       || null;
 
       const { rows: existing } = await pool.query('SELECT id FROM vehicles WHERE vin = $1', [vin]);
 
@@ -247,24 +249,24 @@ router.post('/import', managerOnly, async (req, res) => {
         await pool.query(
           `UPDATE vehicles SET vehicle_name=$1, license_plate=$2, make=$3, model=$4, year=$5,
            service_type=$6, van_status=$7, amazon_status=$8, status_note=$9, vehicle_provider=$10,
-           ownership_type_label=$11, ownership_start_date=$12, ownership_end_date=$13,
-           registration_expiration=$14, registered_state=$15, updated_at=NOW()
-           WHERE vin=$16`,
+           ownership_type_label=$11, ownership_type_code=$12, ownership_start_date=$13,
+           ownership_end_date=$14, registration_expiration=$15, registered_state=$16, updated_at=NOW()
+           WHERE vin=$17`,
           [vehicle_name, license_plate, make, model, year, service_type, van_status, amazon_status,
-           status_note, vehicle_provider, ownership_type_label, ownership_start_date, ownership_end_date,
-           registration_expiration, registered_state, vin]
+           status_note, vehicle_provider, ownership_type_label, ownership_type_code,
+           ownership_start_date, ownership_end_date, registration_expiration, registered_state, vin]
         );
         updated++;
       } else {
         await pool.query(
           `INSERT INTO vehicles (vehicle_name, license_plate, vin, make, model, year,
            service_type, van_status, amazon_status, status_note, vehicle_provider,
-           ownership_type_label, ownership_start_date, ownership_end_date,
+           ownership_type_label, ownership_type_code, ownership_start_date, ownership_end_date,
            registration_expiration, registered_state)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
           [vehicle_name, license_plate, vin, make, model, year, service_type, van_status, amazon_status,
-           status_note, vehicle_provider, ownership_type_label, ownership_start_date, ownership_end_date,
-           registration_expiration, registered_state]
+           status_note, vehicle_provider, ownership_type_label, ownership_type_code,
+           ownership_start_date, ownership_end_date, registration_expiration, registered_state]
         );
         created++;
       }

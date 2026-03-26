@@ -384,7 +384,7 @@ export default function Management() {
   const DRIVER_REQUIRED_COLS  = ['DAProviderID', 'Legal_Firstname', 'Legal_Lastname'];
   const DRIVER_OPTIONAL_COLS  = ['Employee_Code', 'DriversLicense', 'Birth_Date_(MM/DD/YYYY)', 'DLExpirationDate', 'Hire_Date'];
   const VEHICLE_REQUIRED_COLS = ['vin'];
-  const VEHICLE_OPTIONAL_COLS = ['vehicleName','licensePlateNumber','make','model','year','serviceType','operationalStatus','registrationExpiryDate','registeredState','vehicleProvider','ownershipType','ownershipStartDate','ownershipEndDate','statusReasonMessage'];
+  const VEHICLE_OPTIONAL_COLS = ['vehicleName','licensePlateNumber','make','model','year','serviceType','operationalStatus','registrationExpiryDate','registeredState','vehicleProvider','type','ownershipType','ownershipStartDate','ownershipEndDate','statusReasonMessage'];
 
   const validateColumns = (rows, required) => {
     if (!rows.length) return ['File is empty or has no data rows'];

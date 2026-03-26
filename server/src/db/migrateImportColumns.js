@@ -7,13 +7,23 @@ const pool = require('./pool');
 
 async function migrateImportColumns() {
   // ── Vehicles: Amazon fleet export columns ─────────────────────────────────
-  await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS service_type        VARCHAR(50)`);
-  await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS status_note         TEXT`);
-  await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS vehicle_provider    VARCHAR(100)`);
+  await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS service_type         VARCHAR(50)`);
+  await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS status_note          TEXT`);
+  await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS vehicle_provider     VARCHAR(100)`);
   await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ownership_type_label VARCHAR(100)`);
+  await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ownership_type_code  VARCHAR(50)`);
   await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ownership_start_date DATE`);
   await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ownership_end_date   DATE`);
   await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS registered_state     VARCHAR(10)`);
+
+  // ── Vehicles: expand column sizes that were too small on existing Railway DBs ─
+  await pool.query(`ALTER TABLE vehicles ALTER COLUMN vin                   TYPE VARCHAR(50)`);
+  await pool.query(`ALTER TABLE vehicles ALTER COLUMN vehicle_name          TYPE VARCHAR(100)`);
+  await pool.query(`ALTER TABLE vehicles ALTER COLUMN license_plate         TYPE VARCHAR(20)`);
+  await pool.query(`ALTER TABLE vehicles ALTER COLUMN make                  TYPE VARCHAR(100)`);
+  await pool.query(`ALTER TABLE vehicles ALTER COLUMN model                 TYPE VARCHAR(100)`);
+  await pool.query(`ALTER TABLE vehicles ALTER COLUMN vehicle_provider      TYPE VARCHAR(100)`);
+  await pool.query(`ALTER TABLE vehicles ALTER COLUMN ownership_type_label  TYPE VARCHAR(100)`);
 
   // ── Staff: employee code (Paycom) ─────────────────────────────────────────
   await pool.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS employee_code VARCHAR(50)`);

@@ -500,6 +500,19 @@ CREATE TABLE IF NOT EXISTS vendors (
 );
 CREATE INDEX IF NOT EXISTS idx_vendors_status ON vendors(status);
 
+-- Driver notifications (shift reminders, announcements, etc.)
+CREATE TABLE IF NOT EXISTS notifications (
+  id         SERIAL PRIMARY KEY,
+  staff_id   INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+  title      VARCHAR(255) NOT NULL,
+  message    TEXT,
+  type       VARCHAR(50) DEFAULT 'info',
+  is_read    BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_staff_id ON notifications(staff_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_is_read  ON notifications(staff_id, is_read);
+
 -- Migrate vehicle status: 'maintenance' → 'out_of_service' (idempotent)
 UPDATE vehicles SET status = 'out_of_service' WHERE status = 'maintenance';
 

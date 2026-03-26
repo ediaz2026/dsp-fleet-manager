@@ -25,6 +25,21 @@ async function migrateImportColumns() {
   await pool.query(`ALTER TABLE vehicles ALTER COLUMN vehicle_provider      TYPE VARCHAR(100)`);
   await pool.query(`ALTER TABLE vehicles ALTER COLUMN ownership_type_label  TYPE VARCHAR(100)`);
 
+  // ── Driver notifications table ─────────────────────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id         SERIAL PRIMARY KEY,
+      staff_id   INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      title      VARCHAR(255) NOT NULL,
+      message    TEXT,
+      type       VARCHAR(50) DEFAULT 'info',
+      is_read    BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_staff_id ON notifications(staff_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_is_read  ON notifications(staff_id, is_read)`);
+
   // ── Staff: employee code (Paycom) ─────────────────────────────────────────
   await pool.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS employee_code VARCHAR(50)`);
 

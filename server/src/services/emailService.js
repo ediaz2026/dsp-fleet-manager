@@ -18,17 +18,39 @@ let nodemailer;
 try {
   nodemailer = require('nodemailer');
 } catch {
-  // nodemailer not installed — email will be skipped with a warning
+  console.warn('[email] nodemailer not installed — email features disabled');
 }
 
-function getTransporter() {
-  if (!nodemailer) return null;
-  if (!process.env.SMTP_HOST) return null;
+// Log SMTP config status at startup (after a short delay so env vars are loaded)
+setTimeout(() => {
+  const vars = { SMTP_HOST: process.env.SMTP_HOST, SMTP_PORT: process.env.SMTP_PORT, SMTP_USER: process.env.SMTP_USER, SMTP_PASS: process.env.SMTP_PASS ? '***set***' : undefined, SMTP_FROM: process.env.SMTP_FROM, APP_URL: process.env.APP_URL };
+  const missing = Object.entries(vars).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length === 0) {
+    console.log('[email] ✅ SMTP configured:', { host: vars.SMTP_HOST, port: vars.SMTP_PORT, user: vars.SMTP_USER, from: vars.SMTP_FROM, app_url: vars.APP_URL });
+  } else {
+    console.warn('[email] ⚠️  SMTP not fully configured. Missing vars:', missing.join(', '));
+    console.warn('[email]    Email sending will be skipped until all SMTP vars are set.');
+  }
+}, 100);
 
+function getTransporter() {
+  if (!nodemailer) {
+    console.error('[email] nodemailer package not installed');
+    return null;
+  }
+  if (!process.env.SMTP_HOST) {
+    console.warn('[email] Email sending skipped - SMTP not configured (SMTP_HOST missing)');
+    return null;
+  }
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn('[email] Email sending skipped - SMTP not configured (SMTP_USER or SMTP_PASS missing)');
+    return null;
+  }
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT || '587', 10),
-    secure: parseInt(process.env.SMTP_PORT || '587', 10) === 465,
+    port,
+    secure: port === 465,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
@@ -36,8 +58,9 @@ function getTransporter() {
   });
 }
 
-const FROM = process.env.SMTP_FROM || 'Last Mile DSP <noreply@lastmiledsp.com>';
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+// Read dynamically per-call so Railway env vars are always current
+function getFrom()   { return process.env.SMTP_FROM || 'Last Mile DSP <noreply@lastmiledsp.com>'; }
+function getAppUrl() { return process.env.APP_URL   || 'http://localhost:5173'; }
 
 /**
  * Format a shift_date value (Date object or ISO string) to "Mon, Jan 5"
@@ -125,7 +148,7 @@ function buildScheduleHtml(firstName, weekLabel, shifts) {
 
       <!-- CTA Button -->
       <div style="text-align:center;margin:28px 0 8px;">
-        <a href="${APP_URL}/my-schedule"
+        <a href="${getAppUrl()}/my-schedule"
            style="display:inline-block;background:#16a34a;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;padding:12px 28px;border-radius:8px;">
           View My Schedule
         </a>
@@ -163,7 +186,7 @@ async function sendScheduleNotification(driver, weekLabel, shifts) {
   try {
     const html = buildScheduleHtml(driver.first_name, weekLabel, shifts);
     await transporter.sendMail({
-      from: FROM,
+      from: getFrom(),
       to: driver.email,
       subject: `Your Schedule Has Been Updated - Last Mile DSP`,
       html,
@@ -188,7 +211,7 @@ async function sendPasswordResetEmail(staff, token) {
     return false;
   }
 
-  const resetUrl = `${APP_URL}/reset-password/${token}`;
+  const resetUrl = `${getAppUrl()}/reset-password/${token}`;
   const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
@@ -223,7 +246,7 @@ async function sendPasswordResetEmail(staff, token) {
 
   try {
     await transporter.sendMail({
-      from: FROM,
+      from: getFrom(),
       to: staff.email,
       subject: 'Password Reset - DSP Fleet Manager',
       html,
@@ -247,7 +270,7 @@ async function sendInvitationEmail(staff) {
     return false;
   }
 
-  const inviteUrl = `${APP_URL}/accept-invitation/${staff.invitation_token}`;
+  const inviteUrl = `${getAppUrl()}/accept-invitation/${staff.invitation_token}`;
   const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
@@ -282,7 +305,7 @@ async function sendInvitationEmail(staff) {
 
   try {
     await transporter.sendMail({
-      from: FROM,
+      from: getFrom(),
       to: staff.email,
       subject: 'Welcome to DSP Fleet Manager - Set Up Your Account',
       html,
@@ -295,4 +318,40 @@ async function sendInvitationEmail(staff) {
   }
 }
 
-module.exports = { sendScheduleNotification, sendPasswordResetEmail, sendInvitationEmail };
+/**
+ * Send a plain test email to verify SMTP config.
+ * @param {string} toEmail
+ * @returns {Promise<{ok: boolean, message: string, config: object}>}
+ */
+async function sendTestEmail(toEmail) {
+  const config = {
+    SMTP_HOST:  process.env.SMTP_HOST  || '(not set)',
+    SMTP_PORT:  process.env.SMTP_PORT  || '(not set)',
+    SMTP_USER:  process.env.SMTP_USER  || '(not set)',
+    SMTP_PASS:  process.env.SMTP_PASS  ? '***set***' : '(not set)',
+    SMTP_FROM:  process.env.SMTP_FROM  || '(not set)',
+    APP_URL:    process.env.APP_URL    || '(not set)',
+    nodemailer: nodemailer ? 'installed' : 'NOT INSTALLED',
+  };
+
+  const transporter = getTransporter();
+  if (!transporter) {
+    return { ok: false, message: 'SMTP not configured — check missing vars above', config };
+  }
+
+  try {
+    const info = await transporter.sendMail({
+      from: getFrom(),
+      to: toEmail,
+      subject: 'DSP Fleet Manager — Email Test',
+      html: `<p>This is a test email from DSP Fleet Manager.</p><p>If you received this, SMTP is working correctly.</p><p>Sent: ${new Date().toISOString()}</p>`,
+    });
+    console.log(`[email] ✅ Test email sent to ${toEmail}`, info.messageId);
+    return { ok: true, message: `Email sent successfully (messageId: ${info.messageId})`, config };
+  } catch (err) {
+    console.error(`[email] ❌ Test email failed:`, err);
+    return { ok: false, message: err.message, code: err.code, config };
+  }
+}
+
+module.exports = { sendScheduleNotification, sendPasswordResetEmail, sendInvitationEmail, sendTestEmail };

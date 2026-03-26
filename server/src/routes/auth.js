@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const pool = require('../db/pool');
 const { authMiddleware, adminOnly, JWT_SECRET } = require('../middleware/auth');
 const { logAudit } = require('../utils/audit');
-const { sendPasswordResetEmail, sendInvitationEmail } = require('../services/emailService');
+const { sendPasswordResetEmail, sendInvitationEmail, sendTestEmail } = require('../services/emailService');
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
@@ -294,6 +294,14 @@ router.put('/users/:id', authMiddleware, adminOnly, async (req, res) => {
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
   logAudit(req, { action_type: 'UPDATE_USER', entity_type: 'staff', entity_id: rows[0].id, entity_description: `Updated user ${rows[0].email}`, new_value: { role: rows[0].role, status: rows[0].status, password_reset: !!password } });
   res.json(rows[0]);
+});
+
+// POST /api/auth/test-email (adminOnly) — SMTP diagnostic
+router.post('/test-email', authMiddleware, adminOnly, async (req, res) => {
+  const toEmail = req.body?.to || req.user.email;
+  console.log(`[test-email] Sending test email to ${toEmail}...`);
+  const result = await sendTestEmail(toEmail);
+  res.status(result.ok ? 200 : 500).json(result);
 });
 
 // POST /api/auth/send-invitations (adminOnly) — bulk send

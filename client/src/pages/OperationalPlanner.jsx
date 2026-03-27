@@ -2238,23 +2238,23 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     for (const d of amazonDrivers) {
       if (d.amazonShiftType === 'HELPER') continue;
       const profile = d.transponderId ? transpToProfile[norm(d.transponderId)] : null;
-      // Skip if effectively assigned to a route in section1
-      if (profile && effectivelyRoutedStaffIds.has(profile.staff_id)) continue;
-      // Skip if manually assigned to a route
-      if (profile && manuallyAssignedStaffIds.has(profile.staff_id)) continue;
+      // Skip if effectively assigned to a route in section1 — mark covered so DSP-only loop doesn't duplicate
+      if (profile?.staff_id && effectivelyRoutedStaffIds.has(profile.staff_id)) { coveredStaffIds.add(profile.staff_id); continue; }
+      // Skip if manually assigned to a route — mark covered so DSP-only loop doesn't duplicate
+      if (profile?.staff_id && manuallyAssignedStaffIds.has(profile.staff_id)) { coveredStaffIds.add(profile.staff_id); continue; }
       // Skip if TID is in routes file but has no profile match (handled by section1)
       if (!profile && d.transponderId && routedTids.has(norm(d.transponderId))) continue;
 
       const internalShift = profile ? shiftByStaffId[profile.staff_id] : null;
       const asgn = profile ? (assignments[profile.staff_id] || {}) : {};
 
-      // Fix #2: skip removed drivers
-      if (asgn.removed_from_ops) continue;
+      // Fix #2: skip removed drivers — mark covered
+      if (asgn.removed_from_ops) { if (profile?.staff_id) coveredStaffIds.add(profile.staff_id); continue; }
       // Fix #3: Amazon-only driver (no DSP shift) whose TID was in the routes file
       // → they're accounted for in section1; after reassignment they should disappear
       if (!internalShift && d.transponderId && routedTids.has(norm(d.transponderId))) continue;
-      // Fix #4: skip ON CALL drivers
-      if (internalShift?.shift_type === 'ON CALL') continue;
+      // Fix #4: skip ON CALL drivers — mark covered
+      if (internalShift?.shift_type === 'ON CALL') { if (profile?.staff_id) coveredStaffIds.add(profile.staff_id); continue; }
 
       if (profile) coveredStaffIds.add(profile.staff_id);
       // Fix #1: if they have an internal shift + manual route = fully matched
@@ -2311,7 +2311,16 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   const allRows = useMemo(() => {
     const routesWithDrivers = section1Rows.filter(r => r.name && r.status !== 'unassigned_route' && r.status !== 'multiple_das');
     const routesUnassigned  = section1Rows.filter(r => !r.name || r.status === 'unassigned_route' || r.status === 'multiple_das');
-    return [...routesWithDrivers, ...routesUnassigned, ...section2Rows, ...section3Rows];
+    const combined = [...routesWithDrivers, ...routesUnassigned, ...section2Rows, ...section3Rows];
+    // Dedup by staff_id — safety net against logic race conditions causing a driver to appear twice
+    const seen = new Set();
+    return combined.filter(row => {
+      const sid = row.profile?.staff_id;
+      if (!sid) return true; // unassigned routes have no staff_id, always include
+      if (seen.has(sid)) return false;
+      seen.add(sid);
+      return true;
+    });
   }, [section1Rows, section2Rows, section3Rows]);
 
   const hasAnyData = allRows.length > 0;
@@ -3065,7 +3074,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             </thead>
             <tbody className="divide-y divide-slate-50">
               {rows.length > 0
-                ? rows.map((row, i) => renderRow(row, `${row.section}-${row.routeCode || i}`, i + 1))
+                ? rows.map((row, i) => renderRow(row, row.profile?.staff_id ? `staff-${row.profile.staff_id}` : `${row.section}-${row.routeCode || i}`, i + 1))
                 : <tr><td colSpan={15} className="px-3 py-8 text-center text-content-muted">
                     {hasActiveFilters ? 'No rows match the current filters.' : 'Upload files to see data.'}
                   </td></tr>

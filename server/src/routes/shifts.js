@@ -212,10 +212,21 @@ router.post('/publish-selected', managerOnly, async (req, res) => {
     return res.status(400).json({ error: 'shift_ids array required' });
   }
 
-  // 1. Publish the shifts
+  // 1. Publish the shifts — promote any pending_* changes to main columns
   const { rows } = await pool.query(
-    `UPDATE shifts SET publish_status='published', was_published=TRUE,
-       prev_shift_type=NULL, prev_start_time=NULL, prev_end_time=NULL
+    `UPDATE shifts SET
+       publish_status      = 'published',
+       was_published       = TRUE,
+       prev_shift_type     = NULL,
+       prev_start_time     = NULL,
+       prev_end_time       = NULL,
+       shift_type          = CASE WHEN has_pending_changes AND pending_shift_type IS NOT NULL THEN pending_shift_type ELSE shift_type END,
+       start_time          = CASE WHEN has_pending_changes AND pending_start_time IS NOT NULL THEN pending_start_time ELSE start_time END,
+       end_time            = CASE WHEN has_pending_changes AND pending_end_time   IS NOT NULL THEN pending_end_time   ELSE end_time   END,
+       pending_shift_type  = NULL,
+       pending_start_time  = NULL,
+       pending_end_time    = NULL,
+       has_pending_changes = FALSE
      WHERE id = ANY($1::int[]) RETURNING id`,
     [shift_ids]
   );

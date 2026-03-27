@@ -321,8 +321,8 @@ export default function WeeklySchedule() {
   // Replaced the old separate /shifts/week-status API call because createShift & updateShift
   // never invalidated that query, causing the publish-button count to lag until a page refresh.
   const weekStatus = useMemo(() => {
-    const draft     = shifts.filter(s => s.publish_status === 'draft' || !s.publish_status).length;
-    const published = shifts.filter(s => s.publish_status === 'published').length;
+    const draft     = shifts.filter(s => s.publish_status === 'draft' || !s.publish_status || !!s.has_pending_changes).length;
+    const published = shifts.filter(s => s.publish_status === 'published' && !s.has_pending_changes).length;
     const total     = shifts.length;
     return {
       draft,
@@ -333,7 +333,7 @@ export default function WeeklySchedule() {
   }, [shifts]);
 
   const draftShifts = useMemo(
-    () => shifts.filter(s => s.publish_status === 'draft' || !s.publish_status),
+    () => shifts.filter(s => s.publish_status === 'draft' || !s.publish_status || !!s.has_pending_changes),
     [shifts]
   );
 
@@ -626,7 +626,19 @@ export default function WeeklySchedule() {
       const prev = qc.getQueryData(['shifts', weekStartStr]);
       const ids = new Set([...shiftIds]);
       qc.setQueryData(['shifts', weekStartStr], (old = []) =>
-        (old || []).map(s => ids.has(s.id) ? { ...s, publish_status: 'published', was_published: true } : s)
+        (old || []).map(s => ids.has(s.id) ? {
+          ...s,
+          publish_status:     'published',
+          was_published:      true,
+          has_pending_changes: false,
+          // Promote pending values to main so the cell reflects the published state
+          shift_type: s.has_pending_changes ? (s.pending_shift_type || s.shift_type) : s.shift_type,
+          start_time: s.has_pending_changes ? (s.pending_start_time || s.start_time) : s.start_time,
+          end_time:   s.has_pending_changes ? (s.pending_end_time   || s.end_time)   : s.end_time,
+          pending_shift_type: null,
+          pending_start_time: null,
+          pending_end_time:   null,
+        } : s)
       );
       return { prev };
     },
@@ -655,8 +667,19 @@ export default function WeeklySchedule() {
     onMutate: async (shift) => {
       await qc.cancelQueries({ queryKey: ['shifts', weekStartStr] });
       const prev = qc.getQueryData(['shifts', weekStartStr]);
-      if (shift.was_published) {
-        // Revert all fields to previously published state
+      if (shift.has_pending_changes) {
+        // Pending change on a live shift — discard pending, keep original published values
+        qc.setQueryData(['shifts', weekStartStr], (old = []) =>
+          (old || []).map(s => s.id !== shift.id ? s : {
+            ...s,
+            has_pending_changes: false,
+            pending_shift_type:  null,
+            pending_start_time:  null,
+            pending_end_time:    null,
+          })
+        );
+      } else if (shift.was_published) {
+        // Revert all fields to previously published state (old draft path)
         qc.setQueryData(['shifts', weekStartStr], (old = []) =>
           (old || []).map(s => s.id !== shift.id ? s : {
             ...s,
@@ -1907,28 +1930,39 @@ export default function WeeklySchedule() {
                 <td className="px-3 py-2.5 font-medium text-content whitespace-nowrap">{s.first_name} {s.last_name}</td>
                 <td className="px-3 py-2.5 text-content-muted whitespace-nowrap text-xs">{dateStr ? format(parseISO(dateStr), 'EEE MMM d') : '—'}</td>
                 <td className="px-3 py-2.5">
-                  {s.was_published && s.prev_shift_type && s.prev_shift_type !== s.shift_type ? (
-                    <span className="flex items-center gap-1 text-[11px]">
-                      <span className="badge" style={getShiftStyle(shiftTypeMap[s.prev_shift_type]?.color)}>{s.prev_shift_type}</span>
-                      <span className="text-slate-400">→</span>
-                      <span className="badge" style={getShiftStyle(shiftTypeMap[s.shift_type]?.color)}>{s.shift_type}</span>
-                    </span>
-                  ) : (
-                    <span className="badge text-[11px]" style={getShiftStyle(shiftTypeMap[s.shift_type]?.color)}>{s.shift_type}</span>
-                  )}
+                  {(() => {
+                    // pending path: original → pending value
+                    const fromType = s.has_pending_changes ? s.shift_type       : s.prev_shift_type;
+                    const toType   = s.has_pending_changes ? (s.pending_shift_type || s.shift_type) : s.shift_type;
+                    const hasChange = fromType && fromType !== toType;
+                    return hasChange ? (
+                      <span className="flex items-center gap-1 text-[11px]">
+                        <span className="badge" style={getShiftStyle(shiftTypeMap[fromType]?.color)}>{fromType}</span>
+                        <span className="text-slate-400">→</span>
+                        <span className="badge" style={getShiftStyle(shiftTypeMap[toType]?.color)}>{toType}</span>
+                      </span>
+                    ) : (
+                      <span className="badge text-[11px]" style={getShiftStyle(shiftTypeMap[toType]?.color)}>{toType}</span>
+                    );
+                  })()}
                 </td>
                 <td className="px-3 py-2.5 text-content-muted text-xs whitespace-nowrap">
-                  {s.was_published && (s.prev_start_time || s.prev_end_time) &&
-                   (s.prev_start_time?.slice(0,5) !== s.start_time?.slice(0,5) ||
-                    s.prev_end_time?.slice(0,5)   !== s.end_time?.slice(0,5)) ? (
-                    <span className="flex items-center gap-1">
-                      <span className="line-through opacity-50">{s.prev_start_time?.slice(0,5)}–{s.prev_end_time?.slice(0,5)}</span>
-                      <span className="text-slate-400">→</span>
-                      <span>{s.start_time?.slice(0,5)}–{s.end_time?.slice(0,5)}</span>
-                    </span>
-                  ) : (
-                    <span>{s.start_time?.slice(0,5)}–{s.end_time?.slice(0,5)}</span>
-                  )}
+                  {(() => {
+                    const fromStart = s.has_pending_changes ? s.start_time : s.prev_start_time;
+                    const fromEnd   = s.has_pending_changes ? s.end_time   : s.prev_end_time;
+                    const toStart   = s.has_pending_changes ? (s.pending_start_time || s.start_time) : s.start_time;
+                    const toEnd     = s.has_pending_changes ? (s.pending_end_time   || s.end_time)   : s.end_time;
+                    const hasChange = fromStart && (fromStart?.slice(0,5) !== toStart?.slice(0,5) || fromEnd?.slice(0,5) !== toEnd?.slice(0,5));
+                    return hasChange ? (
+                      <span className="flex items-center gap-1">
+                        <span className="line-through opacity-50">{fromStart?.slice(0,5)}–{fromEnd?.slice(0,5)}</span>
+                        <span className="text-slate-400">→</span>
+                        <span>{toStart?.slice(0,5)}–{toEnd?.slice(0,5)}</span>
+                      </span>
+                    ) : (
+                      <span>{toStart?.slice(0,5)}–{toEnd?.slice(0,5)}</span>
+                    );
+                  })()}
                 </td>
                 <td className="px-2 py-2.5 text-right">
                   <button

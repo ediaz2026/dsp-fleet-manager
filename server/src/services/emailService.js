@@ -254,7 +254,8 @@ async function sendPasswordResetEmail(staff, token) {
     console.log(`[email] ✅ Sent password reset to ${staff.email}`);
     return true;
   } catch (err) {
-    console.error(`[email] ❌ Failed to send password reset to ${staff.email}:`, err.message);
+    console.error(`[email] ❌ Failed to send password reset to ${staff.email}:`, err.message, '| code:', err.code, '| responseCode:', err.responseCode);
+    console.error(`[email] Full error:`, err.stack || err);
     return false;
   }
 }
@@ -313,7 +314,8 @@ async function sendInvitationEmail(staff) {
     console.log(`[email] ✅ Sent invitation to ${staff.email}`);
     return true;
   } catch (err) {
-    console.error(`[email] ❌ Failed to send invitation to ${staff.email}:`, err.message);
+    console.error(`[email] ❌ Failed to send invitation to ${staff.email}:`, err.message, '| code:', err.code, '| responseCode:', err.responseCode);
+    console.error(`[email] Full error:`, err.stack || err);
     return false;
   }
 }
@@ -339,6 +341,16 @@ async function sendTestEmail(toEmail) {
     return { ok: false, message: 'SMTP not configured — check missing vars above', config };
   }
 
+  // Verify SMTP connection first
+  try {
+    await transporter.verify();
+    console.log('[email] ✅ SMTP connection verified');
+  } catch (verifyErr) {
+    console.error('[email] ❌ SMTP connection verify failed:', verifyErr.message, '| code:', verifyErr.code);
+    console.error('[email] Full verify error:', verifyErr.stack || verifyErr);
+    return { ok: false, message: `SMTP connection failed: ${verifyErr.message}`, code: verifyErr.code, config };
+  }
+
   try {
     const info = await transporter.sendMail({
       from: getFrom(),
@@ -349,8 +361,9 @@ async function sendTestEmail(toEmail) {
     console.log(`[email] ✅ Test email sent to ${toEmail}`, info.messageId);
     return { ok: true, message: `Email sent successfully (messageId: ${info.messageId})`, config };
   } catch (err) {
-    console.error(`[email] ❌ Test email failed:`, err);
-    return { ok: false, message: err.message, code: err.code, config };
+    console.error(`[email] ❌ Test email failed:`, err.message, '| code:', err.code, '| responseCode:', err.responseCode);
+    console.error(`[email] Full error:`, err.stack || err);
+    return { ok: false, message: err.message, code: err.code, responseCode: err.responseCode, config };
   }
 }
 

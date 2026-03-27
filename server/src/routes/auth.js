@@ -300,6 +300,18 @@ router.post('/test-email', authMiddleware, adminOnly, async (req, res) => {
   res.status(result.ok ? 200 : 500).json(result);
 });
 
+// POST /api/auth/test-invitation (adminOnly) — send a real invitation email for diagnostics
+router.post('/test-invitation', authMiddleware, adminOnly, async (req, res) => {
+  const toEmail = req.body?.to || 'ericdiaz.lsmd@gmail.com';
+  console.log(`[test-invitation] Sending test invitation to ${toEmail}...`);
+  const token = crypto.randomBytes(32).toString('hex');
+  const fakeStaff = { first_name: 'Test', last_name: 'Driver', email: toEmail, invitation_token: token };
+  const emailSent = await sendInvitationEmail(fakeStaff);
+  const inviteUrl = `${process.env.APP_URL || ''}/accept-invitation/${token}`;
+  console.log(`[test-invitation] emailSent=${emailSent}, inviteUrl=${inviteUrl}`);
+  res.json({ emailSent, inviteUrl, to: toEmail });
+});
+
 // POST /api/auth/send-invitations (adminOnly) — bulk send
 router.post('/send-invitations', authMiddleware, adminOnly, async (req, res) => {
   const { staffIds } = req.body;

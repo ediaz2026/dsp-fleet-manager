@@ -1,10 +1,26 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Component } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, startOfWeek, addDays, addWeeks } from 'date-fns';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import { resolveColor, buildShiftTypeMap } from '../utils/shiftColors';
+
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-8 text-center">
+          <p className="text-[#EF4444] font-semibold mb-1">Something went wrong loading your schedule.</p>
+          <p className="text-sm text-[#94A3B8]">Please refresh the page. If the problem continues, contact your dispatcher.</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const DAYS_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -24,7 +40,7 @@ function fmt12(time) {
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
-export default function DriverSchedule() {
+function DriverScheduleInner() {
   const { user } = useAuth();
   const [weekOffset, setWeekOffset] = useState(0);
 
@@ -46,7 +62,7 @@ export default function DriverSchedule() {
 
   const { data: shiftTypes = [] } = useQuery({
     queryKey: ['shift-types'],
-    queryFn: () => api.get('/shift-types').then(r => r.data),
+    queryFn: () => api.get('/schedule/shift-types').then(r => r.data),
   });
 
   const shiftTypeMap = useMemo(() => buildShiftTypeMap(shiftTypes), [shiftTypes]);
@@ -235,5 +251,13 @@ export default function DriverSchedule() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DriverSchedule() {
+  return (
+    <ErrorBoundary>
+      <DriverScheduleInner />
+    </ErrorBoundary>
   );
 }

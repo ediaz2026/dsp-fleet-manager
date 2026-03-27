@@ -12,19 +12,7 @@ import Modal from '../components/Modal';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { useSyncService } from '../services/syncService';
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-const SHIFT_COLORS = {
-  'EDV':        'bg-blue-100   text-blue-800   border-blue-200',
-  'STEP VAN':   'bg-indigo-100 text-indigo-800 border-indigo-200',
-  'ON CALL':    'bg-yellow-100 text-amber-800  border-yellow-200',
-  'EXTRA':      'bg-green-100  text-green-800  border-green-200',
-  'SUSPENSION': 'bg-red-100    text-red-800    border-red-200',
-  'UTO':        'bg-purple-100 text-purple-800 border-purple-200',
-  'PTO':        'bg-teal-100   text-teal-800   border-teal-200',
-  'TRAINING':   'bg-orange-100 text-orange-800 border-orange-200',
-  'HELPER':     'bg-amber-100  text-amber-800  border-amber-200',
-};
+import { getShiftStyle, buildShiftTypeMap } from '../utils/shiftColors';
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function DailySchedule() {
@@ -99,6 +87,8 @@ export default function DailySchedule() {
     queryFn: () => api.get('/schedule/shift-types').then(r => r.data),
     staleTime: 10 * 60 * 1000,
   });
+
+  const shiftTypeMap = useMemo(() => buildShiftTypeMap(shiftTypes), [shiftTypes]);
 
   // Ops planner session — for route-code sort
   const { data: opsPlanSession } = useQuery({
@@ -693,7 +683,7 @@ export default function DailySchedule() {
                 const isDropping = dropTarget?.staffId === s.id;
                 const isDraggingThis = dragShift?.staffId === s.id;
                 const attStatus = shift?.attendance_status;
-                const baseColor = SHIFT_COLORS[shift?.shift_type] || 'bg-slate-100 text-slate-700 border-slate-200';
+                const shiftCellStyle = getShiftStyle(shiftTypeMap[shift?.shift_type]?.color);
                 const isDraft = shift && (shift.publish_status === 'draft' || !shift.publish_status);
                 const isShiftTypeDropOpen = dailyShiftTypeDrop === s.id;
 
@@ -734,7 +724,7 @@ export default function DailySchedule() {
                       {shift ? (
                         <>
                           {/* Shift card */}
-                          <div className={`relative flex-1 rounded-lg border px-2.5 py-1.5 ${baseColor} ${isDraggingThis ? 'opacity-40' : ''} min-w-0`}>
+                          <div className={`relative flex-1 rounded-lg border px-2.5 py-1.5 ${isDraggingThis ? 'opacity-40' : ''} min-w-0`} style={shiftCellStyle}>
                             {isManager && isDraft && (
                               <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none z-10 shadow-sm pointer-events-none select-none" title="Draft — not published">!</span>
                             )}

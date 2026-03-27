@@ -418,9 +418,9 @@ export default function Management() {
     let data, filename;
     if (type === 'drivers') {
       data = [
-        ['DAProviderID', 'Legal_Firstname', 'Legal_Lastname', 'Employee_Code', 'DriversLicense', 'Birth_Date_(MM/DD/YYYY)', 'DLExpirationDate', 'Hire_Date'],
-        ['DA123456789', 'John', 'Smith', 'EMP001', 'D12345678', '01/15/1990', '12/31/2026', '03/01/2024'],
-        ['DA987654321', 'Maria', 'Garcia', 'EMP002', 'G87654321', '06/20/1992', '08/15/2027', '01/15/2023'],
+        ['DAProviderID', 'Legal_Firstname', 'Legal_Lastname', 'Email', 'Employee_Code', 'DriversLicense', 'Birth_Date_(MM/DD/YYYY)', 'DLExpirationDate', 'Hire_Date'],
+        ['DA123456789', 'John', 'Smith', 'john.smith@lsmddsp.com', 'EMP001', 'D12345678', '01/15/1990', '12/31/2026', '03/01/2024'],
+        ['DA987654321', 'Maria', 'Garcia', 'maria.garcia@lsmddsp.com', 'EMP002', 'G87654321', '06/20/1992', '08/15/2027', '01/15/2023'],
       ];
       filename = 'drivers-import-template.xlsx';
     } else {

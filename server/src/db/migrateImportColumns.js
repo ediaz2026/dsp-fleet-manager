@@ -25,6 +25,12 @@ async function migrateImportColumns() {
   await pool.query(`ALTER TABLE vehicles ALTER COLUMN vehicle_provider      TYPE VARCHAR(100)`);
   await pool.query(`ALTER TABLE vehicles ALTER COLUMN ownership_type_label  TYPE VARCHAR(100)`);
 
+  // ── Shifts: pending changes columns (driver sees original until re-published) ─
+  await pool.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS pending_shift_type VARCHAR(50)`);
+  await pool.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS pending_start_time TIME`);
+  await pool.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS pending_end_time   TIME`);
+  await pool.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS has_pending_changes BOOLEAN DEFAULT FALSE`);
+
   // ── Driver notifications table ─────────────────────────────────────────────
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notifications (

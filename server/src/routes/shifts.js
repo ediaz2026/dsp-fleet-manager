@@ -145,12 +145,28 @@ router.post('/publish-week', managerOnly, async (req, res) => {
   weekEnd.setDate(weekEnd.getDate() + 6);
   const weekEndStr = weekEnd.toISOString().split('T')[0];
 
+  // When publishing, promote any pending_* changes to main columns
+  const publishSet = `
+    publish_status      = 'published',
+    was_published       = TRUE,
+    prev_shift_type     = NULL,
+    prev_start_time     = NULL,
+    prev_end_time       = NULL,
+    shift_type          = CASE WHEN has_pending_changes AND pending_shift_type IS NOT NULL THEN pending_shift_type ELSE shift_type END,
+    start_time          = CASE WHEN has_pending_changes AND pending_start_time IS NOT NULL THEN pending_start_time ELSE start_time END,
+    end_time            = CASE WHEN has_pending_changes AND pending_end_time   IS NOT NULL THEN pending_end_time   ELSE end_time   END,
+    pending_shift_type  = NULL,
+    pending_start_time  = NULL,
+    pending_end_time    = NULL,
+    has_pending_changes = FALSE
+  `;
+
   let q, params;
   if (days && days.length > 0) {
-    q = "UPDATE shifts SET publish_status='published', was_published=TRUE, prev_shift_type=NULL WHERE shift_date = ANY($1::date[]) RETURNING id";
+    q = `UPDATE shifts SET ${publishSet} WHERE shift_date = ANY($1::date[]) RETURNING id`;
     params = [days];
   } else {
-    q = "UPDATE shifts SET publish_status='published', was_published=TRUE, prev_shift_type=NULL WHERE shift_date BETWEEN $1 AND $2 RETURNING id";
+    q = `UPDATE shifts SET ${publishSet} WHERE shift_date BETWEEN $1 AND $2 RETURNING id`;
     params = [week_start, weekEndStr];
   }
 
@@ -359,22 +375,51 @@ router.put('/:id', managerOnly, async (req, res) => {
     (start_time  != null && start_time  !== oldStart) ||
     (end_time    != null && end_time    !== oldEnd);
 
-  // If core fields changed, force back to draft (edit = needs re-publishing)
-  const resolvedPublishStatus = coreChanged ? 'draft' : (publish_status || null);
-  // Track when a previously-published shift is reverted to draft so the UI can show yellow indicator
-  const isRevertingToDraft = coreChanged && old.was_published;
+  // If this shift is currently live (published and was_published), protect drivers by
+  // saving edits to pending_* columns instead of overwriting the published values.
+  // Drivers continue seeing the original values; pending values go live on next publish.
+  const isCurrentlyLive = old.was_published && old.publish_status === 'published';
 
-  const { rows } = await pool.query(
-    `UPDATE shifts
-     SET start_time=$1, end_time=$2, shift_type=$3, status=$4, notes=$5,
-         publish_status=COALESCE($6, publish_status),
-         prev_shift_type  = CASE WHEN $7 AND prev_shift_type  IS NULL THEN $8  ELSE prev_shift_type  END,
-         prev_start_time  = CASE WHEN $7 AND prev_start_time  IS NULL THEN $9  ELSE prev_start_time  END,
-         prev_end_time    = CASE WHEN $7 AND prev_end_time    IS NULL THEN $10 ELSE prev_end_time    END
-     WHERE id=$11 RETURNING *`,
-    [start_time, end_time, shift_type, status, notes, resolvedPublishStatus,
-     isRevertingToDraft, oldType, oldStart, oldEnd, req.params.id]
-  );
+  let rows;
+
+  if (coreChanged && isCurrentlyLive) {
+    // ── Pending path: keep main columns intact, store edits in pending_* ──────
+    ({ rows } = await pool.query(
+      `UPDATE shifts
+       SET pending_shift_type  = $1,
+           pending_start_time  = $2,
+           pending_end_time    = $3,
+           has_pending_changes = TRUE,
+           notes  = COALESCE($4, notes),
+           status = COALESCE($5, status)
+       WHERE id = $6 RETURNING *`,
+      [
+        shift_type != null ? shift_type : old.shift_type,
+        start_time != null ? start_time : old.start_time,
+        end_time   != null ? end_time   : old.end_time,
+        notes  != null ? notes  : null,
+        status != null ? status : null,
+        req.params.id,
+      ]
+    ));
+  } else {
+    // ── Original path: update main columns, revert to draft if core changed ───
+    const resolvedPublishStatus = coreChanged ? 'draft' : (publish_status || null);
+    const isRevertingToDraft    = coreChanged && !!old.was_published;
+
+    ({ rows } = await pool.query(
+      `UPDATE shifts
+       SET start_time=$1, end_time=$2, shift_type=$3, status=$4, notes=$5,
+           publish_status=COALESCE($6, publish_status),
+           prev_shift_type  = CASE WHEN $7 AND prev_shift_type  IS NULL THEN $8  ELSE prev_shift_type  END,
+           prev_start_time  = CASE WHEN $7 AND prev_start_time  IS NULL THEN $9  ELSE prev_start_time  END,
+           prev_end_time    = CASE WHEN $7 AND prev_end_time    IS NULL THEN $10 ELSE prev_end_time    END
+       WHERE id=$11 RETURNING *`,
+      [start_time, end_time, shift_type, status, notes, resolvedPublishStatus,
+       isRevertingToDraft, oldType, oldStart, oldEnd, req.params.id]
+    ));
+  }
+
   if (!rows[0]) return res.status(404).json({ error: 'Shift not found' });
 
   // Log if core fields changed
@@ -452,6 +497,20 @@ router.post('/:id/reject', managerOnly, async (req, res) => {
   const { rows: cur } = await pool.query('SELECT * FROM shifts WHERE id = $1', [req.params.id]);
   const shift = cur[0];
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
+
+  // Pending change on a live shift — discard pending, driver keeps seeing original
+  if (shift.has_pending_changes) {
+    const { rows } = await pool.query(
+      `UPDATE shifts SET
+         pending_shift_type  = NULL,
+         pending_start_time  = NULL,
+         pending_end_time    = NULL,
+         has_pending_changes = FALSE
+       WHERE id = $1 RETURNING *`,
+      [shift.id]
+    );
+    return res.json(rows[0]);
+  }
 
   if (!shift.was_published) {
     // New draft shift — delete it entirely

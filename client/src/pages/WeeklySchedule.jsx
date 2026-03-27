@@ -82,20 +82,25 @@ function ShiftCell({ shift, isManager, onShiftDragStart, isDragging, shiftTypeMa
   }
 
   const isDraft              = shift.publish_status === 'draft' || !shift.publish_status;
-  // NEW = never published before; CHANGED = was published, now modified
+  const hasPending           = isManager && !!shift.has_pending_changes;
+  // NEW = never published before; CHANGED = was published, now modified (old draft path)
   const isNewUnpublished     = isManager && isDraft && !shift.was_published;
   const isChangedUnpublished = isManager && isDraft && !!shift.was_published;
-  const showDot              = isManager && isDraft;
-  const colorRaw             = shiftTypeMap?.[shift.shift_type]?.color;
-  const cellStyle            = getShiftStyle(colorRaw);
-  const attDot               = ATTENDANCE_DOT[shift.attendance_status];
+  const showDot              = isManager && (isDraft || hasPending);
+  // Use pending values for display when admin has unsaved changes
+  const displayType  = hasPending && shift.pending_shift_type ? shift.pending_shift_type  : shift.shift_type;
+  const displayStart = hasPending && shift.pending_start_time ? shift.pending_start_time  : shift.start_time;
+  const displayEnd   = hasPending && shift.pending_end_time   ? shift.pending_end_time    : shift.end_time;
+  const colorRaw     = shiftTypeMap?.[displayType]?.color;
+  const cellStyle    = getShiftStyle(colorRaw);
+  const attDot       = ATTENDANCE_DOT[shift.attendance_status];
 
   return (
     <div className="relative">
       {showDot && (
         <span
           className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-yellow-400 rounded-full border-2 border-white z-10 shadow-sm pointer-events-none select-none"
-          title={isChangedUnpublished ? 'Changed — pending re-publish' : 'New shift — unpublished'}
+          title={hasPending ? 'Pending change — not yet published to drivers' : isChangedUnpublished ? 'Changed — pending re-publish' : 'New shift — unpublished'}
         />
       )}
       <div
@@ -107,17 +112,17 @@ function ShiftCell({ shift, isManager, onShiftDragStart, isDragging, shiftTypeMa
           e.dataTransfer.setData('text/plain', String(shift.id));
           onShiftDragStart();
         } : undefined}
-        className={`w-full rounded-lg border px-2 py-1.5 text-left ${isManager ? 'cursor-grab active:cursor-grabbing hover:shadow-sm' : 'cursor-default'} transition-shadow ${isDragging ? 'opacity-40 scale-95' : ''} ${isNewUnpublished ? 'ring-2 ring-red-500' : isChangedUnpublished ? 'ring-2 ring-amber-400' : ''}`}
+        className={`w-full rounded-lg border px-2 py-1.5 text-left ${isManager ? 'cursor-grab active:cursor-grabbing hover:shadow-sm' : 'cursor-default'} transition-shadow ${isDragging ? 'opacity-40 scale-95' : ''} ${isNewUnpublished ? 'ring-2 ring-red-500' : (isChangedUnpublished || hasPending) ? 'ring-2 ring-amber-400' : ''}`}
         style={{ ...cellStyle, ...(isNewUnpublished ? { opacity: 0.78 } : {}) }}
       >
         <div className="flex items-center justify-between gap-1">
-          <span className={`text-xs font-bold truncate ${isNewUnpublished ? 'italic' : ''}`}>{shift.shift_type}</span>
+          <span className={`text-xs font-bold truncate ${isNewUnpublished ? 'italic' : ''}`}>{displayType}</span>
           <div className="flex items-center gap-1 flex-shrink-0">
             {attDot && <span className={`w-2 h-2 rounded-full ${attDot}`} />}
           </div>
         </div>
         <p className="text-[10px] opacity-70 mt-0.5">
-          {shift.start_time?.slice(0,5)}–{shift.end_time?.slice(0,5)}
+          {displayStart?.slice(0,5)}–{displayEnd?.slice(0,5)}
         </p>
         {shift.attendance_status && shift.attendance_status !== 'present' && (
           <p className="text-[10px] font-semibold mt-0.5 uppercase opacity-80">

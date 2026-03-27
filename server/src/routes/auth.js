@@ -17,40 +17,36 @@ router.post('/login', async (req, res) => {
     [email]
   );
   const user = rows[0];
-  if (!user || !user.password_hash) return res.status(401).json({ error: 'Invalid credentials' });
+  if (!user || !user.password_hash) return res.status(401).json({ error: 'EMAIL_NOT_FOUND' });
 
   // Block non-active accounts before checking password
   if (user.status !== 'active') {
-    const statusMessages = {
-      inactive:   'Your account is inactive. Contact your manager.',
-      suspended:  'Your account is suspended. Contact your manager.',
-      terminated: 'Your account has been terminated.',
-    };
-    return res.status(401).json({ error: statusMessages[user.status] || 'Account access denied.' });
+    return res.status(401).json({ error: 'ACCOUNT_INACTIVE' });
   }
 
   // Lockout check
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
-    // Fake req.user so logAudit can capture the user info
+    const minutesLeft = Math.ceil((new Date(user.locked_until) - new Date()) / 60000);
     req.user = { id: user.id, name: `${user.first_name} ${user.last_name}`, role: user.role };
     logAudit(req, { action_type: 'ACCOUNT_LOCKED', entity_type: 'staff', entity_id: user.id, entity_description: `Locked login attempt: ${email}` });
-    return res.status(423).json({ error: 'Account locked. Try again in 30 minutes.' });
+    return res.status(423).json({ error: 'ACCOUNT_LOCKED', minutesLeft });
   }
 
+  const MAX_ATTEMPTS = 5;
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) {
     const attempts = (user.failed_login_attempts || 0) + 1;
-    const lockUntil = attempts >= 5 ? new Date(Date.now() + 30 * 60 * 1000) : null;
+    const lockUntil = attempts >= MAX_ATTEMPTS ? new Date(Date.now() + 30 * 60 * 1000) : null;
     await pool.query(
       'UPDATE staff SET failed_login_attempts=$1, locked_until=$2 WHERE id=$3',
       [attempts, lockUntil, user.id]
     );
     req.user = { id: user.id, name: `${user.first_name} ${user.last_name}`, role: user.role };
     logAudit(req, { action_type: 'FAILED_LOGIN', entity_type: 'staff', entity_id: user.id, entity_description: `Failed login attempt ${attempts} for ${email}` });
-    const msg = attempts >= 5
-      ? 'Account locked after 5 failed attempts. Try again in 30 minutes.'
-      : 'Invalid credentials';
-    return res.status(401).json({ error: msg });
+    if (attempts >= MAX_ATTEMPTS) {
+      return res.status(423).json({ error: 'ACCOUNT_LOCKED', minutesLeft: 30 });
+    }
+    return res.status(401).json({ error: 'WRONG_PASSWORD', attemptsLeft: MAX_ATTEMPTS - attempts });
   }
 
   // Success: reset attempts, record last_login

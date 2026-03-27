@@ -2,8 +2,22 @@ import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
-import toast from 'react-hot-toast';
-import { Truck, Eye, EyeOff } from 'lucide-react';
+import { Truck, Eye, EyeOff, AlertCircle } from 'lucide-react';
+
+const ERROR_MESSAGES = {
+  EMAIL_NOT_FOUND:  'No account found with that email address.',
+  WRONG_PASSWORD:   'Incorrect password. Please try again.',
+  ACCOUNT_LOCKED:   null, // built dynamically below
+  ACCOUNT_INACTIVE: 'Your account is inactive. Please contact your manager.',
+};
+
+function getErrorMessage(code, data) {
+  if (code === 'ACCOUNT_LOCKED') {
+    const mins = data?.minutesLeft || 30;
+    return `Account locked due to too many failed attempts. Please try again in ${mins} minute${mins !== 1 ? 's' : ''} or contact your manager.`;
+  }
+  return ERROR_MESSAGES[code] || 'Sign in failed. Please try again.';
+}
 
 export default function Login() {
   const { login } = useAuth();
@@ -12,10 +26,21 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [error, setError] = useState(null); // { message, attemptsLeft? }
+
+  const handleChange = (field) => (e) => {
+    setForm(f => ({ ...f, [field]: e.target.value }));
+    setError(null);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!form.email.trim() || !form.password) {
+      setError({ message: 'Please enter your email and password.' });
+      return;
+    }
     setLoading(true);
+    setError(null);
     try {
       const { data } = await api.post('/auth/login', { ...form, rememberMe });
       login(data.user, data.token);
@@ -28,7 +53,12 @@ export default function Login() {
       else if (role === 'manager' || role === 'dispatcher') navigate('/schedule', { replace: true });
       else navigate('/', { replace: true });
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Login failed');
+      const code = err.response?.data?.error;
+      const responseData = err.response?.data;
+      setError({
+        message: getErrorMessage(code, responseData),
+        attemptsLeft: responseData?.attemptsLeft ?? null,
+      });
     } finally {
       setLoading(false);
     }
@@ -51,8 +81,8 @@ export default function Login() {
             <label className="block text-[13px] font-medium text-[#374151] mb-1.5">Email</label>
             <input
               type="email" className="input" value={form.email}
-              onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-              placeholder="you@dspfleet.com" required autoFocus
+              onChange={handleChange('email')}
+              placeholder="you@dspfleet.com" autoFocus
             />
           </div>
           <div>
@@ -60,8 +90,8 @@ export default function Login() {
             <div className="relative">
               <input
                 type={showPass ? 'text' : 'password'} className="input pr-10" value={form.password}
-                onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                placeholder="••••••••" required
+                onChange={handleChange('password')}
+                placeholder="••••••••"
               />
               <button type="button" onClick={() => setShowPass(s => !s)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -84,6 +114,21 @@ export default function Login() {
               Forgot password?
             </Link>
           </div>
+
+          {/* Error box */}
+          {error && (
+            <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+              <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-red-700 leading-snug">
+                <p>{error.message}</p>
+                {error.attemptsLeft != null && error.attemptsLeft > 0 && (
+                  <p className="mt-0.5 text-[12px] font-semibold text-red-600">
+                    {error.attemptsLeft} attempt{error.attemptsLeft !== 1 ? 's' : ''} remaining before lockout.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           <button
             type="submit"

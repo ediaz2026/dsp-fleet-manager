@@ -24,6 +24,7 @@ async function migrateImportColumns() {
   await pool.query(`ALTER TABLE vehicles ALTER COLUMN model                 TYPE VARCHAR(100)`);
   await pool.query(`ALTER TABLE vehicles ALTER COLUMN vehicle_provider      TYPE VARCHAR(100)`);
   await pool.query(`ALTER TABLE vehicles ALTER COLUMN ownership_type_label  TYPE VARCHAR(100)`);
+  await pool.query(`ALTER TABLE vehicles ALTER COLUMN registered_state      TYPE VARCHAR(50)`);
 
   // ── Shifts: pending changes columns (driver sees original until re-published) ─
   await pool.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS pending_shift_type VARCHAR(50)`);

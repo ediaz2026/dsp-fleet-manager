@@ -430,7 +430,7 @@ router.delete('/:staffId', managerOnly, async (req, res) => {
 // Auto-generates work email and creates user account for new drivers.
 router.post('/import', managerOnly, async (req, res) => {
   const { rows: importRows = [] } = req.body;
-  let created = 0, updated = 0, skipped = 0, accounts_created = 0;
+  let created = 0, updated = 0, skipped = 0, accounts_created = 0, emails_updated = 0, emails_generated = 0;
   const errors = [];
 
   const defaultPassword = process.env.DRIVER_DEFAULT_PASSWORD || 'TempPass2026!';
@@ -506,12 +506,21 @@ router.post('/import', managerOnly, async (req, res) => {
       }
 
       if (existing) {
-        // Update existing driver — preserve their email/password
-        await pool.query(
-          `UPDATE staff SET first_name=$1, last_name=$2, personal_email=$3, phone=$4,
-             status=$5, hire_date=$6, employee_code=$7, updated_at=NOW() WHERE id=$8`,
-          [first_name, last_name, personal_email, phone, emp_status, hire_date, employee_code, existing.staff_id]
-        );
+        // Update existing driver — update email only when file provides one
+        if (work_email) {
+          await pool.query(
+            `UPDATE staff SET first_name=$1, last_name=$2, email=$3, personal_email=$4, phone=$5,
+               status=$6, hire_date=$7, employee_code=$8, updated_at=NOW() WHERE id=$9`,
+            [first_name, last_name, work_email, personal_email, phone, emp_status, hire_date, employee_code, existing.staff_id]
+          );
+          emails_updated++;
+        } else {
+          await pool.query(
+            `UPDATE staff SET first_name=$1, last_name=$2, personal_email=$3, phone=$4,
+               status=$5, hire_date=$6, employee_code=$7, updated_at=NOW() WHERE id=$8`,
+            [first_name, last_name, personal_email, phone, emp_status, hire_date, employee_code, existing.staff_id]
+          );
+        }
         await pool.query(
           `UPDATE drivers SET transponder_id=COALESCE($1,transponder_id), license_number=$2,
              license_expiration=$3, dob=$4, updated_at=NOW() WHERE id=$5`,
@@ -521,7 +530,9 @@ router.post('/import', managerOnly, async (req, res) => {
       } else {
         // New driver — auto-generate work email and create user account
         const emp_id      = transponder_id ? transponder_id.slice(0, 20) : `DRV${Date.now()}`.slice(0, 20);
-        const emailToUse  = work_email || await generateWorkEmail(first_name, last_name);
+        const generatedEmail = work_email ? null : await generateWorkEmail(first_name, last_name);
+        const emailToUse  = work_email || generatedEmail;
+        if (generatedEmail) emails_generated++;
 
         const { rows: newStaff } = await pool.query(
           `INSERT INTO staff (employee_id, first_name, last_name, email, personal_email, phone,
@@ -552,7 +563,7 @@ router.post('/import', managerOnly, async (req, res) => {
     }
   }
 
-  res.json({ created, updated, skipped, accounts_created, errors });
+  res.json({ created, updated, skipped, accounts_created, emails_updated, emails_generated, errors });
 });
 
 module.exports = router;

@@ -1394,6 +1394,13 @@ export default function Management() {
                         {importResult.accounts_created > 0 && <span className="text-blue-700 font-semibold"> · {importResult.accounts_created} accounts created</span>}
                         <span> · {importResult.updated} updated · {importResult.skipped} skipped</span>
                       </p>
+                      {(importResult.emails_updated > 0 || importResult.emails_generated > 0) && (
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          {importResult.emails_updated > 0 && <span>{importResult.emails_updated} email{importResult.emails_updated !== 1 ? 's' : ''} updated</span>}
+                          {importResult.emails_updated > 0 && importResult.emails_generated > 0 && <span> · </span>}
+                          {importResult.emails_generated > 0 && <span>{importResult.emails_generated} email{importResult.emails_generated !== 1 ? 's' : ''} auto-generated</span>}
+                        </p>
+                      )}
                       {importResult.accounts_created > 0 && (
                         <p className="text-xs text-blue-600 mt-1">New drivers can log in with their work email and the default temporary password. They will be prompted to change it on first login.</p>
                       )}

@@ -222,14 +222,22 @@ export default function Management() {
       const sent = data.results.filter(r => r.success).length;
       const failed = data.results.filter(r => !r.success).length;
       if (sent > 0) toast.success(`${sent} invitation${sent !== 1 ? 's' : ''} sent`);
-      if (failed > 0) toast.error(`${failed} failed to send`);
+      if (failed > 0) toast.error(`${failed} failed — SMTP may not be configured. Invitation links are shown below.`);
     },
     onError: err => toast.error(err.response?.data?.error || 'Failed to send invitations'),
   });
 
   const resendInvitation = useMutation({
     mutationFn: (staffId) => api.post(`/auth/resend-invitation/${staffId}`).then(r => r.data),
-    onSuccess: (data) => { toast.success(`Invitation resent to ${data.name}`); refetchDrivers(); },
+    onSuccess: (data) => {
+      refetchDrivers();
+      if (data.emailSent) {
+        toast.success(`Invitation sent to ${data.name}`);
+      } else {
+        toast(`Link saved for ${data.name} — copy it below (SMTP not configured)`, { icon: '⚠️' });
+        setInviteResults([{ id: 0, success: false, name: data.name, error: 'SMTP not configured', inviteUrl: data.inviteUrl }]);
+      }
+    },
     onError: err => toast.error(err.response?.data?.error || 'Failed to resend invitation'),
   });
 
@@ -1124,14 +1132,22 @@ export default function Management() {
                 <h1 className="text-2xl font-bold text-slate-900">Send Invitations</h1>
                 <p className="text-sm text-slate-500 mt-1">Select drivers to send portal invitation emails. Drivers receive a 7-day link to set their password.</p>
               </div>
-              {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2 shrink-0 ml-4">
                 <button
-                  className="btn-primary text-xs shrink-0 ml-4"
-                  onClick={() => setShowInviteConfirm(true)}
+                  className="btn-ghost text-xs"
+                  onClick={() => setSelectedIds(new Set(driverList.filter(d => getDriverInviteStatus(d) === 'not_sent').map(d => d.id)))}
                 >
-                  <RefreshCw size={14} /> Send to {selectedIds.size} Selected
+                  Select All Not Sent
                 </button>
-              )}
+                {selectedIds.size > 0 && (
+                  <button
+                    className="btn-primary text-xs"
+                    onClick={() => setShowInviteConfirm(true)}
+                  >
+                    <RefreshCw size={14} /> Send to {selectedIds.size} Selected
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Filter bar */}
@@ -1170,11 +1186,19 @@ export default function Management() {
                   <p className="text-sm font-semibold text-blue-800">Invitation results</p>
                   <button onClick={() => setInviteResults(null)} className="text-blue-400 hover:text-blue-600"><X size={14} /></button>
                 </div>
-                {inviteResults.map(r => (
-                  <p key={r.id} className={`text-xs flex items-center gap-1.5 ${r.success ? 'text-green-700' : 'text-red-600'}`}>
-                    {r.success ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
-                    {r.name || `ID ${r.id}`} — {r.success ? 'Sent' : r.error}
-                  </p>
+                {inviteResults.map((r, i) => (
+                  <div key={i} className={`text-xs ${r.success ? 'text-green-700' : 'text-amber-700'}`}>
+                    <p className="flex items-center gap-1.5">
+                      {r.success ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
+                      {r.name || `ID ${r.id}`} — {r.success ? 'Email sent' : r.error}
+                    </p>
+                    {!r.success && r.inviteUrl && (
+                      <div className="mt-1 ml-4 flex items-center gap-2">
+                        <input readOnly value={r.inviteUrl} className="flex-1 text-[10px] bg-white border border-amber-200 rounded px-2 py-0.5 font-mono text-amber-800 truncate" onClick={e => e.target.select()} />
+                        <button className="text-[10px] text-blue-600 hover:underline whitespace-nowrap" onClick={() => { navigator.clipboard.writeText(r.inviteUrl); toast.success('Link copied'); }}>Copy</button>
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             )}

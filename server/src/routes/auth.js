@@ -321,8 +321,13 @@ router.post('/send-invitations', authMiddleware, adminOnly, async (req, res) => 
         'UPDATE staff SET invitation_token=$1, invitation_token_expiry=$2, invitation_sent_at=NOW() WHERE id=$3',
         [token, expiry, id]
       );
-      await sendInvitationEmail({ ...staff, invitation_token: token });
-      results.push({ id, success: true, name: `${staff.first_name} ${staff.last_name}` });
+      const inviteUrl = `${process.env.APP_URL || ''}/accept-invitation/${token}`;
+      const emailSent = await sendInvitationEmail({ ...staff, invitation_token: token });
+      if (emailSent) {
+        results.push({ id, success: true, name: `${staff.first_name} ${staff.last_name}` });
+      } else {
+        results.push({ id, success: false, error: 'SMTP not configured — link saved but email not sent', inviteUrl, name: `${staff.first_name} ${staff.last_name}` });
+      }
     } catch (err) {
       results.push({ id, success: false, error: err.message });
     }
@@ -347,9 +352,10 @@ router.post('/resend-invitation/:staffId', authMiddleware, adminOnly, async (req
     'UPDATE staff SET invitation_token=$1, invitation_token_expiry=$2, invitation_sent_at=NOW() WHERE id=$3',
     [token, expiry, staffId]
   );
-  await sendInvitationEmail({ ...staff, invitation_token: token });
+  const inviteUrl = `${process.env.APP_URL || ''}/accept-invitation/${token}`;
+  const emailSent = await sendInvitationEmail({ ...staff, invitation_token: token });
   logAudit(req, { action_type: 'RESEND_INVITATION', entity_type: 'staff', entity_id: parseInt(staffId), entity_description: `Resent invitation to ${staff.first_name} ${staff.last_name}` });
-  res.json({ success: true, name: `${staff.first_name} ${staff.last_name}` });
+  res.json({ success: emailSent, name: `${staff.first_name} ${staff.last_name}`, inviteUrl, emailSent });
 });
 
 module.exports = router;

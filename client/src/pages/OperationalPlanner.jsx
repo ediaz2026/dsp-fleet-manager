@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import {
   Upload, FileSpreadsheet, Car, Save, RefreshCw, AlertTriangle, CheckCircle,
   ChevronLeft, ChevronRight, Calendar, X, UserPlus, Download, ClipboardList, Copy,
+  MessageCircle,
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -1743,6 +1744,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     return m;
   }, [pickListData]);
   const [pickListSummaryModal, setPickListSummaryModal] = useState(null); // { name, routeCode, pick } or 'all'
+  const [whatsappConfirm, setWhatsappConfirm] = useState(false);
+  const [whatsappSending, setWhatsappSending] = useState(false);
 
   const { data: rescues = [] } = useQuery({
     queryKey: ['analytics-rescues', planDate],
@@ -3343,6 +3346,15 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
               📋 Send All Summaries
             </button>
           )}
+          {hasAnyData && (
+            <button
+              onClick={() => setWhatsappConfirm(true)}
+              disabled={whatsappSending}
+              className="font-semibold px-2 py-0.5 rounded transition-colors text-green-700 bg-green-50 hover:bg-green-100 disabled:opacity-50 flex items-center gap-1"
+            >
+              <MessageCircle size={12} /> WhatsApp Briefing
+            </button>
+          )}
           {summaryCounts.flags > 0
             ? <span className="ml-auto text-red-500 font-semibold">{summaryCounts.flags} flag{summaryCounts.flags !== 1 ? 's' : ''}</span>
             : hasAnyData && <span className="ml-auto text-emerald-600 font-semibold">✅ All matched</span>}
@@ -3926,6 +3938,58 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
           document.body
         );
       })()}
+
+      {/* ── WhatsApp Briefing Confirmation Modal ──────────────────────────── */}
+      {whatsappConfirm && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => !whatsappSending && setWhatsappConfirm(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                <MessageCircle size={18} className="text-green-600" /> WhatsApp Morning Briefing
+              </h2>
+              {!whatsappSending && <button onClick={() => setWhatsappConfirm(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>}
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-sm text-slate-600">
+                Send morning briefing via WhatsApp to all drivers with assigned routes for <span className="font-semibold">{planDate}</span>?
+              </p>
+              <p className="text-xs text-slate-400 mt-2">
+                Each driver will receive their route, vehicle, staging, wave, and pick list info.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+              <button
+                className="btn-primary flex items-center gap-2 text-sm bg-green-600 hover:bg-green-700"
+                disabled={whatsappSending}
+                onClick={async () => {
+                  setWhatsappSending(true);
+                  try {
+                    const { data } = await api.post('/ops/send-whatsapp-briefing', { date: planDate });
+                    setWhatsappConfirm(false);
+                    const parts = [];
+                    if (data.sent > 0) parts.push(`Sent to ${data.sent} drivers`);
+                    if (data.failed > 0) parts.push(`${data.failed} failed`);
+                    if (data.sent > 0) toast.success(parts.join(' | '));
+                    else toast.error(parts.join(' | ') || 'No messages sent');
+                    if (data.errors?.length > 0) {
+                      console.warn('[WhatsApp briefing errors]', data.errors);
+                    }
+                  } catch (err) {
+                    toast.error(err?.response?.data?.error || 'Failed to send briefings');
+                  } finally {
+                    setWhatsappSending(false);
+                  }
+                }}
+              >
+                {whatsappSending ? <RefreshCw size={14} className="animate-spin" /> : <MessageCircle size={14} />}
+                {whatsappSending ? 'Sending…' : 'Send All'}
+              </button>
+              <button className="btn-secondary text-sm" disabled={whatsappSending} onClick={() => setWhatsappConfirm(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

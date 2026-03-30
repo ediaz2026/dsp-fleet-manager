@@ -237,4 +237,91 @@ router.get('/picklist', async (req, res) => {
   res.json(rows);
 });
 
+// POST /api/ops/send-whatsapp-briefing — send morning briefing to all drivers
+router.post('/send-whatsapp-briefing', managerOnly, async (req, res) => {
+  const { sendWhatsApp } = require('../services/whatsappService');
+  const date = req.body.date || new Date().toISOString().split('T')[0];
+
+  try {
+    // Get all ops assignments for this date with driver info, vehicle, and pick list
+    const { rows: drivers } = await pool.query(`
+      SELECT
+        s.id AS staff_id, s.first_name, s.last_name, s.phone,
+        oa.route_code, oa.shift_type,
+        v.year AS v_year, v.make AS v_make, v.model AS v_model, v.plate AS v_plate,
+        v.unit_number AS v_unit,
+        pl.bags, pl.overflow, pl.total_packages, pl.commercial_packages, pl.wave_time AS pl_wave_time
+      FROM ops_assignments oa
+      JOIN staff s ON s.id = oa.staff_id
+      LEFT JOIN vehicles v ON v.id = oa.vehicle_id
+      LEFT JOIN pick_list_data pl ON pl.route_code = oa.route_code AND pl.date = oa.plan_date
+      WHERE oa.plan_date = $1
+        AND oa.removed_from_ops IS NOT TRUE
+        AND oa.route_code IS NOT NULL
+    `, [date]);
+
+    // Get loadout data for staging/canopy/wave/launchpad
+    const { rows: loadoutRows } = await pool.query(
+      `SELECT loadout FROM ops_loadout WHERE plan_date = $1`, [date]
+    );
+    const loadoutMap = {};
+    if (loadoutRows[0]?.loadout) {
+      for (const item of loadoutRows[0].loadout) {
+        loadoutMap[item.routeCode] = item;
+      }
+    }
+
+    const results = { sent: 0, failed: 0, errors: [], total: drivers.length };
+
+    for (const d of drivers) {
+      if (!d.phone) {
+        results.failed++;
+        results.errors.push(`${d.first_name} ${d.last_name}: No phone number`);
+        continue;
+      }
+
+      const loadout = loadoutMap[d.route_code] || {};
+      const vehicleLabel = d.v_unit || [d.v_year, d.v_make, d.v_model].filter(Boolean).join(' ') || '—';
+
+      const message = [
+        `🚚 Last Mile DSP — Daily Briefing`,
+        ``,
+        `Good morning ${d.first_name}! Here's your info for today:`,
+        ``,
+        `📍 Route: ${d.route_code}`,
+        `🚗 Vehicle: ${vehicleLabel}${d.shift_type ? ` — ${d.shift_type}` : ''}`,
+        `🏗️ Staging: ${loadout.staging || '—'} | Canopy: ${loadout.canopy || '—'}`,
+        `🌊 Wave: ${loadout.wave || '—'} | Time: ${loadout.waveTime || d.pl_wave_time || '—'}`,
+        `🚀 Launchpad: ${loadout.launchpad || '—'}`,
+        ``,
+        ...(d.total_packages ? [
+          `📦 Pick List Summary:`,
+          `🛍️ Bags: ${d.bags || 0}${d.overflow ? ` + ${d.overflow} overflow` : ''}`,
+          `📬 Total packages: ${d.total_packages}`,
+          ...(d.commercial_packages ? [`🏢 Commercial: ${d.commercial_packages}`] : []),
+          ``,
+        ] : []),
+        `Check your app for full details:`,
+        `https://dsp-fleet-manager-production.up.railway.app`,
+        ``,
+        `Have a great route! 🐕`,
+        `— Last Mile DSP`,
+      ].join('\n');
+
+      try {
+        await sendWhatsApp(d.phone, message);
+        results.sent++;
+      } catch (err) {
+        results.failed++;
+        results.errors.push(`${d.first_name} ${d.last_name}: ${err.message}`);
+      }
+    }
+
+    res.json(results);
+  } catch (err) {
+    console.error('[whatsapp-briefing] Error:', err);
+    res.status(500).json({ error: 'Failed to send briefings: ' + err.message });
+  }
+});
+
 module.exports = router;

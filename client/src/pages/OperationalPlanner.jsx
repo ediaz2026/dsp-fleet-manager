@@ -1748,6 +1748,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     return m;
   }, [pickListData]);
   const [pickListSummaryModal, setPickListSummaryModal] = useState(null); // { name, routeCode, pick } or 'all'
+  const [pickListUploadResult, setPickListUploadResult] = useState(null); // upload validation result
   const [whatsappConfirm, setWhatsappConfirm] = useState(false);
   const [whatsappSending, setWhatsappSending] = useState(false);
   const { data: picklistLockStatus } = useQuery({
@@ -2049,7 +2050,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       });
       qc.invalidateQueries({ queryKey: ['ops-picklist', planDate] });
       if (data.lsmd_routes > 0) {
-        toast.success(`Pick list loaded — ${data.lsmd_routes} routes found for LSMD`);
+        setPickListUploadResult(data);
       } else {
         toast('No LSMD routes found in pick list', { icon: '⚠️' });
       }
@@ -3867,6 +3868,73 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
           subtitle="Upload the Weekly Schedule, Routes file, and DMF5 Loadout to build the operations workbook"
           hint="Files: 1· Weekly Schedule  2· Routes_DMF5  3· DMF5 Loadout"
         />
+      )}
+
+      {/* ── Pick List Upload Results Modal ─────────────────────────────────── */}
+      {pickListUploadResult && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPickListUploadResult(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                {(!pickListUploadResult.missing_from_picklist?.length && !pickListUploadResult.extra_in_picklist?.length)
+                  ? <><CheckCircle size={18} className="text-green-600" /> Pick List Uploaded Successfully</>
+                  : <><AlertTriangle size={18} className="text-amber-500" /> Pick List Uploaded — Review Required</>}
+              </h2>
+              <button onClick={() => setPickListUploadResult(null)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              <p className="text-sm text-slate-600">
+                <span className="font-bold">{pickListUploadResult.lsmd_routes}</span> LSMD routes found
+                {pickListUploadResult.matched > 0 && <> — <span className="font-bold text-green-600">{pickListUploadResult.matched}</span> matched to today's drivers</>}
+              </p>
+
+              {pickListUploadResult.missing_from_picklist?.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-red-600 mb-2">Missing from pick list (in Ops but not in PDF)</p>
+                  <div className="space-y-1">
+                    {pickListUploadResult.missing_from_picklist.map((m, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
+                        <span className="text-red-500">🔴</span>
+                        <span className="font-mono font-bold text-red-800">{m.vehicle_id}</span>
+                        <span className="text-red-600">— {m.driver}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {pickListUploadResult.extra_in_picklist?.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-amber-600 mb-2">Extra in pick list (in PDF but not assigned)</p>
+                  <div className="space-y-1">
+                    {pickListUploadResult.extra_in_picklist.map((m, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                        <span className="text-amber-500">🟡</span>
+                        <span className="font-mono font-bold text-amber-800">{m.vehicle_id}</span>
+                        <span className="text-amber-600">— Not assigned to any driver</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!pickListUploadResult.missing_from_picklist?.length && !pickListUploadResult.extra_in_picklist?.length && (
+                <p className="text-sm text-green-600 font-semibold">All routes matched to today's drivers!</p>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+              <button className="btn-primary text-sm" onClick={() => setPickListUploadResult(null)}>
+                {pickListUploadResult.missing_from_picklist?.length ? 'Understood — Proceed Anyway' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Pick List Summary Modal ───────────────────────────────────────── */}

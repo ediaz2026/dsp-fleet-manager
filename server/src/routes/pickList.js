@@ -38,105 +38,96 @@ pool.query(`
 `).catch(err => console.error('[pick-list] Table creation error:', err.message));
 pool.query(`ALTER TABLE pick_list_data ADD COLUMN IF NOT EXISTS raw_text TEXT`).catch(() => {});
 
-// Python script for PDF parsing via pdfplumber
+// Python script for PDF parsing via pdfplumber — full-document approach
 const PYTHON_SCRIPT = `
 import sys
 import json
 import re
 import pdfplumber
+from datetime import datetime
 
 pdf_path = sys.argv[1]
-routes = []
-current_route = None
-current_text = []
 
+# Step 1: Extract ALL text from ALL pages
+all_text = []
 with pdfplumber.open(pdf_path) as pdf:
     for page in pdf.pages:
         text = page.extract_text()
-        if not text:
-            continue
-        lines = text.strip().split('\\n')
-        first_line = lines[0].strip()
+        if text:
+            all_text.append(text)
 
-        if first_line.startswith('STG.'):
-            if current_route and current_text:
-                routes.append({'first_line': current_route, 'text': '\\n'.join(current_text)})
-            current_route = first_line
-            current_text = [text]
-        else:
-            if current_route:
-                current_text.append(text)
+full_doc = '\\n'.join(all_text)
 
-    if current_route and current_text:
-        routes.append({'first_line': current_route, 'text': '\\n'.join(current_text)})
+# Step 2: Split on STG. pattern to get route chunks
+# Each route starts with STG.xxx — split so each chunk begins with STG.
+chunks = re.split(r'(?=STG\\.\\S+)', full_doc)
+chunks = [c.strip() for c in chunks if c.strip().startswith('STG.')]
 
 results = []
-for route in routes:
-    text = route['text']
-    lines = text.split('\\n')
-    first_line = route['first_line']
+for chunk in chunks:
+    lines = chunk.split('\\n')
 
     # Route code: first token of first line
-    route_code = first_line.split()[0].strip()
+    route_code = lines[0].split()[0].strip()
 
-    # Line 2: vehicle_id + dsp_code
+    # Find vehicle_id: first CX\\d+ or HZA\\d+ pattern in the chunk
     vehicle_id = ''
+    vid_match = re.search(r'\\b((?:CX|HZA)\\d+)\\b', chunk, re.IGNORECASE)
+    if vid_match:
+        vehicle_id = vid_match.group(1).upper()
+
+    # Check if LSMD appears within 300 chars of the vehicle_id position
     dsp_code = ''
-    if len(lines) > 1:
-        tokens = lines[1].split()
-        if len(tokens) >= 1:
-            vehicle_id = tokens[0]
-        if len(tokens) >= 2:
-            dsp_code = tokens[1].upper()
+    if vid_match:
+        start = vid_match.start()
+        nearby = chunk[max(0, start - 50):start + 300]
+        if 'LSMD' in nearby.upper():
+            dsp_code = 'LSMD'
+    # Fallback: check first 500 chars for LSMD
+    if dsp_code != 'LSMD' and 'LSMD' in chunk[:500].upper():
+        dsp_code = 'LSMD'
 
-    # Also check all lines for LSMD (sometimes formatting varies)
-    if dsp_code != 'LSMD':
-        for line in lines[:5]:
-            if 'LSMD' in line.upper():
-                dsp_code = 'LSMD'
-                break
-
-    # Wave time
+    # Wave time and date from first few lines
     wave_time = ''
     date_str = ''
-    for line in lines[:5]:
-        time_match = re.search(r'(\\d{1,2}:\\d{2}\\s*[AP]M)', line, re.IGNORECASE)
-        if time_match:
-            wave_time = time_match.group(1).strip()
-        date_match = re.search(r'([A-Z]{3}\\s+\\d{1,2},?\\s*\\d{4})', line, re.IGNORECASE)
-        if date_match:
-            date_str = date_match.group(1).strip()
+    for line in lines[:6]:
+        if not wave_time:
+            time_match = re.search(r'(\\d{1,2}:\\d{2}\\s*[AP]M)', line, re.IGNORECASE)
+            if time_match:
+                wave_time = time_match.group(1).strip()
+        if not date_str:
+            date_match = re.search(r'([A-Z]{3}\\s+\\d{1,2},?\\s*\\d{4})', line, re.IGNORECASE)
+            if date_match:
+                date_str = date_match.group(1).strip()
 
     # Parse date
     parsed_date = None
     if date_str:
         try:
-            from datetime import datetime
-            # Handle "MAR 29, 2026" or "MAR 29 2026"
             cleaned = date_str.replace(',', '')
             parsed_date = datetime.strptime(cleaned, '%b %d %Y').strftime('%Y-%m-%d')
         except:
             pass
 
-    # Bags, overflow, packages from full text
+    # Extract counts from full chunk text
     bags = 0
     overflow = 0
     total_packages = 0
     commercial_packages = 0
 
-    bags_match = re.search(r'(\\d+)\\s+bags?', text, re.IGNORECASE)
+    bags_match = re.search(r'(\\d+)\\s+bags?', chunk, re.IGNORECASE)
     if bags_match:
         bags = int(bags_match.group(1))
 
-    overflow_match = re.search(r'(\\d+)\\s+over(?:flow)?', text, re.IGNORECASE)
+    overflow_match = re.search(r'(\\d+)\\s+over(?:flow)?', chunk, re.IGNORECASE)
     if overflow_match:
         overflow = int(overflow_match.group(1))
 
-    total_match = re.search(r'Total\\s+Packages\\s*[:\\s]*(\\d+)', text, re.IGNORECASE)
+    total_match = re.search(r'Total\\s+Packages\\s*[:\\s]*(\\d+)', chunk, re.IGNORECASE)
     if total_match:
         total_packages = int(total_match.group(1))
 
-    commercial_match = re.search(r'Commercial\\s+Packages\\s*[:\\s]*(\\d+)', text, re.IGNORECASE)
+    commercial_match = re.search(r'Commercial\\s+Packages\\s*[:\\s]*(\\d+)', chunk, re.IGNORECASE)
     if commercial_match:
         commercial_packages = int(commercial_match.group(1))
 
@@ -150,7 +141,7 @@ for route in routes:
         'overflow': overflow,
         'total_packages': total_packages,
         'commercial_packages': commercial_packages,
-        'raw_text': text,
+        'raw_text': chunk,
     })
 
 print(json.dumps(results))
@@ -218,11 +209,49 @@ router.post('/upload-picklist', managerOnly, upload.single('picklist'), async (r
       `, [r.date, r.route_code, r.vehicle_id, r.wave_time, r.bags, r.overflow, r.total_packages, r.commercial_packages, r.raw_text]);
     }
 
+    // ── Post-upload validation: compare pick list vs ops planner ──
+    const pickListDate = lsmdRoutes[0]?.date || null;
+    const pickListVehicles = lsmdRoutes.map(r => r.vehicle_id?.toUpperCase()).filter(Boolean);
+
+    let matched = [];
+    let missing_from_picklist = [];
+    let extra_in_picklist = [];
+    let ops_drivers = {}; // vehicle_name → driver name
+
+    if (pickListDate) {
+      // Get assigned vehicles from ops planner for this date
+      const { rows: opsRows } = await pool.query(`
+        SELECT UPPER(v.vehicle_name) AS vehicle_name,
+               COALESCE(oa.name_override, s.first_name || ' ' || s.last_name) AS driver_name
+        FROM ops_assignments oa
+        JOIN staff s ON s.id = oa.staff_id
+        LEFT JOIN vehicles v ON v.id = oa.vehicle_id
+        WHERE oa.plan_date = $1 AND oa.removed_from_ops IS NOT TRUE AND v.vehicle_name IS NOT NULL
+      `, [pickListDate]);
+
+      const opsVehicles = new Set();
+      for (const r of opsRows) {
+        const vn = r.vehicle_name?.toUpperCase();
+        if (vn) {
+          opsVehicles.add(vn);
+          ops_drivers[vn] = r.driver_name;
+        }
+      }
+      const pickSet = new Set(pickListVehicles);
+
+      matched = pickListVehicles.filter(v => opsVehicles.has(v));
+      missing_from_picklist = [...opsVehicles].filter(v => !pickSet.has(v)).map(v => ({ vehicle_id: v, driver: ops_drivers[v] || '—' }));
+      extra_in_picklist = pickListVehicles.filter(v => !opsVehicles.has(v)).map(v => ({ vehicle_id: v }));
+    }
+
     res.json({
       success: true,
       routes_found: allRoutes.length,
       lsmd_routes: lsmdRoutes.length,
-      date: lsmdRoutes[0]?.date || null,
+      date: pickListDate,
+      matched: matched.length,
+      missing_from_picklist,
+      extra_in_picklist,
     });
   } catch (err) {
     console.error('[pick-list] Upload error:', err);

@@ -267,7 +267,54 @@ router.get('/picklist', async (req, res) => {
   const { date } = req.query;
   if (!date) return res.status(400).json({ error: 'date query param required' });
   const { rows } = await pool.query('SELECT * FROM pick_list_data WHERE date = $1 ORDER BY route_code', [date]);
+  console.log(`[pick-list] GET /picklist date=${date} rows=${rows.length} vehicle_ids=[${rows.slice(0, 5).map(r => r.vehicle_id).join(', ')}]`);
   res.json(rows);
+});
+
+// GET /api/ops/picklist-debug?date=YYYY-MM-DD — diagnostic endpoint
+router.get('/picklist-debug', async (req, res) => {
+  const date = req.query.date || new Date().toISOString().split('T')[0];
+  try {
+    // Pick list data in DB
+    const { rows: plRows } = await pool.query(
+      `SELECT vehicle_id, route_code, bags, overflow, total_packages, commercial_packages, wave_time, date::text
+       FROM pick_list_data WHERE date = $1 ORDER BY vehicle_id`,
+      [date]
+    );
+
+    // Ops assignments with vehicle names
+    const { rows: opsRows } = await pool.query(`
+      SELECT v.vehicle_name AS vehicle_id, oa.route_code,
+             COALESCE(oa.name_override, s.first_name || ' ' || s.last_name) AS driver_name,
+             oa.staff_id
+      FROM ops_assignments oa
+      JOIN staff s ON s.id = oa.staff_id
+      LEFT JOIN vehicles v ON v.id = oa.vehicle_id
+      WHERE oa.plan_date = $1 AND oa.removed_from_ops IS NOT TRUE
+      ORDER BY v.vehicle_name
+    `, [date]);
+
+    // Matching logic
+    const plVehicles = new Set(plRows.map(r => (r.vehicle_id || '').toUpperCase()).filter(Boolean));
+    const opsVehicles = new Set(opsRows.map(r => (r.vehicle_id || '').toUpperCase()).filter(Boolean));
+
+    const matched = [...plVehicles].filter(v => opsVehicles.has(v));
+    const unmatched_pick_list = [...plVehicles].filter(v => !opsVehicles.has(v));
+    const unmatched_ops = [...opsVehicles].filter(v => !plVehicles.has(v));
+
+    console.log(`[pick-list-debug] date=${date} pl=${plRows.length} ops=${opsRows.length} matched=${matched.length} unmatched_pl=${unmatched_pick_list.length} unmatched_ops=${unmatched_ops.length}`);
+
+    res.json({
+      date,
+      pick_list_in_db: plRows,
+      ops_routes_today: opsRows,
+      matched,
+      unmatched_pick_list,
+      unmatched_ops,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/ops/picklist-lock-status — check if pick list is currently locked

@@ -1749,6 +1749,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   }, [pickListData]);
   const [pickListSummaryModal, setPickListSummaryModal] = useState(null); // { name, routeCode, pick } or 'all'
   const [pickListUploadResult, setPickListUploadResult] = useState(null); // upload validation result
+  const [pickListDebug, setPickListDebug] = useState(null); // debug modal data
   const [whatsappConfirm, setWhatsappConfirm] = useState(false);
   const [whatsappSending, setWhatsappSending] = useState(false);
   const { data: picklistLockStatus } = useQuery({
@@ -3305,7 +3306,21 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
               <ClipboardList size={10} className="inline mr-1 opacity-60" />{pickListData.length} routes loaded
             </p>
           )}
-          <UploadButton label="Upload Pick List" accept=".pdf" loading={!!uploading.picklist} fileName={null} onFile={handlePickListUpload} />
+          <div className="flex items-center gap-1.5">
+            <UploadButton label="Upload Pick List" accept=".pdf" loading={!!uploading.picklist} fileName={null} onFile={handlePickListUpload} />
+            <button
+              onClick={async () => {
+                try {
+                  const { data } = await api.get('/ops/picklist-debug', { params: { date: planDate } });
+                  setPickListDebug(data);
+                } catch (err) {
+                  toast.error('Debug failed: ' + (err?.response?.data?.error || err.message));
+                }
+              }}
+              className="px-2 py-1.5 rounded-lg border border-slate-200 text-xs hover:bg-slate-50 transition-colors"
+              title="Debug pick list matching"
+            >🔍</button>
+          </div>
         </div>
       </div>
 
@@ -3868,6 +3883,71 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
           subtitle="Upload the Weekly Schedule, Routes file, and DMF5 Loadout to build the operations workbook"
           hint="Files: 1· Weekly Schedule  2· Routes_DMF5  3· DMF5 Loadout"
         />
+      )}
+
+      {/* ── Pick List Debug Modal ──────────────────────────────────────────── */}
+      {pickListDebug && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPickListDebug(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h2 className="font-bold text-slate-800">🔍 Pick List Debug — {pickListDebug.date}</h2>
+              <button onClick={() => setPickListDebug(null)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              {/* Summary */}
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="bg-blue-50 rounded-lg p-3">
+                  <p className="text-2xl font-bold text-blue-700">{pickListDebug.pick_list_in_db?.length || 0}</p>
+                  <p className="text-[10px] uppercase font-semibold text-blue-500">In Pick List DB</p>
+                </div>
+                <div className="bg-indigo-50 rounded-lg p-3">
+                  <p className="text-2xl font-bold text-indigo-700">{pickListDebug.ops_routes_today?.length || 0}</p>
+                  <p className="text-[10px] uppercase font-semibold text-indigo-500">In Ops Planner</p>
+                </div>
+                <div className="bg-green-50 rounded-lg p-3">
+                  <p className="text-2xl font-bold text-green-700">{pickListDebug.matched?.length || 0}</p>
+                  <p className="text-[10px] uppercase font-semibold text-green-500">Matched</p>
+                </div>
+              </div>
+
+              {/* Matched */}
+              {pickListDebug.matched?.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-green-600 mb-1">✅ Matched ({pickListDebug.matched.length})</p>
+                  <p className="text-xs text-slate-500 font-mono">{pickListDebug.matched.join(', ')}</p>
+                </div>
+              )}
+
+              {/* Unmatched */}
+              {pickListDebug.unmatched_ops?.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-red-600 mb-1">🔴 In Ops but NOT in Pick List ({pickListDebug.unmatched_ops.length})</p>
+                  <p className="text-xs text-red-700 font-mono">{pickListDebug.unmatched_ops.join(', ')}</p>
+                </div>
+              )}
+              {pickListDebug.unmatched_pick_list?.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-amber-600 mb-1">🟡 In Pick List but NOT in Ops ({pickListDebug.unmatched_pick_list.length})</p>
+                  <p className="text-xs text-amber-700 font-mono">{pickListDebug.unmatched_pick_list.join(', ')}</p>
+                </div>
+              )}
+
+              {/* Raw data tables */}
+              <details>
+                <summary className="text-xs font-bold text-slate-500 cursor-pointer hover:text-slate-700">Pick List DB rows ({pickListDebug.pick_list_in_db?.length})</summary>
+                <pre className="mt-2 text-[10px] bg-slate-50 rounded-lg p-3 overflow-x-auto max-h-48 border">{JSON.stringify(pickListDebug.pick_list_in_db, null, 2)}</pre>
+              </details>
+              <details>
+                <summary className="text-xs font-bold text-slate-500 cursor-pointer hover:text-slate-700">Ops Planner routes ({pickListDebug.ops_routes_today?.length})</summary>
+                <pre className="mt-2 text-[10px] bg-slate-50 rounded-lg p-3 overflow-x-auto max-h-48 border">{JSON.stringify(pickListDebug.ops_routes_today, null, 2)}</pre>
+              </details>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+              <button className="btn-secondary text-sm" onClick={() => setPickListDebug(null)}>Close</button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Pick List Upload Results Modal ─────────────────────────────────── */}

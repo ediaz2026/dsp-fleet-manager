@@ -370,6 +370,8 @@ async function ensureRcDailyTargets() {
 // Run migrations → seed admin → ensure aux tables → start server
 runMigrations()
   .then(() => ensureAdminAccount())
+  // Fix VIN column length early before any vehicle inserts
+  .then(() => pool.query(`ALTER TABLE vehicles ALTER COLUMN vin TYPE VARCHAR(50)`).catch(() => {}))
   .then(() => ensureOpsV2Tables())
   .then(() => ensureRecurringSkip())
   .then(() => ensureMasterDriverColumns())

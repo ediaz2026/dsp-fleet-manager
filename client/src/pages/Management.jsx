@@ -1248,7 +1248,6 @@ export default function Management() {
                             className="rounded accent-blue-600"
                             checked={selectedIds.has(d.id)}
                             onChange={() => toggleSelect(d.id)}
-                            disabled={invStatus === 'active'}
                           />
                         </td>
                         <td className="px-3 py-2.5 font-medium text-[#111827]">{d.first_name} {d.last_name}</td>
@@ -1261,15 +1260,18 @@ export default function Management() {
                           {d.last_login ? format(new Date(d.last_login), 'MM/dd/yy') : '—'}
                         </td>
                         <td className="px-3 py-2.5 text-right">
-                          {invStatus !== 'active' && (
+                          <div className="flex items-center justify-end gap-2">
+                            {d.invitation_sent_at && (
+                              <span className="text-[10px] text-slate-400 whitespace-nowrap">Sent {format(new Date(d.invitation_sent_at), 'M/d')}</span>
+                            )}
                             <button
                               className="btn-ghost text-xs"
                               disabled={resendingId === d.id}
                               onClick={() => resendInvitation.mutate(d.id)}
                             >
-                              {resendingId === d.id ? 'Sending…' : invStatus === 'invited' ? 'Resend' : 'Send'}
+                              {resendingId === d.id ? 'Sending…' : d.invitation_sent_at ? 'Resend' : 'Send'}
                             </button>
-                          )}
+                          </div>
                         </td>
                       </tr>
                     );

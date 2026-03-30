@@ -72,3 +72,13 @@
     @apply block text-[#2563EB] text-[13px] font-medium uppercase tracking-wide mb-1.5;
   }
 }
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}

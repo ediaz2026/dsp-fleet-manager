@@ -220,25 +220,27 @@ export default function TopNav() {
         </NavLink>
 
         {/* ── Nav items ───────────────────────────────────────────── */}
-        <nav className="flex items-center gap-0.5 flex-1 justify-center">
+        <nav className="flex items-center gap-0.5 flex-1 justify-center overflow-x-auto scrollbar-hide">
           {activeNavItems.map((group, i) => {
             if (group.children) {
               return <NavDropdown key={i} group={group} />;
             }
+            const Icon = group.icon;
             return (
               <NavLink
                 key={group.to}
                 to={group.to}
                 end={group.exact}
                 className={({ isActive }) =>
-                  `flex items-center px-2.5 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+                  `flex items-center gap-1.5 px-2 sm:px-2.5 py-2 rounded-lg text-sm font-medium transition-all duration-150 whitespace-nowrap flex-shrink-0 ${
                     isActive
                       ? 'bg-[#2563EB] text-white font-semibold'
                       : 'text-white/80 hover:text-white hover:bg-white/10'
                   }`
                 }
               >
-                {group.label}
+                {isDriver && Icon && <Icon size={16} className="sm:hidden flex-shrink-0" />}
+                <span className={isDriver ? 'hidden sm:inline' : ''}>{group.label}</span>
               </NavLink>
             );
           })}

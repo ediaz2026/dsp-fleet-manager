@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import {
   Upload, FileSpreadsheet, Car, Save, RefreshCw, AlertTriangle, CheckCircle,
-  ChevronLeft, ChevronRight, Calendar, X, UserPlus, Download,
+  ChevronLeft, ChevronRight, Calendar, X, UserPlus, Download, ClipboardList, Copy,
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -1731,6 +1731,19 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     return m;
   }, [assignmentsArr]);
 
+  // Pick list data
+  const { data: pickListData = [] } = useQuery({
+    queryKey: ['ops-picklist', planDate],
+    queryFn:  () => api.get('/ops/picklist', { params: { date: planDate } }).then(r => r.data),
+    enabled:  !!planDate,
+  });
+  const pickListMap = useMemo(() => {
+    const m = {};
+    for (const p of pickListData) m[p.route_code] = p;
+    return m;
+  }, [pickListData]);
+  const [pickListSummaryModal, setPickListSummaryModal] = useState(null); // { name, routeCode, pick } or 'all'
+
   const { data: rescues = [] } = useQuery({
     queryKey: ['analytics-rescues', planDate],
     queryFn:  () => api.get('/analytics/rescues', { params: { date: planDate } }).then(r => r.data),
@@ -2009,6 +2022,30 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       toast.error('Upload failed: ' + msg);
     } finally {
       setUploading(u => ({ ...u, [step]: false }));
+    }
+  };
+
+  // ── Pick list PDF upload ────────────────────────────────────────────────────
+  const handlePickListUpload = async (file) => {
+    if (!file) return;
+    setUploading(u => ({ ...u, picklist: true }));
+    try {
+      const formData = new FormData();
+      formData.append('picklist', file);
+      const { data } = await api.post('/ops/upload-picklist', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      qc.invalidateQueries({ queryKey: ['ops-picklist', planDate] });
+      if (data.lsmd_routes > 0) {
+        toast.success(`Pick list loaded — ${data.lsmd_routes} routes found for LSMD`);
+      } else {
+        toast('No LSMD routes found in pick list', { icon: '⚠️' });
+      }
+    } catch (err) {
+      const msg = err?.response?.data?.error || err.message || 'Unknown error';
+      toast.error('Pick list upload failed: ' + msg);
+    } finally {
+      setUploading(u => ({ ...u, picklist: false }));
     }
   };
 
@@ -2882,6 +2919,31 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             />
           </td>
 
+          {/* Pick List cell */}
+          {pickListData.length > 0 && (() => {
+            const pick = pickListMap[effectiveRoute];
+            return (
+              <td className="px-2 py-2 text-[10px] whitespace-nowrap">
+                {pick ? (
+                  <div className="flex items-center gap-1.5">
+                    <div className="leading-tight">
+                      <span className="font-semibold text-content">{pick.bags} bags</span>
+                      {pick.overflow > 0 && <span className="text-amber-600 ml-1">+{pick.overflow} ovfl</span>}
+                      <br />
+                      <span className="text-content-muted">{pick.total_packages} pkgs</span>
+                      {pick.commercial_packages > 0 && <span className="text-indigo-600 ml-1">{pick.commercial_packages} comm</span>}
+                    </div>
+                    <button
+                      onClick={() => setPickListSummaryModal({ name: displayName, routeCode: effectiveRoute, pick })}
+                      className="px-1 py-0.5 rounded hover:bg-indigo-100 transition-colors text-sm flex-shrink-0"
+                      title="View pick list summary"
+                    >📋</button>
+                  </div>
+                ) : <span className="text-slate-300">—</span>}
+              </td>
+            );
+          })()}
+
           {/* Rescue button + badges */}
           <td className="px-2 py-2 text-center whitespace-nowrap">
             <button
@@ -3069,13 +3131,14 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
                   );
                 })()}
                 <th className="px-2 py-2.5 text-center whitespace-nowrap">Actual Finish</th>
+                {pickListData.length > 0 && <th className="px-2 py-2.5 text-left whitespace-nowrap">Pick List</th>}
                 <th className="px-2 py-2.5 text-center">Rescue</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {rows.length > 0
                 ? rows.map((row, i) => renderRow(row, row.profile?.staff_id ? `staff-${row.profile.staff_id}` : `${row.section}-${row.routeCode || i}`, i + 1))
-                : <tr><td colSpan={15} className="px-3 py-8 text-center text-content-muted">
+                : <tr><td colSpan={pickListData.length > 0 ? 16 : 15} className="px-3 py-8 text-center text-content-muted">
                     {hasActiveFilters ? 'No rows match the current filters.' : 'Upload files to see data.'}
                   </td></tr>
               }
@@ -3220,6 +3283,15 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
           )}
           <UploadButton label="Upload Loadout" accept=".xlsx,.xls" loading={!!uploading.step3} fileName={null} onFile={f => handleUpload('step3', f)} />
         </div>
+        <div className="card flex-1 min-w-[200px] p-3 space-y-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-content-muted">4 · Pick List</p>
+          {pickListData.length > 0 && (
+            <p className="text-[11px] text-content-muted truncate">
+              <ClipboardList size={10} className="inline mr-1 opacity-60" />{pickListData.length} routes loaded
+            </p>
+          )}
+          <UploadButton label="Upload Pick List" accept=".pdf" loading={!!uploading.picklist} fileName={null} onFile={handlePickListUpload} />
+        </div>
       </div>
 
       {/* ── Summary bar ──────────────────────────────────────────────────── */}
@@ -3261,6 +3333,14 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
               className={`font-semibold px-2 py-0.5 rounded transition-colors ${filters.status === 'multiple_das' ? 'bg-blue-600 text-white' : 'text-blue-600 bg-blue-50 hover:bg-blue-100'}`}
             >
               🚩 Multiple DAs: {summaryCounts.multipleDAs}
+            </button>
+          )}
+          {pickListData.length > 0 && (
+            <button
+              onClick={() => setPickListSummaryModal('all')}
+              className="font-semibold px-2 py-0.5 rounded transition-colors text-indigo-600 bg-indigo-50 hover:bg-indigo-100"
+            >
+              📋 Send All Summaries
             </button>
           )}
           {summaryCounts.flags > 0
@@ -3765,6 +3845,87 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
           hint="Files: 1· Weekly Schedule  2· Routes_DMF5  3· DMF5 Loadout"
         />
       )}
+
+      {/* ── Pick List Summary Modal ───────────────────────────────────────── */}
+      {pickListSummaryModal && (() => {
+        const buildMsg = (name, routeCode, pick) =>
+          `Hi ${name}! Your pick list for today:\nRoute: ${routeCode} | Wave: ${pick.wave_time || '—'}\n🛍 Bags: ${pick.bags} bags${pick.overflow > 0 ? ` + ${pick.overflow} overflow` : ''}\n📦 Total packages: ${pick.total_packages}${pick.commercial_packages > 0 ? ` (${pick.commercial_packages} commercial)` : ''}\n- Last Mile DSP 🐕`;
+
+        const isSingle = pickListSummaryModal !== 'all';
+
+        // For "all" mode, build list of drivers with pick list data
+        const allDriverPicks = !isSingle ? sortedRows
+          .map(row => {
+            const route = row.asgn?.route_code || row.routeCode || '';
+            const pick = pickListMap[route];
+            const name = row.asgn?.name_override || row.name || '';
+            return pick && name ? { name, routeCode: route, pick } : null;
+          })
+          .filter(Boolean) : [];
+
+        const copyAll = () => {
+          const text = allDriverPicks.map(d => buildMsg(d.name, d.routeCode, d.pick)).join('\n\n─────────────────\n\n');
+          navigator.clipboard.writeText(text).then(() => toast.success('All summaries copied'));
+        };
+
+        return createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPickListSummaryModal(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                <h2 className="font-bold text-slate-800">{isSingle ? 'Pick List Summary' : 'All Driver Summaries'}</h2>
+                <button onClick={() => setPickListSummaryModal(null)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+                {isSingle ? (() => {
+                  const { name, routeCode, pick } = pickListSummaryModal;
+                  return (
+                    <div className="font-mono text-sm leading-relaxed bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <p><span className="text-slate-500">Driver:</span> <span className="font-bold">{name}</span></p>
+                      <p><span className="text-slate-500">Route:</span> <span className="font-bold">{routeCode}</span></p>
+                      <p><span className="text-slate-500">Wave Time:</span> {pick.wave_time || '—'}</p>
+                      <div className="border-t border-slate-300 my-2" />
+                      <p>Bags to load: <span className="font-bold">{pick.bags} bags</span>{pick.overflow > 0 ? ` + ${pick.overflow} overflow` : ''}</p>
+                      <p>Total packages: <span className="font-bold">{pick.total_packages}</span></p>
+                      {pick.commercial_packages > 0 && <p>Commercial packages: <span className="font-bold">{pick.commercial_packages}</span></p>}
+                    </div>
+                  );
+                })() : (
+                  allDriverPicks.length > 0 ? allDriverPicks.map((d, i) => (
+                    <div key={i} className="font-mono text-xs leading-relaxed bg-slate-50 rounded-xl p-3 border border-slate-200">
+                      <p className="font-bold text-sm mb-1">{d.name} — {d.routeCode}</p>
+                      <p>🛍 {d.pick.bags} bags{d.pick.overflow > 0 ? ` + ${d.pick.overflow} overflow` : ''} · 📦 {d.pick.total_packages} pkgs{d.pick.commercial_packages > 0 ? ` (${d.pick.commercial_packages} comm)` : ''}</p>
+                    </div>
+                  )) : <p className="text-slate-400 text-center py-4">No pick list data matched to drivers.</p>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+                {isSingle ? (
+                  <button
+                    className="btn-primary flex items-center gap-2 text-sm"
+                    onClick={() => {
+                      const { name, routeCode, pick } = pickListSummaryModal;
+                      navigator.clipboard.writeText(buildMsg(name, routeCode, pick)).then(() => toast.success('Message copied'));
+                    }}
+                  >
+                    <Copy size={14} /> Copy Message
+                  </button>
+                ) : (
+                  <button className="btn-primary flex items-center gap-2 text-sm" onClick={copyAll}>
+                    <Copy size={14} /> Copy All ({allDriverPicks.length})
+                  </button>
+                )}
+                <button className="btn-secondary text-sm" onClick={() => setPickListSummaryModal(null)}>Close</button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
     </div>
   );
 }

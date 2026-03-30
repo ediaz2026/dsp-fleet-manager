@@ -149,6 +149,7 @@ app.use('/api/admin',   require('./routes/admin'));
 app.use('/api/repairs', require('./routes/repairs'));
 app.use('/api/driver-reports', require('./routes/driverReports'));
 app.use('/api/ops-planner', require('./routes/opsPlanner'));
+app.use('/api/ops', require('./routes/pickList'));
 app.use('/api/analytics',   require('./routes/analytics'));
 app.use('/api/scorecard',   require('./routes/scorecard'));
 app.use('/api/cortex-sync', require('./routes/cortexSync'));

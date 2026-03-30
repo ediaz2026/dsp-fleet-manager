@@ -26,7 +26,7 @@ function getResendClient() {
   return new Resend(process.env.RESEND_API_KEY);
 }
 
-function getFrom()   { return process.env.RESEND_FROM_EMAIL || 'Last Mile DSP <noreply@lsmddsp.com>'; }
+function getFrom()   { return process.env.RESEND_FROM_EMAIL || 'DSP Fleet Manager <onboarding@resend.dev>'; }
 function getAppUrl() { return process.env.APP_URL || 'http://localhost:5173'; }
 
 // Log config status at startup

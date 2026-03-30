@@ -371,7 +371,7 @@ async function ensureRcDailyTargets() {
 runMigrations()
   .then(() => ensureAdminAccount())
   // Fix VIN column length early before any vehicle inserts
-  .then(() => pool.query(`ALTER TABLE vehicles ALTER COLUMN vin TYPE VARCHAR(50)`).catch(() => {}))
+  .then(() => require('./db/pool').query(`ALTER TABLE vehicles ALTER COLUMN vin TYPE VARCHAR(50)`).catch(e => console.log('VIN migration:', e.message)))
   .then(() => ensureOpsV2Tables())
   .then(() => ensureRecurringSkip())
   .then(() => ensureMasterDriverColumns())

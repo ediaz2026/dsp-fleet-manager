@@ -280,10 +280,9 @@ router.post('/send-whatsapp-briefing', managerOnly, async (req, res) => {
       FROM ops_assignments oa
       JOIN staff s ON s.id = oa.staff_id
       LEFT JOIN vehicles v ON v.id = oa.vehicle_id
-      LEFT JOIN pick_list_data pl ON pl.route_code = oa.route_code AND pl.date = oa.plan_date
+      LEFT JOIN pick_list_data pl ON UPPER(pl.vehicle_id) = UPPER(v.vehicle_name) AND pl.date = oa.plan_date
       WHERE oa.plan_date = $1
         AND oa.removed_from_ops IS NOT TRUE
-        AND oa.route_code IS NOT NULL
     `, [date]);
 
     // Get loadout data for staging/canopy/wave/launchpad
@@ -386,21 +385,36 @@ router.get('/my-picklist', async (req, res) => {
       });
     }
 
-    // Find the driver's route_code from ops_assignments for today
+    // Find the driver's assigned vehicle name (CX93, HZA13, etc.) for today
     const { rows: asgn } = await pool.query(
-      `SELECT route_code FROM ops_assignments
-       WHERE staff_id = $1 AND plan_date = $2 AND removed_from_ops IS NOT TRUE AND route_code IS NOT NULL`,
+      `SELECT oa.route_code, v.vehicle_name
+       FROM ops_assignments oa
+       LEFT JOIN vehicles v ON v.id = oa.vehicle_id
+       WHERE oa.staff_id = $1 AND oa.plan_date = $2 AND oa.removed_from_ops IS NOT TRUE`,
       [staffId, today]
     );
     if (!asgn.length) return res.json(null);
 
-    const routeCode = asgn[0].route_code;
+    const vehicleName = asgn[0].vehicle_name;
 
-    // Get pick list data for this route
-    const { rows: pl } = await pool.query(
-      `SELECT * FROM pick_list_data WHERE date = $1 AND route_code = $2`,
-      [today, routeCode]
-    );
+    // Match pick list by vehicle_id (CX93) = vehicle_name, fallback to route_code
+    let pl;
+    if (vehicleName) {
+      const { rows } = await pool.query(
+        `SELECT * FROM pick_list_data WHERE date = $1 AND UPPER(vehicle_id) = UPPER($2)`,
+        [today, vehicleName]
+      );
+      pl = rows;
+    }
+    if (!pl || !pl.length) {
+      const routeCode = asgn[0].route_code;
+      if (!routeCode) return res.json(null);
+      const { rows } = await pool.query(
+        `SELECT * FROM pick_list_data WHERE date = $1 AND route_code = $2`,
+        [today, routeCode]
+      );
+      pl = rows;
+    }
     if (!pl.length) return res.json(null);
 
     const pick = pl[0];

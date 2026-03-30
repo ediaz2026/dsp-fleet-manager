@@ -1740,7 +1740,11 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   });
   const pickListMap = useMemo(() => {
     const m = {};
-    for (const p of pickListData) m[p.route_code] = p;
+    for (const p of pickListData) {
+      // Key by vehicle_id (CX93, HZA13) for matching, and also by route_code as fallback
+      if (p.vehicle_id) m[p.vehicle_id.toUpperCase()] = p;
+      if (p.route_code) m[p.route_code] = p;
+    }
     return m;
   }, [pickListData]);
   const [pickListSummaryModal, setPickListSummaryModal] = useState(null); // { name, routeCode, pick } or 'all'
@@ -2697,6 +2701,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       const asgn     = row.asgn || (staffId ? (assignments[staffId] || {}) : {});
       const effectiveRoute = asgn.route_code || row.routeCode || '';
       const currentLoadout = loadoutMap[effectiveRoute] || row.loadout || {};
+      const rowVehicle = vehicles.find(v => v.id === asgn.vehicle_id);
 
       const resolvedDA  = row.hasMultipleDAs ? resolvedMultiDAs[row.routeCode] : null;
       const isMultiFlag = row.hasMultipleDAs && !resolvedDA;
@@ -2929,7 +2934,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
 
           {/* Pick List cell */}
           {pickListData.length > 0 && (() => {
-            const pick = pickListMap[effectiveRoute];
+            const vName = rowVehicle?.vehicle_name?.toUpperCase() || '';
+            const pick = (vName && pickListMap[vName]) || pickListMap[effectiveRoute];
             return (
               <td className="px-2 py-2 text-[10px] whitespace-nowrap">
                 {pick ? (
@@ -3873,9 +3879,12 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         // For "all" mode, build list of drivers with pick list data
         const allDriverPicks = !isSingle ? sortedRows
           .map(row => {
-            const route = row.asgn?.route_code || row.routeCode || '';
-            const pick = pickListMap[route];
-            const name = row.asgn?.name_override || row.name || '';
+            const asgn = row.asgn || {};
+            const route = asgn.route_code || row.routeCode || '';
+            const vObj = vehicles.find(v => v.id === asgn.vehicle_id);
+            const vName = vObj?.vehicle_name?.toUpperCase() || '';
+            const pick = (vName && pickListMap[vName]) || pickListMap[route];
+            const name = asgn.name_override || row.name || '';
             return pick && name ? { name, routeCode: route, pick } : null;
           })
           .filter(Boolean) : [];

@@ -4,7 +4,8 @@
   "main": "src/index.js",
   "scripts": {
     "dev": "nodemon src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "postinstall": "pip install pdfplumber --break-system-packages --quiet || pip3 install pdfplumber --quiet || true"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",

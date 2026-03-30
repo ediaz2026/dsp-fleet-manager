@@ -15,8 +15,10 @@ router.put('/', managerOnly, async (req, res) => {
   const settings = req.body;
   for (const [key, value] of Object.entries(settings)) {
     await pool.query(
-      `UPDATE settings SET setting_value=$1, updated_at=NOW() WHERE setting_key=$2`,
-      [String(value), key]
+      `INSERT INTO settings (setting_key, setting_value, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (setting_key) DO UPDATE SET setting_value=$2, updated_at=NOW()`,
+      [key, String(value)]
     );
   }
   res.json({ message: 'Settings saved' });

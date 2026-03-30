@@ -5,7 +5,7 @@ import {
   Save, Plus, Trash2, Shield, Bell, Cpu, DollarSign, Cloud, ToggleLeft, ToggleRight,
   Tag, RepeatIcon, X, ChevronDown, ChevronUp, Search, Users, UserPlus, RefreshCw,
   Settings, Calendar, Upload, CheckCircle, AlertCircle, ChevronRight, GripVertical,
-  Download, FileSpreadsheet, ClipboardList,
+  Download, FileSpreadsheet, ClipboardList, Mail, Smartphone, MessageCircle, Info,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../api/client';
@@ -1577,17 +1577,124 @@ export default function Management() {
         )}
 
         {/* ══ NOTIFICATIONS ════════════════════════════════════════════════ */}
-        {activeSection === 'notifications' && (
-          <>
-            <h1 className="text-2xl font-bold text-slate-900">Notifications</h1>
-            <section className={CARD}>
-              <div className="py-8 text-center">
-                <Bell size={32} className="text-slate-200 mx-auto mb-3" />
-                <p className="text-slate-400 text-sm">Notification preferences coming soon.</p>
+        {activeSection === 'notifications' && (() => {
+          const CHANNELS = [
+            { key: 'email',    label: 'Email Notifications',    icon: Mail,          note: null },
+            { key: 'sms',      label: 'SMS / Text Notifications', icon: Smartphone,  note: 'Requires Twilio integration. See documentation.' },
+            { key: 'push',     label: 'PWA Push Notifications', icon: Bell,          note: null },
+            { key: 'whatsapp', label: 'WhatsApp Notifications', icon: MessageCircle, note: 'Requires WhatsApp Business API integration.' },
+          ];
+          const nk = (ch, suffix) => `notifications_${ch}_${suffix}`;
+          const nv = (ch, suffix, fallback) => settings[nk(ch, suffix)] ?? fallback;
+          const setN = (ch, suffix, val) => setSettings(s => ({ ...s, [nk(ch, suffix)]: val }));
+          const isOn = (ch, suffix) => nv(ch, suffix, 'false') === 'true';
+
+          return (
+            <>
+              <h1 className="text-2xl font-bold text-slate-900">Notifications</h1>
+              <p className="text-sm text-slate-500">Configure how and when drivers receive shift reminders.</p>
+
+              {CHANNELS.map(({ key, label, icon: Icon, note }) => (
+                <section key={key} className={CARD}>
+                  {/* Channel toggle */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center">
+                        <Icon size={18} className="text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-800 text-sm">{label}</p>
+                        <p className="text-xs text-slate-400">Send {key} notifications to drivers?</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setN(key, 'enabled', isOn(key, 'enabled') ? 'false' : 'true')}
+                      className="flex-shrink-0"
+                    >
+                      {isOn(key, 'enabled')
+                        ? <ToggleRight size={32} className="text-blue-600" />
+                        : <ToggleLeft size={32} className="text-slate-300" />}
+                    </button>
+                  </div>
+
+                  {/* Expanded settings when enabled */}
+                  {isOn(key, 'enabled') && (
+                    <div className="ml-12 space-y-4 pt-2 border-t border-slate-100">
+                      {/* First reminder */}
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <label className="text-sm text-slate-600">Notify driver</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={72}
+                          className="input w-20 text-center"
+                          value={nv(key, 'hours_before', '12')}
+                          onChange={e => setN(key, 'hours_before', e.target.value)}
+                        />
+                        <span className="text-sm text-slate-600">hours before their shift</span>
+                      </div>
+
+                      {/* Second reminder toggle */}
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-slate-600">Send a second reminder?</p>
+                        <button onClick={() => setN(key, 'second_reminder', isOn(key, 'second_reminder') ? 'false' : 'true')}>
+                          {isOn(key, 'second_reminder')
+                            ? <ToggleRight size={28} className="text-blue-600" />
+                            : <ToggleLeft size={28} className="text-slate-300" />}
+                        </button>
+                      </div>
+
+                      {isOn(key, 'second_reminder') && (
+                        <div className="flex items-center gap-3 flex-wrap ml-4">
+                          <label className="text-sm text-slate-600">Second reminder</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={72}
+                            className="input w-20 text-center"
+                            value={nv(key, 'second_hours', '2')}
+                            onChange={e => setN(key, 'second_hours', e.target.value)}
+                          />
+                          <span className="text-sm text-slate-600">hours before shift</span>
+                        </div>
+                      )}
+
+                      {/* Info note */}
+                      {note && (
+                        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                          <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                          <p className="text-xs text-amber-700">{note}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+              ))}
+
+              {/* Save button */}
+              <div className="flex justify-end pt-2">
+                <button
+                  className="btn-primary flex items-center gap-2"
+                  onClick={() => {
+                    const notifKeys = {};
+                    CHANNELS.forEach(({ key }) => {
+                      ['enabled', 'hours_before', 'second_reminder', 'second_hours'].forEach(suffix => {
+                        const k = nk(key, suffix);
+                        if (settings[k] !== undefined) notifKeys[k] = settings[k];
+                      });
+                    });
+                    api.put('/settings', notifKeys).then(() => {
+                      qc.invalidateQueries({ queryKey: ['settings'] });
+                      toast.success('Notification settings saved');
+                    }).catch(() => toast.error('Failed to save notification settings'));
+                  }}
+                >
+                  <Save size={15} /> Save Settings
+                </button>
               </div>
-            </section>
-          </>
-        )}
+            </>
+          );
+        })()}
 
         {/* ══ AUDIT LOG ════════════════════════════════════════════════ */}
         {activeSection === 'audit-log' && (

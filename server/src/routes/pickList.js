@@ -19,7 +19,7 @@ const upload = multer({
   },
 });
 
-// Ensure pick_list_data table exists
+// Ensure pick_list_data table exists + raw_text column
 pool.query(`
   CREATE TABLE IF NOT EXISTS pick_list_data (
     id SERIAL PRIMARY KEY,
@@ -31,10 +31,12 @@ pool.query(`
     overflow INTEGER DEFAULT 0,
     total_packages INTEGER DEFAULT 0,
     commercial_packages INTEGER DEFAULT 0,
+    raw_text TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(date, route_code)
   )
 `).catch(err => console.error('[pick-list] Table creation error:', err.message));
+pool.query(`ALTER TABLE pick_list_data ADD COLUMN IF NOT EXISTS raw_text TEXT`).catch(() => {});
 
 // Python script for PDF parsing via pdfplumber
 const PYTHON_SCRIPT = `
@@ -148,6 +150,7 @@ for route in routes:
         'overflow': overflow,
         'total_packages': total_packages,
         'commercial_packages': commercial_packages,
+        'raw_text': text,
     })
 
 print(json.dumps(results))
@@ -202,16 +205,17 @@ router.post('/upload-picklist', managerOnly, upload.single('picklist'), async (r
     // Upsert into pick_list_data
     for (const r of lsmdRoutes) {
       await pool.query(`
-        INSERT INTO pick_list_data (date, route_code, vehicle_id, wave_time, bags, overflow, total_packages, commercial_packages)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO pick_list_data (date, route_code, vehicle_id, wave_time, bags, overflow, total_packages, commercial_packages, raw_text)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (date, route_code) DO UPDATE SET
           vehicle_id = EXCLUDED.vehicle_id,
           wave_time = EXCLUDED.wave_time,
           bags = EXCLUDED.bags,
           overflow = EXCLUDED.overflow,
           total_packages = EXCLUDED.total_packages,
-          commercial_packages = EXCLUDED.commercial_packages
-      `, [r.date, r.route_code, r.vehicle_id, r.wave_time, r.bags, r.overflow, r.total_packages, r.commercial_packages]);
+          commercial_packages = EXCLUDED.commercial_packages,
+          raw_text = EXCLUDED.raw_text
+      `, [r.date, r.route_code, r.vehicle_id, r.wave_time, r.bags, r.overflow, r.total_packages, r.commercial_packages, r.raw_text]);
     }
 
     res.json({
@@ -321,6 +325,69 @@ router.post('/send-whatsapp-briefing', managerOnly, async (req, res) => {
   } catch (err) {
     console.error('[whatsapp-briefing] Error:', err);
     res.status(500).json({ error: 'Failed to send briefings: ' + err.message });
+  }
+});
+
+// GET /api/ops/my-picklist — driver's own pick list for today
+router.get('/my-picklist', async (req, res) => {
+  try {
+    const staffId = req.user.id;
+    const today = new Date().toISOString().split('T')[0];
+
+    // Find the driver's route_code from ops_assignments for today
+    const { rows: asgn } = await pool.query(
+      `SELECT route_code FROM ops_assignments
+       WHERE staff_id = $1 AND plan_date = $2 AND removed_from_ops IS NOT TRUE AND route_code IS NOT NULL`,
+      [staffId, today]
+    );
+    if (!asgn.length) return res.json(null);
+
+    const routeCode = asgn[0].route_code;
+
+    // Get pick list data for this route
+    const { rows: pl } = await pool.query(
+      `SELECT * FROM pick_list_data WHERE date = $1 AND route_code = $2`,
+      [today, routeCode]
+    );
+    if (!pl.length) return res.json(null);
+
+    const pick = pl[0];
+
+    // Parse bag details from raw_text
+    const bagDetails = [];
+    if (pick.raw_text) {
+      // Look for bag table rows — typically: "1 A-26.1A Orange 4126 11" or similar patterns
+      const lines = pick.raw_text.split('\n');
+      for (const line of lines) {
+        // Pattern: bag_number zone color code package_count
+        // Bags are typically numbered rows with zone identifiers
+        const match = line.match(/^\s*(\d{1,3})\s+([A-Z0-9][\w\-\.]+\w)\s+(\w+)\s+(\w{3,6})\s+(\d{1,4})\s*$/i);
+        if (match) {
+          bagDetails.push({
+            bag: parseInt(match[1]),
+            zone: match[2],
+            color: match[3],
+            code: match[4],
+            pkgs: parseInt(match[5]),
+          });
+        }
+      }
+    }
+
+    res.json({
+      route_code: pick.route_code,
+      vehicle_id: pick.vehicle_id,
+      wave_time: pick.wave_time,
+      bags: pick.bags,
+      overflow: pick.overflow,
+      total_packages: pick.total_packages,
+      commercial_packages: pick.commercial_packages,
+      bag_details: bagDetails,
+      raw_text: pick.raw_text,
+    });
+  } catch (err) {
+    console.error('[my-picklist] Error:', err);
+    res.status(500).json({ error: 'Failed to load pick list' });
   }
 });
 

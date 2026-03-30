@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, Component } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, startOfWeek, addDays, addWeeks } from 'date-fns';
-import { ChevronLeft, ChevronRight, Calendar, X, Smartphone } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, X, Smartphone, Package } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import { resolveColor, buildShiftTypeMap } from '../utils/shiftColors';
@@ -33,6 +33,25 @@ const ATT_BADGE = {
   called_out: { label: 'Called Out',  bg: '#FEF9C3', color: '#A16207', border: '#FEF08A' },
 };
 
+// Bag color → CSS styles
+const BAG_COLORS = {
+  orange:  { bg: '#FFF7ED', border: '#FDBA74', text: '#C2410C' },
+  green:   { bg: '#F0FDF4', border: '#86EFAC', text: '#166534' },
+  navy:    { bg: '#EFF6FF', border: '#93C5FD', text: '#1E40AF' },
+  blue:    { bg: '#EFF6FF', border: '#93C5FD', text: '#1E40AF' },
+  yellow:  { bg: '#FEFCE8', border: '#FDE047', text: '#A16207' },
+  black:   { bg: '#F3F4F6', border: '#D1D5DB', text: '#374151' },
+  red:     { bg: '#FEF2F2', border: '#FCA5A5', text: '#B91C1C' },
+  purple:  { bg: '#FAF5FF', border: '#D8B4FE', text: '#7E22CE' },
+  white:   { bg: '#FAFAFA', border: '#E5E7EB', text: '#374151' },
+};
+const DEFAULT_BAG_STYLE = { bg: '#F8FAFC', border: '#E2E8F0', text: '#475569' };
+
+function getBagStyle(color) {
+  if (!color) return DEFAULT_BAG_STYLE;
+  return BAG_COLORS[color.toLowerCase()] || DEFAULT_BAG_STYLE;
+}
+
 function fmt12(time) {
   if (!time) return '';
   const [h, m] = time.split(':').map(Number);
@@ -47,45 +66,115 @@ function PwaInstallBanner() {
   const deferredPrompt = useRef(null);
 
   useEffect(() => {
-    // Don't show if already dismissed or already installed
     if (localStorage.getItem('pwa_banner_dismissed')) return;
     if (window.matchMedia('(display-mode: standalone)').matches) return;
     if (window.navigator.standalone === true) return;
-
-    // Check if on mobile
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     if (!isMobile) return;
-
     setShow(true);
-
-    const handler = (e) => {
-      e.preventDefault();
-      deferredPrompt.current = e;
-    };
+    const handler = (e) => { e.preventDefault(); deferredPrompt.current = e; };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
-  const dismiss = () => {
-    setShow(false);
-    localStorage.setItem('pwa_banner_dismissed', '1');
-  };
-
+  const dismiss = () => { setShow(false); localStorage.setItem('pwa_banner_dismissed', '1'); };
   if (!show) return null;
 
   return (
     <div className="mb-3 flex items-center gap-2 bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl px-3 py-2.5">
       <Smartphone size={16} className="text-[#2563EB] flex-shrink-0" />
-      <p className="text-sm text-[#1E40AF] flex-1">
-        Add to your home screen for quick access
-      </p>
-      <button
-        onClick={dismiss}
-        className="p-1 rounded-lg text-[#93C5FD] hover:text-[#2563EB] hover:bg-[#DBEAFE] transition-colors flex-shrink-0"
-        aria-label="Dismiss"
-      >
+      <p className="text-sm text-[#1E40AF] flex-1">Add to your home screen for quick access</p>
+      <button onClick={dismiss} className="p-1 rounded-lg text-[#93C5FD] hover:text-[#2563EB] hover:bg-[#DBEAFE] transition-colors flex-shrink-0" aria-label="Dismiss">
         <X size={16} />
       </button>
+    </div>
+  );
+}
+
+// ─── Today's Pick List Component ─────────────────────────────────────────────
+function TodaysPickList({ userId }) {
+  const { data: pickList, isLoading } = useQuery({
+    queryKey: ['my-picklist', userId],
+    queryFn: () => api.get('/ops/my-picklist').then(r => r.data),
+    enabled: !!userId,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  if (isLoading) return (
+    <div className="mt-4 rounded-xl border border-[#E2E8F0] bg-white p-4 text-center text-[#94a3b8]">Loading pick list…</div>
+  );
+  if (!pickList) return (
+    <div className="mt-4 rounded-xl border border-[#E2E8F0] bg-white p-5 text-center">
+      <Package size={28} className="mx-auto text-[#CBD5E1] mb-2" />
+      <p className="text-sm text-[#94a3b8]">No pick list uploaded yet for today. Check back later.</p>
+    </div>
+  );
+
+  const { route_code, wave_time, bags, overflow, total_packages, commercial_packages, bag_details = [] } = pickList;
+
+  return (
+    <div className="mt-5">
+      <h2 className="text-base font-bold text-[#111827] mb-3 flex items-center gap-2">
+        📦 Today's Pick List
+      </h2>
+
+      <div className="rounded-xl border border-[#E2E8F0] overflow-hidden bg-white">
+        {/* ── Sticky header with totals ──────────────────────────────── */}
+        <div className="sticky top-0 z-10 bg-[#1E3A5F] text-white px-4 py-3 space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-base">📍 {route_code}</span>
+            <span className="text-sm font-semibold text-blue-200">🌊 {wave_time || '—'}</span>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-sm">
+            <span>🛍️ <strong>{bags}</strong> bags{overflow > 0 ? <span className="text-amber-300"> + {overflow} overflow</span> : ''}</span>
+            <span>📬 <strong>{total_packages}</strong> pkgs{commercial_packages > 0 ? <span className="text-cyan-300"> · {commercial_packages} commercial</span> : ''}</span>
+          </div>
+        </div>
+
+        {/* ── Bag details ────────────────────────────────────────────── */}
+        {bag_details.length > 0 ? (
+          <div className="divide-y divide-[#F1F5F9]">
+            {bag_details.map((b, i) => {
+              const style = getBagStyle(b.color);
+              return (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 px-4 min-h-[48px]"
+                  style={{ backgroundColor: style.bg, borderLeft: `4px solid ${style.border}` }}
+                >
+                  <span className="font-bold text-base w-8 text-center" style={{ color: style.text }}>
+                    {b.bag}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold text-sm" style={{ color: style.text }}>{b.zone}</span>
+                    <span className="text-xs text-[#94a3b8] ml-2">{b.color}</span>
+                    {b.code && <span className="text-xs text-[#94a3b8] ml-1">· {b.code}</span>}
+                  </div>
+                  <span className="font-bold text-sm whitespace-nowrap" style={{ color: style.text }}>
+                    {b.pkgs} pkgs
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="px-4 py-6 text-center text-sm text-[#94a3b8]">
+            Bag details will appear here once the pick list format is parsed.
+          </div>
+        )}
+
+        {/* ── Overflow section ───────────────────────────────────────── */}
+        {overflow > 0 && (
+          <div className="border-t border-[#E2E8F0] bg-[#FFFBEB] px-4 py-3">
+            <p className="font-bold text-sm text-[#92400E]">
+              📦 Overflow: {overflow} package{overflow !== 1 ? 's' : ''}
+            </p>
+            <p className="text-xs text-[#B45309] mt-0.5">
+              These are loaded separately — check staging area
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -119,6 +208,12 @@ function DriverScheduleInner() {
   const shiftTypeMap = useMemo(() => buildShiftTypeMap(shiftTypes), [shiftTypes]);
 
   const today = format(new Date(), 'yyyy-MM-dd');
+
+  // Check if driver has a shift today (for pick list section)
+  const hasTodayShift = shifts.some(s => {
+    const d = s.shift_date?.split('T')[0] || s.shift_date;
+    return d === today;
+  });
 
   // Group shifts by date
   const byDate = {};
@@ -213,7 +308,6 @@ function DriverScheduleInner() {
 
                   {/* ── Left: Day name + Date ───────────────────────────────── */}
                   <div className="flex items-center gap-2 sm:w-52 sm:flex-shrink-0">
-                    {/* Short day name on mobile, full on sm+ */}
                     <span className={`text-sm font-bold sm:hidden ${
                       isToday ? 'text-[#2563EB]' : 'text-[#111827]'
                     }`}>
@@ -314,6 +408,11 @@ function DriverScheduleInner() {
             Check back once your manager publishes the schedule
           </p>
         </div>
+      )}
+
+      {/* ── Today's Pick List ───────────────────────────────────────────────── */}
+      {weekOffset === 0 && hasTodayShift && (
+        <TodaysPickList userId={user?.id} />
       )}
     </div>
   );

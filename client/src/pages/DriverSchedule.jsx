@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, Component } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, startOfWeek, addDays, addWeeks } from 'date-fns';
-import { ChevronLeft, ChevronRight, Calendar, X, Smartphone, Package } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, X, Smartphone, Package, Lock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import { resolveColor, buildShiftTypeMap } from '../utils/shiftColors';
@@ -97,7 +97,8 @@ function TodaysPickList({ userId }) {
     queryKey: ['my-picklist', userId],
     queryFn: () => api.get('/ops/my-picklist').then(r => r.data),
     enabled: !!userId,
-    staleTime: 2 * 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000, // Auto-refresh every 60s so it unlocks automatically
   });
 
   if (isLoading) return (
@@ -107,6 +108,25 @@ function TodaysPickList({ userId }) {
     <div className="mt-4 rounded-xl border border-[#E2E8F0] bg-white p-5 text-center">
       <Package size={28} className="mx-auto text-[#CBD5E1] mb-2" />
       <p className="text-sm text-[#94a3b8]">No pick list uploaded yet for today. Check back later.</p>
+    </div>
+  );
+
+  // ── Locked state ──────────────────────────────────────────────
+  if (pickList.locked) return (
+    <div className="mt-5">
+      <h2 className="text-base font-bold text-[#111827] mb-3 flex items-center gap-2">
+        📦 Today's Pick List
+      </h2>
+      <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-8 text-center">
+        <Lock size={36} className="mx-auto text-[#94a3b8] mb-3" />
+        <p className="font-bold text-[#374151] text-lg mb-1">Pick List Locked</p>
+        <p className="text-sm text-[#6B7280]">
+          Your pick list will be available at <span className="font-bold text-[#2563EB]">{pickList.available_at}</span>
+        </p>
+        <p className="text-xs text-[#94a3b8] mt-2">
+          Check back then to see your bag-by-bag loading details
+        </p>
+      </div>
     </div>
   );
 

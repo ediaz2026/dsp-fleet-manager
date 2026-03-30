@@ -5,7 +5,7 @@ import {
   Save, Plus, Trash2, Shield, Bell, Cpu, DollarSign, Cloud, ToggleLeft, ToggleRight,
   Tag, RepeatIcon, X, ChevronDown, ChevronUp, Search, Users, UserPlus, RefreshCw,
   Settings, Calendar, Upload, CheckCircle, AlertCircle, ChevronRight, GripVertical,
-  Download, FileSpreadsheet, ClipboardList, Mail, Smartphone, MessageCircle, Info,
+  Download, FileSpreadsheet, ClipboardList, Mail, Smartphone, MessageCircle, Info, Clock,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../api/client';
@@ -1671,7 +1671,7 @@ export default function Management() {
                 </section>
               ))}
 
-              {/* Save button */}
+              {/* Save notification settings */}
               <div className="flex justify-end pt-2">
                 <button
                   className="btn-primary flex items-center gap-2"
@@ -1690,6 +1690,87 @@ export default function Management() {
                   }}
                 >
                   <Save size={15} /> Save Settings
+                </button>
+              </div>
+
+              {/* ── Pick List Settings ──────────────────────────────────── */}
+              <div className="border-t border-slate-200 pt-6 mt-6">
+                <h2 className="text-lg font-bold text-slate-900 mb-1">Pick List Settings</h2>
+                <p className="text-sm text-slate-500 mb-4">Control when drivers can view their pick list in the app.</p>
+              </div>
+
+              <section className={CARD}>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center">
+                    <Clock size={18} className="text-violet-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-800 text-sm">Pick List Visibility Time</p>
+                    <p className="text-xs text-slate-400">What time should drivers be able to see their pick list?</p>
+                  </div>
+                </div>
+                <div className="ml-12 space-y-4">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <input
+                      type="time"
+                      className="input w-36"
+                      value={settings.picklist_visibility_time || '06:00'}
+                      onChange={e => setSettings(s => ({ ...s, picklist_visibility_time: e.target.value }))}
+                    />
+                    <span className="text-xs text-slate-400">Drivers cannot see the pick list before this time. This gives you time to finalize route assignments.</span>
+                  </div>
+                </div>
+              </section>
+
+              <section className={CARD}>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center">
+                    <Calendar size={18} className="text-violet-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-800 text-sm">Pick List Visibility Days</p>
+                    <p className="text-xs text-slate-400">Which days should the pick list be visible?</p>
+                  </div>
+                </div>
+                <div className="ml-12 flex flex-wrap gap-2">
+                  {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((day, i) => {
+                    const currentDays = (settings.picklist_visibility_days || '0,1,2,3,4,5,6').split(',').map(Number);
+                    const isChecked = currentDays.includes(i);
+                    return (
+                      <label key={i} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium cursor-pointer transition-colors ${
+                        isChecked ? 'bg-violet-50 border-violet-300 text-violet-700' : 'bg-white border-slate-200 text-slate-400'
+                      }`}>
+                        <input
+                          type="checkbox"
+                          className="rounded accent-violet-600"
+                          checked={isChecked}
+                          onChange={() => {
+                            const next = isChecked ? currentDays.filter(d => d !== i) : [...currentDays, i].sort();
+                            setSettings(s => ({ ...s, picklist_visibility_days: next.join(',') }));
+                          }}
+                        />
+                        {day}
+                      </label>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  className="btn-primary flex items-center gap-2"
+                  onClick={() => {
+                    const keys = {
+                      picklist_visibility_time: settings.picklist_visibility_time || '06:00',
+                      picklist_visibility_days: settings.picklist_visibility_days || '0,1,2,3,4,5,6',
+                    };
+                    api.put('/settings', keys).then(() => {
+                      qc.invalidateQueries({ queryKey: ['settings'] });
+                      toast.success('Pick list settings saved');
+                    }).catch(() => toast.error('Failed to save pick list settings'));
+                  }}
+                >
+                  <Save size={15} /> Save Pick List Settings
                 </button>
               </div>
             </>

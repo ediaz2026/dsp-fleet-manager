@@ -241,6 +241,28 @@ router.get('/picklist', async (req, res) => {
   res.json(rows);
 });
 
+// GET /api/ops/picklist-lock-status — check if pick list is currently locked
+router.get('/picklist-lock-status', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('picklist_visibility_time', 'picklist_visibility_days')`
+    );
+    const m = {};
+    for (const r of rows) m[r.setting_key] = r.setting_value;
+    const visTime = m.picklist_visibility_time || '06:00';
+    const visDays = (m.picklist_visibility_days || '0,1,2,3,4,5,6').split(',').map(Number);
+    const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const currentDay = nowET.getDay();
+    const currentMinutes = nowET.getHours() * 60 + nowET.getMinutes();
+    const [h, min] = visTime.split(':').map(Number);
+    const visMinutes = h * 60 + min;
+    const locked = !visDays.includes(currentDay) || currentMinutes < visMinutes;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    res.json({ locked, available_at: `${h12}:${String(min).padStart(2, '0')} ${ampm}` });
+  } catch { res.json({ locked: false, available_at: '6:00 AM' }); }
+});
+
 // POST /api/ops/send-whatsapp-briefing — send morning briefing to all drivers
 router.post('/send-whatsapp-briefing', managerOnly, async (req, res) => {
   const { sendWhatsApp } = require('../services/whatsappService');
@@ -333,6 +355,36 @@ router.get('/my-picklist', async (req, res) => {
   try {
     const staffId = req.user.id;
     const today = new Date().toISOString().split('T')[0];
+
+    // ── Time-lock check ────────────────────────────────────────────
+    const { rows: settingsRows } = await pool.query(
+      `SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('picklist_visibility_time', 'picklist_visibility_days')`
+    );
+    const settingsMap = {};
+    for (const r of settingsRows) settingsMap[r.setting_key] = r.setting_value;
+
+    const visTime = settingsMap.picklist_visibility_time || '06:00';
+    const visDays = (settingsMap.picklist_visibility_days || '0,1,2,3,4,5,6').split(',').map(Number);
+
+    // Current time in Eastern timezone
+    const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const currentDay = nowET.getDay(); // 0=Sun
+    const currentMinutes = nowET.getHours() * 60 + nowET.getMinutes();
+    const [visH, visM] = visTime.split(':').map(Number);
+    const visMinutes = visH * 60 + visM;
+
+    // Format display time
+    const visAmpm = visH >= 12 ? 'PM' : 'AM';
+    const vis12 = visH % 12 || 12;
+    const availableAt = `${vis12}:${String(visM).padStart(2, '0')} ${visAmpm}`;
+
+    if (!visDays.includes(currentDay) || currentMinutes < visMinutes) {
+      return res.json({
+        locked: true,
+        available_at: availableAt,
+        message: 'Pick list not available yet',
+      });
+    }
 
     // Find the driver's route_code from ops_assignments for today
     const { rows: asgn } = await pool.query(

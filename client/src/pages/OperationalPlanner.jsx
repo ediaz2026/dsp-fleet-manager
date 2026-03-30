@@ -1746,6 +1746,11 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   const [pickListSummaryModal, setPickListSummaryModal] = useState(null); // { name, routeCode, pick } or 'all'
   const [whatsappConfirm, setWhatsappConfirm] = useState(false);
   const [whatsappSending, setWhatsappSending] = useState(false);
+  const { data: picklistLockStatus } = useQuery({
+    queryKey: ['picklist-lock-status'],
+    queryFn: () => api.get('/ops/picklist-lock-status').then(r => r.data),
+    staleTime: 60 * 1000,
+  });
 
   const { data: rescues = [] } = useQuery({
     queryKey: ['analytics-rescues', planDate],
@@ -3949,13 +3954,21 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
               </h2>
               {!whatsappSending && <button onClick={() => setWhatsappConfirm(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>}
             </div>
-            <div className="px-5 py-4">
+            <div className="px-5 py-4 space-y-3">
               <p className="text-sm text-slate-600">
                 Send morning briefing via WhatsApp to all drivers with assigned routes for <span className="font-semibold">{planDate}</span>?
               </p>
-              <p className="text-xs text-slate-400 mt-2">
+              <p className="text-xs text-slate-400">
                 Each driver will receive their route, vehicle, staging, wave, and pick list info.
               </p>
+              {picklistLockStatus?.locked && (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <span className="text-amber-500 flex-shrink-0 mt-0.5">⚠️</span>
+                  <p className="text-xs text-amber-700">
+                    Drivers won't be able to see their full pick list in the app until <span className="font-bold">{picklistLockStatus.available_at}</span>. You can still send the WhatsApp briefing now.
+                  </p>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
               <button

@@ -1,42 +1,60 @@
 /**
  * emailService.js
- * Sends transactional emails via Resend.
+ * Sends transactional emails via Gmail SMTP (nodemailer).
  *
  * Required env vars:
- *   RESEND_API_KEY    — Resend API key
- *   RESEND_FROM_EMAIL — "From" address, e.g. "Last Mile DSP <noreply@lsmddsp.com>"
- *   APP_URL           — base URL shown in email links
+ *   SMTP_HOST   — e.g. smtp.gmail.com
+ *   SMTP_PORT   — e.g. 587
+ *   SMTP_USER   — Gmail address
+ *   SMTP_PASS   — Gmail app password
+ *   SMTP_FROM   — "From" address, e.g. "Last Mile DSP <noreply@lastmiledsp.com>"
+ *   APP_URL     — base URL shown in email links
  *
- * If RESEND_API_KEY is not set the service logs a warning and skips sending.
+ * If SMTP_HOST is not set the service logs a warning and skips sending.
  */
 
-let Resend;
+let nodemailer;
 try {
-  Resend = require('resend').Resend;
+  nodemailer = require('nodemailer');
 } catch {
-  console.warn('[email] resend package not installed — email features disabled');
+  console.warn('[email] nodemailer not installed — email features disabled');
 }
 
-function getResendClient() {
-  if (!Resend) return null;
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[email] Email sending skipped — RESEND_API_KEY not set');
+// ── Resend code (kept for later) ────────────────────────────────────────────
+// let Resend;
+// try { Resend = require('resend').Resend; } catch {}
+// function getResendClient() {
+//   if (!Resend || !process.env.RESEND_API_KEY) return null;
+//   return new Resend(process.env.RESEND_API_KEY);
+// }
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getTransporter() {
+  if (!nodemailer) return null;
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn('[email] Email sending skipped — SMTP not fully configured');
     return null;
   }
-  return new Resend(process.env.RESEND_API_KEY);
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port,
+    secure: port === 465,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
 }
 
-function getFrom()   { return process.env.RESEND_FROM_EMAIL || 'DSP Fleet Manager <onboarding@resend.dev>'; }
+function getFrom()   { return process.env.SMTP_FROM || 'Last Mile DSP <noreply@lastmiledsp.com>'; }
 function getAppUrl() { return process.env.APP_URL || 'http://localhost:5173'; }
 
 // Log config status at startup
 setTimeout(() => {
-  const hasKey = !!process.env.RESEND_API_KEY;
-  const from = getFrom();
-  if (hasKey) {
-    console.log('[email] ✅ Resend configured:', { from, app_url: process.env.APP_URL });
+  const vars = { SMTP_HOST: process.env.SMTP_HOST, SMTP_PORT: process.env.SMTP_PORT, SMTP_USER: process.env.SMTP_USER, SMTP_PASS: process.env.SMTP_PASS ? '***set***' : undefined, SMTP_FROM: process.env.SMTP_FROM, APP_URL: process.env.APP_URL };
+  const missing = Object.entries(vars).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length === 0) {
+    console.log('[email] ✅ SMTP configured:', { host: vars.SMTP_HOST, port: vars.SMTP_PORT, user: vars.SMTP_USER, from: vars.SMTP_FROM });
   } else {
-    console.warn('[email] ⚠️  RESEND_API_KEY not set. Email sending will be skipped.');
+    console.warn('[email] ⚠️  SMTP not fully configured. Missing:', missing.join(', '));
   }
 }, 100);
 
@@ -145,21 +163,20 @@ function buildScheduleHtml(firstName, weekLabel, shifts) {
  * Send a schedule-published notification email to one driver.
  */
 async function sendScheduleNotification(driver, weekLabel, shifts) {
-  const resend = getResendClient();
-  if (!resend) {
-    console.warn(`[email] Resend not configured — skipping email to ${driver.email}`);
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.warn(`[email] SMTP not configured — skipping email to ${driver.email}`);
     return false;
   }
 
   try {
     const html = buildScheduleHtml(driver.first_name, weekLabel, shifts);
-    const { error } = await resend.emails.send({
+    await transporter.sendMail({
       from: getFrom(),
       to: driver.email,
       subject: `Your Schedule Has Been Updated - Last Mile DSP`,
       html,
     });
-    if (error) throw new Error(error.message);
     console.log(`[email] ✅ Sent schedule notification to ${driver.email}`);
     return true;
   } catch (err) {
@@ -172,9 +189,9 @@ async function sendScheduleNotification(driver, weekLabel, shifts) {
  * Send a password reset email.
  */
 async function sendPasswordResetEmail(staff, token) {
-  const resend = getResendClient();
-  if (!resend) {
-    console.warn(`[email] Resend not configured — skipping password reset email to ${staff.email}`);
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.warn(`[email] SMTP not configured — skipping password reset email to ${staff.email}`);
     return false;
   }
 
@@ -212,13 +229,12 @@ async function sendPasswordResetEmail(staff, token) {
 </html>`;
 
   try {
-    const { error } = await resend.emails.send({
+    await transporter.sendMail({
       from: getFrom(),
       to: staff.email,
       subject: 'Password Reset - DSP Fleet Manager',
       html,
     });
-    if (error) throw new Error(error.message);
     console.log(`[email] ✅ Sent password reset to ${staff.email}`);
     return true;
   } catch (err) {
@@ -231,9 +247,9 @@ async function sendPasswordResetEmail(staff, token) {
  * Send a welcome / account invitation email to a new driver.
  */
 async function sendInvitationEmail(staff) {
-  const resend = getResendClient();
-  if (!resend) {
-    console.warn(`[email] Resend not configured — skipping invitation email to ${staff.email}`);
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.warn(`[email] SMTP not configured — skipping invitation email to ${staff.email}`);
     return false;
   }
 
@@ -271,13 +287,12 @@ async function sendInvitationEmail(staff) {
 </html>`;
 
   try {
-    const { error } = await resend.emails.send({
+    await transporter.sendMail({
       from: getFrom(),
       to: staff.email,
       subject: 'Welcome to DSP Fleet Manager - Set Up Your Account',
       html,
     });
-    if (error) throw new Error(error.message);
     console.log(`[email] ✅ Sent invitation to ${staff.email}`);
     return true;
   } catch (err) {
@@ -287,31 +302,39 @@ async function sendInvitationEmail(staff) {
 }
 
 /**
- * Send a plain test email to verify Resend config.
+ * Send a plain test email to verify SMTP config.
  */
 async function sendTestEmail(toEmail) {
   const config = {
-    RESEND_API_KEY:    process.env.RESEND_API_KEY ? '***set***' : '(not set)',
-    RESEND_FROM_EMAIL: getFrom(),
-    APP_URL:           process.env.APP_URL || '(not set)',
-    resend:            Resend ? 'installed' : 'NOT INSTALLED',
+    SMTP_HOST:  process.env.SMTP_HOST  || '(not set)',
+    SMTP_PORT:  process.env.SMTP_PORT  || '(not set)',
+    SMTP_USER:  process.env.SMTP_USER  || '(not set)',
+    SMTP_PASS:  process.env.SMTP_PASS  ? '***set***' : '(not set)',
+    SMTP_FROM:  process.env.SMTP_FROM  || '(not set)',
+    APP_URL:    process.env.APP_URL    || '(not set)',
+    nodemailer: nodemailer ? 'installed' : 'NOT INSTALLED',
   };
 
-  const resend = getResendClient();
-  if (!resend) {
-    return { ok: false, message: 'Resend not configured — check RESEND_API_KEY', config };
+  const transporter = getTransporter();
+  if (!transporter) {
+    return { ok: false, message: 'SMTP not configured — check missing vars', config };
   }
 
   try {
-    const { data, error } = await resend.emails.send({
+    await transporter.verify();
+  } catch (verifyErr) {
+    return { ok: false, message: `SMTP connection failed: ${verifyErr.message}`, code: verifyErr.code, config };
+  }
+
+  try {
+    const info = await transporter.sendMail({
       from: getFrom(),
       to: toEmail,
       subject: 'DSP Fleet Manager — Email Test',
-      html: `<p>This is a test email from DSP Fleet Manager.</p><p>If you received this, Resend is working correctly.</p><p>Sent: ${new Date().toISOString()}</p>`,
+      html: `<p>This is a test email from DSP Fleet Manager.</p><p>If you received this, SMTP is working correctly.</p><p>Sent: ${new Date().toISOString()}</p>`,
     });
-    if (error) throw new Error(error.message);
-    console.log(`[email] ✅ Test email sent to ${toEmail}`, data?.id);
-    return { ok: true, message: `Email sent successfully (id: ${data?.id})`, config };
+    console.log(`[email] ✅ Test email sent to ${toEmail}`, info.messageId);
+    return { ok: true, message: `Email sent successfully (messageId: ${info.messageId})`, config };
   } catch (err) {
     console.error(`[email] ❌ Test email failed:`, err.message);
     return { ok: false, message: err.message, config };

@@ -2,7 +2,10 @@ const router = require('express').Router();
 const pool = require('../db/pool');
 const { authMiddleware, managerOnly } = require('../middleware/auth');
 const multer = require('multer');
-const pdfParse = require('pdf-parse');
+const { execFile } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 router.use(authMiddleware);
 
@@ -33,136 +36,157 @@ pool.query(`
   )
 `).catch(err => console.error('[pick-list] Table creation error:', err.message));
 
+// Python script for PDF parsing via pdfplumber
+const PYTHON_SCRIPT = `
+import sys
+import json
+import re
+import pdfplumber
+
+pdf_path = sys.argv[1]
+routes = []
+current_route = None
+current_text = []
+
+with pdfplumber.open(pdf_path) as pdf:
+    for page in pdf.pages:
+        text = page.extract_text()
+        if not text:
+            continue
+        lines = text.strip().split('\\n')
+        first_line = lines[0].strip()
+
+        if first_line.startswith('STG.'):
+            if current_route and current_text:
+                routes.append({'first_line': current_route, 'text': '\\n'.join(current_text)})
+            current_route = first_line
+            current_text = [text]
+        else:
+            if current_route:
+                current_text.append(text)
+
+    if current_route and current_text:
+        routes.append({'first_line': current_route, 'text': '\\n'.join(current_text)})
+
+results = []
+for route in routes:
+    text = route['text']
+    lines = text.split('\\n')
+    first_line = route['first_line']
+
+    # Route code: first token of first line
+    route_code = first_line.split()[0].strip()
+
+    # Line 2: vehicle_id + dsp_code
+    vehicle_id = ''
+    dsp_code = ''
+    if len(lines) > 1:
+        tokens = lines[1].split()
+        if len(tokens) >= 1:
+            vehicle_id = tokens[0]
+        if len(tokens) >= 2:
+            dsp_code = tokens[1].upper()
+
+    # Also check all lines for LSMD (sometimes formatting varies)
+    if dsp_code != 'LSMD':
+        for line in lines[:5]:
+            if 'LSMD' in line.upper():
+                dsp_code = 'LSMD'
+                break
+
+    # Wave time
+    wave_time = ''
+    date_str = ''
+    for line in lines[:5]:
+        time_match = re.search(r'(\\d{1,2}:\\d{2}\\s*[AP]M)', line, re.IGNORECASE)
+        if time_match:
+            wave_time = time_match.group(1).strip()
+        date_match = re.search(r'([A-Z]{3}\\s+\\d{1,2},?\\s*\\d{4})', line, re.IGNORECASE)
+        if date_match:
+            date_str = date_match.group(1).strip()
+
+    # Parse date
+    parsed_date = None
+    if date_str:
+        try:
+            from datetime import datetime
+            # Handle "MAR 29, 2026" or "MAR 29 2026"
+            cleaned = date_str.replace(',', '')
+            parsed_date = datetime.strptime(cleaned, '%b %d %Y').strftime('%Y-%m-%d')
+        except:
+            pass
+
+    # Bags, overflow, packages from full text
+    bags = 0
+    overflow = 0
+    total_packages = 0
+    commercial_packages = 0
+
+    bags_match = re.search(r'(\\d+)\\s+bags?', text, re.IGNORECASE)
+    if bags_match:
+        bags = int(bags_match.group(1))
+
+    overflow_match = re.search(r'(\\d+)\\s+over(?:flow)?', text, re.IGNORECASE)
+    if overflow_match:
+        overflow = int(overflow_match.group(1))
+
+    total_match = re.search(r'Total\\s+Packages\\s*[:\\s]*(\\d+)', text, re.IGNORECASE)
+    if total_match:
+        total_packages = int(total_match.group(1))
+
+    commercial_match = re.search(r'Commercial\\s+Packages\\s*[:\\s]*(\\d+)', text, re.IGNORECASE)
+    if commercial_match:
+        commercial_packages = int(commercial_match.group(1))
+
+    results.append({
+        'route_code': route_code,
+        'vehicle_id': vehicle_id,
+        'dsp_code': dsp_code,
+        'wave_time': wave_time,
+        'date': parsed_date,
+        'bags': bags,
+        'overflow': overflow,
+        'total_packages': total_packages,
+        'commercial_packages': commercial_packages,
+    })
+
+print(json.dumps(results))
+`;
+
+// Write the Python script once at startup
+const scriptPath = path.join(os.tmpdir(), 'parse_picklist.py');
+fs.writeFileSync(scriptPath, PYTHON_SCRIPT);
+
 /**
- * Parse a pick list PDF.
- * Each route starts on a page beginning with "STG."
- * Continuation pages do NOT start with "STG."
+ * Run the Python PDF parser and return parsed routes.
  */
-function parsePickListPages(pagesText) {
-  // Group pages into routes
-  const routeGroups = [];
-  let currentGroup = null;
-
-  for (const pageText of pagesText) {
-    const trimmed = pageText.trim();
-    if (trimmed.match(/^STG\./i)) {
-      // New route starts
-      if (currentGroup) routeGroups.push(currentGroup);
-      currentGroup = [trimmed];
-    } else if (currentGroup) {
-      // Continuation page
-      currentGroup.push(trimmed);
-    }
-    // If no currentGroup yet and page doesn't start with STG., skip it
-  }
-  if (currentGroup) routeGroups.push(currentGroup);
-
-  const routes = [];
-
-  for (const pages of routeGroups) {
-    const fullText = pages.join('\n');
-    const firstPage = pages[0];
-    const lines = firstPage.split('\n').map(l => l.trim()).filter(Boolean);
-
-    if (lines.length < 3) continue;
-
-    // Line 1: route_code (e.g. STG.R02.1)
-    const route_code = lines[0].split(/\s/)[0].trim();
-
-    // Line 2: vehicle_id + dsp_code (e.g. "CX1 LSMD" or "CX1 AEWW")
-    const line2Tokens = lines[1].split(/\s+/);
-    const vehicle_id = line2Tokens[0] || '';
-    const dsp_code = line2Tokens[1] || '';
-
-    // Line 3: wave_time and date
-    const line3 = lines[2];
-    const timeMatch = line3.match(/(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
-    const wave_time = timeMatch ? timeMatch[1].trim() : '';
-    const dateMatch = line3.match(/([A-Z]{3}\s+\d{1,2},?\s*\d{4})/i);
-    const dateStr = dateMatch ? dateMatch[1].trim() : '';
-
-    // Parse date
-    let date = null;
-    if (dateStr) {
+function parsePdfWithPython(pdfPath) {
+  return new Promise((resolve, reject) => {
+    execFile('python3', [scriptPath, pdfPath], { timeout: 30000 }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('[pick-list] Python stderr:', stderr);
+        return reject(new Error(stderr || error.message));
+      }
       try {
-        const d = new Date(dateStr);
-        if (!isNaN(d.getTime())) {
-          date = d.toISOString().split('T')[0];
-        }
-      } catch {}
-    }
-
-    // Extract bags: "X bags" pattern
-    const bagsMatch = fullText.match(/(\d+)\s+bags?/i);
-    const bags = bagsMatch ? parseInt(bagsMatch[1]) : 0;
-
-    // Extract overflow: "X overflow" pattern
-    const overflowMatch = fullText.match(/(\d+)\s+overflow/i);
-    const overflow = overflowMatch ? parseInt(overflowMatch[1]) : 0;
-
-    // Extract total packages: "Total Packages X" or "Total Packages\nX"
-    const totalPkgMatch = fullText.match(/Total\s+Packages\s*[:\s]*(\d+)/i);
-    const total_packages = totalPkgMatch ? parseInt(totalPkgMatch[1]) : 0;
-
-    // Extract commercial packages
-    const commercialMatch = fullText.match(/Commercial\s+Packages\s*[:\s]*(\d+)/i);
-    const commercial_packages = commercialMatch ? parseInt(commercialMatch[1]) : 0;
-
-    routes.push({
-      route_code,
-      vehicle_id,
-      dsp_code: dsp_code.toUpperCase(),
-      wave_time,
-      date,
-      bags,
-      overflow,
-      total_packages,
-      commercial_packages,
+        resolve(JSON.parse(stdout));
+      } catch (e) {
+        reject(new Error('Failed to parse Python output: ' + stdout.slice(0, 200)));
+      }
     });
-  }
-
-  return routes;
+  });
 }
 
 // POST /api/ops/upload-picklist — parse and store pick list PDF
 router.post('/upload-picklist', managerOnly, upload.single('picklist'), async (req, res) => {
+  let tmpPdfPath = null;
   try {
     if (!req.file) return res.status(400).json({ error: 'No PDF file uploaded' });
 
-    const pdf = await pdfParse(req.file.buffer);
+    // Write uploaded PDF to temp file for Python to read
+    tmpPdfPath = path.join(os.tmpdir(), `picklist_${Date.now()}.pdf`);
+    fs.writeFileSync(tmpPdfPath, req.file.buffer);
 
-    // pdf-parse gives us full text, but we need per-page text
-    // Use the raw page data if available
-    let pagesText = [];
-    if (pdf.numpages && pdf.text) {
-      // pdf-parse doesn't give per-page text directly, so we split by form-feed or re-parse
-      // The text property contains all pages concatenated
-      // We need to use the internal structure for per-page access
-      // Workaround: split on common page-break patterns
-      // Better approach: use the render callback
-    }
-
-    // Re-parse with per-page text extraction
-    const perPageTexts = [];
-    await pdfParse(req.file.buffer, {
-      pagerender: async function(pageData) {
-        const textContent = await pageData.getTextContent();
-        const text = textContent.items.map(item => item.str).join(' ');
-        perPageTexts.push(text);
-        return text;
-      }
-    });
-
-    if (perPageTexts.length === 0) {
-      // Fallback: try splitting by STG. markers
-      const fullText = pdf.text || '';
-      const parts = fullText.split(/(?=STG\.)/);
-      for (const part of parts) {
-        if (part.trim()) perPageTexts.push(part.trim());
-      }
-    }
-
-    const allRoutes = parsePickListPages(perPageTexts);
+    const allRoutes = await parsePdfWithPython(tmpPdfPath);
     const lsmdRoutes = allRoutes.filter(r => r.dsp_code === 'LSMD');
 
     if (lsmdRoutes.length === 0) {
@@ -199,6 +223,9 @@ router.post('/upload-picklist', managerOnly, upload.single('picklist'), async (r
   } catch (err) {
     console.error('[pick-list] Upload error:', err);
     res.status(500).json({ error: 'Failed to parse pick list: ' + err.message });
+  } finally {
+    // Clean up temp PDF
+    if (tmpPdfPath) try { fs.unlinkSync(tmpPdfPath); } catch {}
   }
 });
 

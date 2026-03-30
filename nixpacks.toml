@@ -1,10 +1,11 @@
 [phases.setup]
-nixPkgs = ["nodejs-18_x"]
+nixPkgs = ["nodejs-18_x", "python3"]
 
 [phases.install]
 cmds = [
   "cd client && npm install",
-  "cd server && npm install"
+  "cd server && npm install",
+  "pip install pdfplumber --break-system-packages || pip install pdfplumber || true"
 ]
 
 [phases.build]

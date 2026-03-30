@@ -1,9 +1,10 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
-  Truck, Bell, LogOut, User, LayoutDashboard, Calendar, ClipboardCheck,
+  Bell, LogOut, User, LayoutDashboard, Calendar, ClipboardCheck,
   DollarSign, Car, Users, Search, Cpu, Settings,
   ChevronDown, Star, Lock, AlertTriangle, X, BarChart2, Check,
 } from 'lucide-react';
+import companyLogo from '../assets/logo.png';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -208,15 +209,13 @@ export default function TopNav() {
         {/* ── Brand ───────────────────────────────────────────────── */}
         <NavLink
           to={isDriver ? '/my-schedule' : '/'}
-          className="flex items-center gap-2.5 flex-shrink-0"
+          className="flex items-center flex-shrink-0"
         >
-          <div className="w-7 h-7 rounded-lg bg-[#2563EB] flex items-center justify-center shadow-sm">
-            <Truck size={14} className="text-white" />
-          </div>
-          <div className="leading-tight">
-            <p className="text-sm font-bold text-white">Last Mile</p>
-            <p className="text-[10px] text-blue-300 font-semibold tracking-wide">DSP LLC</p>
-          </div>
+          <img
+            src={companyLogo}
+            alt="Last Mile DSP"
+            className="h-8 sm:h-10 w-auto object-contain"
+          />
         </NavLink>
 
         {/* ── Nav items ───────────────────────────────────────────── */}

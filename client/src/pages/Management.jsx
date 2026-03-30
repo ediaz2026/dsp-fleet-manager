@@ -222,7 +222,7 @@ export default function Management() {
       const sent = data.results.filter(r => r.success).length;
       const failed = data.results.filter(r => !r.success).length;
       if (sent > 0) toast.success(`${sent} invitation${sent !== 1 ? 's' : ''} sent`);
-      if (failed > 0) toast.error(`${failed} failed — SMTP may not be configured. Invitation links are shown below.`);
+      if (failed > 0) toast.error(`${failed} failed — email service may not be configured. Invitation links are shown below.`);
     },
     onError: err => toast.error(err.response?.data?.error || 'Failed to send invitations'),
   });
@@ -239,8 +239,8 @@ export default function Management() {
       if (data.emailSent) {
         toast.success(`Invitation sent to ${data.name}`);
       } else {
-        toast(`Link saved for ${data.name} — copy it below (SMTP not configured)`, { icon: '⚠️' });
-        setInviteResults([{ id: 0, success: false, name: data.name, error: 'SMTP not configured', inviteUrl: data.inviteUrl }]);
+        toast(`Link saved for ${data.name} — copy it below (email not sent)`, { icon: '⚠️' });
+        setInviteResults([{ id: 0, success: false, name: data.name, error: 'Email not sent', inviteUrl: data.inviteUrl }]);
       }
     },
     onError: (err) => {

@@ -555,7 +555,7 @@ router.post('/import', managerOnly, async (req, res) => {
         );
         created++;
         accounts_created++;
-        // Invitation email would be sent here when SMTP is configured (DRIVER_SMTP_HOST env var).
+        // Invitation email is sent separately via Management → Send Invitations.
         console.log(`[driver-import] Account created: ${emailToUse} (temp password set, must_change_password=true)`);
       }
     } catch (e) {

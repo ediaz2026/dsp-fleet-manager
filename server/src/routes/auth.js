@@ -292,7 +292,7 @@ router.put('/users/:id', authMiddleware, adminOnly, async (req, res) => {
   res.json(rows[0]);
 });
 
-// POST /api/auth/test-email (adminOnly) — SMTP diagnostic
+// POST /api/auth/test-email (adminOnly) — email diagnostic
 router.post('/test-email', authMiddleware, adminOnly, async (req, res) => {
   const toEmail = req.body?.to || req.user.email;
   console.log(`[test-email] Sending test email to ${toEmail}...`);
@@ -338,7 +338,7 @@ router.post('/send-invitations', authMiddleware, adminOnly, async (req, res) => 
       if (emailSent) {
         results.push({ id, success: true, name: `${staff.first_name} ${staff.last_name}` });
       } else {
-        results.push({ id, success: false, error: 'SMTP not configured — link saved but email not sent', inviteUrl, name: `${staff.first_name} ${staff.last_name}` });
+        results.push({ id, success: false, error: 'Email not sent — link saved', inviteUrl, name: `${staff.first_name} ${staff.last_name}` });
       }
     } catch (err) {
       results.push({ id, success: false, error: err.message });

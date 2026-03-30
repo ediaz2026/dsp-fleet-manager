@@ -227,9 +227,14 @@ export default function Management() {
     onError: err => toast.error(err.response?.data?.error || 'Failed to send invitations'),
   });
 
+  const [resendingId, setResendingId] = useState(null);
   const resendInvitation = useMutation({
-    mutationFn: (staffId) => api.post(`/auth/resend-invitation/${staffId}`).then(r => r.data),
+    mutationFn: (staffId) => {
+      setResendingId(staffId);
+      return api.post(`/auth/resend-invitation/${staffId}`).then(r => r.data);
+    },
     onSuccess: (data) => {
+      setResendingId(null);
       refetchDrivers();
       if (data.emailSent) {
         toast.success(`Invitation sent to ${data.name}`);
@@ -238,7 +243,10 @@ export default function Management() {
         setInviteResults([{ id: 0, success: false, name: data.name, error: 'SMTP not configured', inviteUrl: data.inviteUrl }]);
       }
     },
-    onError: err => toast.error(err.response?.data?.error || 'Failed to resend invitation'),
+    onError: (err) => {
+      setResendingId(null);
+      toast.error(err.response?.data?.error || 'Failed to resend invitation');
+    },
   });
 
   const getDriverInviteStatus = (d) => {
@@ -1256,10 +1264,10 @@ export default function Management() {
                           {invStatus !== 'active' && (
                             <button
                               className="btn-ghost text-xs"
-                              disabled={resendInvitation.isPending}
+                              disabled={resendingId === d.id}
                               onClick={() => resendInvitation.mutate(d.id)}
                             >
-                              {invStatus === 'invited' ? 'Resend' : 'Send'}
+                              {resendingId === d.id ? 'Sending…' : invStatus === 'invited' ? 'Resend' : 'Send'}
                             </button>
                           )}
                         </td>

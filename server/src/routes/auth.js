@@ -351,23 +351,33 @@ router.post('/send-invitations', authMiddleware, adminOnly, async (req, res) => 
 
 // POST /api/auth/resend-invitation/:staffId (adminOnly) — single resend
 router.post('/resend-invitation/:staffId', authMiddleware, adminOnly, async (req, res) => {
-  const { staffId } = req.params;
-  const { rows } = await pool.query(
-    'SELECT id, first_name, last_name, email, role FROM staff WHERE id=$1 AND status != $2',
-    [staffId, 'terminated']
-  );
-  if (!rows[0]) return res.status(404).json({ error: 'Driver not found' });
-  const staff = rows[0];
-  const token = crypto.randomBytes(32).toString('hex');
-  const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  await pool.query(
-    'UPDATE staff SET invitation_token=$1, invitation_token_expiry=$2, invitation_sent_at=NOW() WHERE id=$3',
-    [token, expiry, staffId]
-  );
-  const inviteUrl = `${process.env.APP_URL || ''}/accept-invitation/${token}`;
-  const emailSent = await sendInvitationEmail({ ...staff, invitation_token: token });
-  logAudit(req, { action_type: 'RESEND_INVITATION', entity_type: 'staff', entity_id: parseInt(staffId), entity_description: `Resent invitation to ${staff.first_name} ${staff.last_name}` });
-  res.json({ success: emailSent, name: `${staff.first_name} ${staff.last_name}`, inviteUrl, emailSent });
+  try {
+    const { staffId } = req.params;
+    const { rows } = await pool.query(
+      'SELECT id, first_name, last_name, email, role FROM staff WHERE id=$1 AND status != $2',
+      [staffId, 'terminated']
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Driver not found' });
+    const staff = rows[0];
+    // Always generate a fresh token and reset expiry
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    // Reset token, expiry, password hash, and must_change_password so the invite flow works fresh
+    await pool.query(
+      `UPDATE staff
+         SET invitation_token=$1, invitation_token_expiry=$2, invitation_sent_at=NOW(),
+             password_hash=NULL, must_change_password=TRUE
+       WHERE id=$3`,
+      [token, expiry, staffId]
+    );
+    const inviteUrl = `${process.env.APP_URL || ''}/accept-invitation/${token}`;
+    const emailSent = await sendInvitationEmail({ ...staff, invitation_token: token });
+    logAudit(req, { action_type: 'RESEND_INVITATION', entity_type: 'staff', entity_id: parseInt(staffId), entity_description: `Resent invitation to ${staff.first_name} ${staff.last_name}` });
+    res.json({ success: true, name: `${staff.first_name} ${staff.last_name}`, inviteUrl, emailSent });
+  } catch (err) {
+    console.error('[resend-invitation] Error:', err.message);
+    res.status(500).json({ error: 'Failed to resend invitation. Please try again.' });
+  }
 });
 
 module.exports = router;

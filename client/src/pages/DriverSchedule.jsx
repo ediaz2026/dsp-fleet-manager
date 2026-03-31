@@ -35,15 +35,15 @@ const ATT_BADGE = {
 
 // Bag color → CSS styles
 const BAG_COLORS = {
-  orange:  { bg: '#FFF7ED', border: '#FDBA74', text: '#C2410C' },
-  green:   { bg: '#F0FDF4', border: '#86EFAC', text: '#166534' },
-  navy:    { bg: '#EFF6FF', border: '#93C5FD', text: '#1E40AF' },
-  blue:    { bg: '#EFF6FF', border: '#93C5FD', text: '#1E40AF' },
-  yellow:  { bg: '#FEFCE8', border: '#FDE047', text: '#A16207' },
-  black:   { bg: '#F3F4F6', border: '#D1D5DB', text: '#374151' },
-  red:     { bg: '#FEF2F2', border: '#FCA5A5', text: '#B91C1C' },
-  purple:  { bg: '#FAF5FF', border: '#D8B4FE', text: '#7E22CE' },
-  white:   { bg: '#FAFAFA', border: '#E5E7EB', text: '#374151' },
+  orange:  { bg: '#FFF3E0', border: '#FFB74D', text: '#E65100' },
+  green:   { bg: '#E8F5E9', border: '#66BB6A', text: '#1B5E20' },
+  navy:    { bg: '#E3F2FD', border: '#64B5F6', text: '#0D47A1' },
+  blue:    { bg: '#E3F2FD', border: '#64B5F6', text: '#0D47A1' },
+  yellow:  { bg: '#FFFDE7', border: '#FDD835', text: '#F57F17' },
+  black:   { bg: '#F5F5F5', border: '#BDBDBD', text: '#212121' },
+  red:     { bg: '#FFEBEE', border: '#EF5350', text: '#B71C1C' },
+  purple:  { bg: '#F3E5F5', border: '#BA68C8', text: '#6A1B9A' },
+  white:   { bg: '#FAFAFA', border: '#E0E0E0', text: '#424242' },
 };
 const DEFAULT_BAG_STYLE = { bg: '#F8FAFC', border: '#E2E8F0', text: '#475569' };
 

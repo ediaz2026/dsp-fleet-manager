@@ -586,21 +586,28 @@ router.get('/my-picklist', async (req, res) => {
     // Parse bag details from raw_text
     const bagDetails = [];
     if (pick.raw_text) {
-      // Look for bag table rows — typically: "1 A-26.1A Orange 4126 11" or similar patterns
       const lines = pick.raw_text.split('\n');
+      const COLORS = /orange|green|navy|yellow|black|blue|red|purple|white/i;
       for (const line of lines) {
-        // Pattern: bag_number zone color code package_count
-        // Bags are typically numbered rows with zone identifiers
-        const match = line.match(/^\s*(\d{1,3})\s+([A-Z0-9][\w\-\.]+\w)\s+(\w+)\s+(\w{3,6})\s+(\d{1,4})\s*$/i);
+        const trimmed = line.trim();
+        // Pattern: bag_number zone color [code] package_count
+        // e.g. "1 A-26.1A Orange 4126 11" or "1 A-26.1A Orange 11"
+        const match = trimmed.match(/^(\d{1,3})\s+(\S+)\s+(Orange|Green|Navy|Yellow|Black|Blue|Red|Purple|White)\s+(?:(\S+)\s+)?(\d{1,4})$/i);
         if (match) {
           bagDetails.push({
             bag: parseInt(match[1]),
             zone: match[2],
             color: match[3],
-            code: match[4],
+            code: match[4] || '',
             pkgs: parseInt(match[5]),
           });
         }
+      }
+      console.log(`[my-picklist] Parsed ${bagDetails.length} bag details from ${lines.length} lines of raw_text`);
+      if (bagDetails.length === 0 && lines.length > 5) {
+        // Log first 5 non-empty lines for debugging
+        const samples = lines.filter(l => l.trim()).slice(0, 5);
+        console.log(`[my-picklist] Sample raw_text lines:`, samples);
       }
     }
 

@@ -324,6 +324,9 @@ router.post('/publish-selected', managerOnly, async (req, res) => {
   res.json({ published: publishedCount, notified: notifiedDrivers.length });
 });
 
+// Shift types that should not appear in Ops Planner
+const OPS_EXCLUDED_TYPES = ['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING'];
+
 // ── POST /api/shifts ──────────────────────────────────────────────────────────
 router.post('/', managerOnly, async (req, res) => {
   const { staff_id, shift_date, start_time, end_time, shift_type, notes } = req.body;
@@ -357,6 +360,17 @@ router.post('/', managerOnly, async (req, res) => {
     );
   } catch (logErr) {
     console.error('Change log insert failed (non-fatal):', logErr.message);
+  }
+
+  // Auto-remove from Ops Planner if shift type is excluded
+  if (OPS_EXCLUDED_TYPES.includes(type.toUpperCase())) {
+    try {
+      await pool.query(
+        `DELETE FROM ops_assignments WHERE staff_id = $1 AND plan_date = $2`,
+        [staff_id, shift_date]
+      );
+      console.log(`[shifts] Auto-removed ${staffName || staff_id} from Ops Planner for ${shift_date} (${type})`);
+    } catch (e) { console.error('Auto-remove from ops failed (non-fatal):', e.message); }
   }
 
   logAudit(req, { action_type: 'CREATE_SHIFT', entity_type: 'shifts', entity_id: shift.id, entity_description: `${type} shift on ${shift_date}`, new_value: { staff_id, shift_date, shift_type: type } });
@@ -462,6 +476,24 @@ router.put('/:id', managerOnly, async (req, res) => {
       );
     } catch (logErr) {
       console.error('Change log update failed (non-fatal):', logErr.message);
+    }
+
+    // Auto-remove from Ops Planner if new shift type is excluded
+    const newType = (shift_type || oldType).toUpperCase();
+    if (OPS_EXCLUDED_TYPES.includes(newType)) {
+      try {
+        const shiftDate = old.shift_date instanceof Date
+          ? old.shift_date.toISOString().split('T')[0]
+          : String(old.shift_date).slice(0, 10);
+        const { rowCount } = await pool.query(
+          `DELETE FROM ops_assignments WHERE staff_id = $1 AND plan_date = $2`,
+          [old.staff_id, shiftDate]
+        );
+        if (rowCount > 0) {
+          console.log(`[shifts] Auto-removed ${old.first_name} ${old.last_name} from Ops Planner for ${shiftDate} (${newType})`);
+          rows[0].ops_removed = true;
+        }
+      } catch (e) { console.error('Auto-remove from ops failed (non-fatal):', e.message); }
     }
   }
 

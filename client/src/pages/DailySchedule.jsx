@@ -220,7 +220,13 @@ export default function DailySchedule() {
 
   const updateShift = useMutation({
     mutationFn: ({ id, ...data }) => api.put(`/shifts/${id}`, data),
-    onSuccess: () => { invalidateShifts(); toast.success('Shift updated'); setEditShiftModal(null); },
+    onSuccess: (resp) => {
+      invalidateShifts();
+      const data = resp?.data || resp;
+      if (data?.ops_removed) toast('Driver removed from Ops Planner', { icon: '🔒' });
+      else toast.success('Shift updated');
+      setEditShiftModal(null);
+    },
     onError: err => toast.error(err.response?.data?.error || 'Failed to update shift'),
   });
 

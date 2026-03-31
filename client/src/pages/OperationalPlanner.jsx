@@ -1864,6 +1864,12 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       if (ctx?.prev) qc.setQueryData(['shifts-daily', planDate], ctx.prev);
       toast.error('Failed to update shift type');
     },
+    onSuccess: (data) => {
+      if (data?.ops_removed) {
+        toast('Driver removed from Ops Planner', { icon: '🔒' });
+        qc.invalidateQueries({ queryKey: ['ops-assignments', planDate] });
+      }
+    },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['shifts-daily', planDate] });
       qc.invalidateQueries({ queryKey: ['shifts'] });

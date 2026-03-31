@@ -44,7 +44,7 @@ pool.query(`
 `).catch(err => console.error('[pick-list] Table creation error:', err.message));
 pool.query(`ALTER TABLE pick_list_data ADD COLUMN IF NOT EXISTS raw_text TEXT`).catch(() => {});
 
-// Python script for PDF parsing via pdfplumber — full-document approach
+// Python script for PDF parsing via pdfplumber — page-by-page grouping
 const PYTHON_SCRIPT = `
 import sys
 import json
@@ -54,42 +54,58 @@ from datetime import datetime
 
 pdf_path = sys.argv[1]
 
-# Step 1: Extract ALL text from ALL pages
-all_text = []
+# Step 1: Extract text page-by-page, group by route
+# A new route starts when a page begins with "STG."
+# Continuation pages do NOT start with "STG." — they contain bag rows, totals, etc.
+route_groups = []   # list of { 'first_line': str, 'pages': [str, ...] }
+current_group = None
+
 with pdfplumber.open(pdf_path) as pdf:
     for page in pdf.pages:
         text = page.extract_text()
-        if text:
-            all_text.append(text)
+        if not text:
+            continue
+        first_line = text.strip().split('\\n')[0].strip()
 
-full_doc = '\\n'.join(all_text)
+        if first_line.startswith('STG.'):
+            # New route starts
+            if current_group:
+                route_groups.append(current_group)
+            current_group = { 'first_line': first_line, 'pages': [text] }
+        else:
+            # Continuation page — append to current route
+            if current_group:
+                current_group['pages'].append(text)
 
-# Step 2: Split on STG. pattern to get route chunks
-# Each route starts with STG.xxx — split so each chunk begins with STG.
-chunks = re.split(r'(?=STG\\.\\S+)', full_doc)
-chunks = [c.strip() for c in chunks if c.strip().startswith('STG.')]
+    if current_group:
+        route_groups.append(current_group)
+
+import sys as _sys
+print(f"Grouped {len(route_groups)} routes from PDF", file=_sys.stderr)
 
 results = []
-for chunk in chunks:
+for group in route_groups:
+    # Concatenate ALL pages for this route
+    chunk = '\\n'.join(group['pages'])
     lines = chunk.split('\\n')
+    first_line = group['first_line']
 
     # Route code: first token of first line
-    route_code = lines[0].split()[0].strip()
+    route_code = first_line.split()[0].strip()
 
-    # Find vehicle_id: first CX\\d+ or HZA\\d+ pattern in the chunk
+    # Find vehicle_id: first CX\\d+ or HZA\\d+ pattern
     vehicle_id = ''
     vid_match = re.search(r'\\b((?:CX|HZA)\\d+)\\b', chunk, re.IGNORECASE)
     if vid_match:
         vehicle_id = vid_match.group(1).upper()
 
-    # Check if LSMD appears within 300 chars of the vehicle_id position
+    # Check if LSMD appears near vehicle_id or in first 500 chars
     dsp_code = ''
     if vid_match:
         start = vid_match.start()
         nearby = chunk[max(0, start - 50):start + 300]
         if 'LSMD' in nearby.upper():
             dsp_code = 'LSMD'
-    # Fallback: check first 500 chars for LSMD
     if dsp_code != 'LSMD' and 'LSMD' in chunk[:500].upper():
         dsp_code = 'LSMD'
 
@@ -136,6 +152,8 @@ for chunk in chunks:
     commercial_match = re.search(r'Commercial\\s+Packages\\s*[:\\s]*(\\d+)', chunk, re.IGNORECASE)
     if commercial_match:
         commercial_packages = int(commercial_match.group(1))
+
+    print(f"Route {route_code} ({vehicle_id}): {len(group['pages'])} pages, raw_text={len(chunk)} chars, bags={bags}", file=_sys.stderr)
 
     results.append({
         'route_code': route_code,

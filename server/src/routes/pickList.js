@@ -524,21 +524,61 @@ router.get('/my-picklist', async (req, res) => {
       });
     }
 
-    // Find the driver's route_code (CX182) from ops_assignments for today
+    console.log(`[my-picklist] staff_id=${staffId} date=${today}`);
+
+    // ── Step 1: Try ops_assignments.route_code ────────────────────
+    let routeCode = null;
     const { rows: asgn } = await pool.query(
       `SELECT route_code FROM ops_assignments
        WHERE staff_id = $1 AND plan_date = $2 AND removed_from_ops IS NOT TRUE AND route_code IS NOT NULL`,
       [staffId, today]
     );
-    if (!asgn.length) return res.json(null);
+    if (asgn.length) {
+      routeCode = asgn[0].route_code;
+      console.log(`[my-picklist] Step 1 ops_assignments route_code: ${routeCode}`);
+    } else {
+      console.log(`[my-picklist] Step 1 ops_assignments: no route found`);
+    }
 
-    const routeCode = asgn[0].route_code;
+    // ── Step 2: Fallback — find route via transponder_id in ops_daily_routes ──
+    if (!routeCode) {
+      const { rows: drvRows } = await pool.query(
+        `SELECT d.transponder_id, s.employee_id FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE d.staff_id = $1`,
+        [staffId]
+      );
+      const tid = drvRows[0]?.transponder_id || drvRows[0]?.employee_id || null;
+      console.log(`[my-picklist] Step 2 driver transponder_id: ${tid || 'none'}`);
 
-    // Match pick_list_data.vehicle_id (CX182) = ops_assignments.route_code (CX182)
+      if (tid) {
+        const { rows: drRows } = await pool.query(
+          `SELECT routes FROM ops_daily_routes WHERE plan_date = $1`, [today]
+        );
+        if (drRows[0]?.routes) {
+          const normTid = tid.trim().toUpperCase().replace(/\s/g, '');
+          for (const route of drRows[0].routes) {
+            const tids = (route.transponderIds || []).map(t => t.trim().toUpperCase().replace(/\s/g, ''));
+            if (tids.includes(normTid)) {
+              routeCode = route.routeCode;
+              console.log(`[my-picklist] Step 2 matched via TID ${normTid} → route ${routeCode}`);
+              break;
+            }
+          }
+        }
+        if (!routeCode) console.log(`[my-picklist] Step 2 TID match: no route found`);
+      }
+    }
+
+    if (!routeCode) {
+      console.log(`[my-picklist] No route found for staff_id=${staffId} — returning null`);
+      return res.json(null);
+    }
+
+    // ── Step 3: Match pick_list_data.vehicle_id = route_code ──────
     const { rows: pl } = await pool.query(
       `SELECT * FROM pick_list_data WHERE date = $1 AND UPPER(vehicle_id) = UPPER($2)`,
       [today, routeCode]
     );
+    console.log(`[my-picklist] Step 3 pick_list match for ${routeCode}: ${pl.length > 0 ? 'FOUND' : 'not found'}`);
     if (!pl.length) return res.json(null);
 
     const pick = pl[0];

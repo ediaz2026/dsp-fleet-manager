@@ -2257,9 +2257,9 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         const profile = d.transponderId ? transpToProfile[norm(d.transponderId)] : null;
         const internalShift = profile ? shiftByStaffId[profile.staff_id] : null;
         const asgn = profile ? (assignments[profile.staff_id] || {}) : {};
-        // Fix #2: skip removed helpers; Fix #4: skip ON CALL helpers
+        // Fix #2: skip removed helpers; Fix #4: skip non-working helpers
         if (asgn.removed_from_ops) return null;
-        if (internalShift?.shift_type === 'ON CALL') return null;
+        if (OPS_EXCLUDED_TYPES.has(internalShift?.shift_type)) return null;
         return {
           section: 'helper',
           routeCode: '',
@@ -2316,8 +2316,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       // Fix #3: Amazon-only driver (no DSP shift) whose TID was in the routes file
       // → they're accounted for in section1; after reassignment they should disappear
       if (!internalShift && d.transponderId && routedTids.has(norm(d.transponderId))) continue;
-      // Fix #4: skip ON CALL drivers — mark covered
-      if (internalShift?.shift_type === 'ON CALL') { if (profile?.staff_id) coveredStaffIds.add(profile.staff_id); continue; }
+      // Fix #4: skip non-working drivers — mark covered
+      if (OPS_EXCLUDED_TYPES.has(internalShift?.shift_type)) { if (profile?.staff_id) coveredStaffIds.add(profile.staff_id); continue; }
 
       if (profile) coveredStaffIds.add(profile.staff_id);
       // Fix #1: if they have an internal shift + manual route = fully matched
@@ -2342,8 +2342,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     // DSP Fleet Planner drivers not shown anywhere (not in Amazon at all)
     for (const shift of internalShifts) {
       if (coveredStaffIds.has(shift.staff_id)) continue;
-      // Fix #4: skip ON CALL drivers
-      if (shift.shift_type === 'ON CALL') continue;
+      // Fix #4: skip non-working drivers
+      if (OPS_EXCLUDED_TYPES.has(shift.shift_type)) continue;
       const s    = allStaff.find(x => x.id === shift.staff_id);
       const dp   = driverProfiles.find(p => p.staff_id === shift.staff_id);
       const asgn = assignments[shift.staff_id] || {};

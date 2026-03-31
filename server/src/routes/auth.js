@@ -169,12 +169,26 @@ router.post('/reset-password', async (req, res) => {
 // GET /api/auth/verify-invitation/:token (PUBLIC) — validate before showing form
 router.get('/verify-invitation/:token', async (req, res) => {
   const { token } = req.params;
-  const { rows } = await pool.query(
-    'SELECT first_name, email FROM staff WHERE invitation_token = $1 AND invitation_token_expiry > NOW()',
+
+  // First check: does this token exist at all?
+  const { rows: anyMatch } = await pool.query(
+    'SELECT first_name, email, invitation_token_expiry FROM staff WHERE invitation_token = $1',
     [token]
   );
-  if (!rows[0]) return res.json({ valid: false });
-  res.json({ valid: true, firstName: rows[0].first_name, email: rows[0].email });
+
+  if (!anyMatch[0]) {
+    // Token not found — either already used or never existed
+    console.log(`[invite] verify: token not found (already used or invalid) — ${token.slice(0, 8)}…`);
+    return res.json({ valid: false, reason: 'not_found' });
+  }
+
+  if (new Date(anyMatch[0].invitation_token_expiry) <= new Date()) {
+    console.log(`[invite] verify: token expired for ${anyMatch[0].first_name} — expired ${anyMatch[0].invitation_token_expiry}`);
+    return res.json({ valid: false, reason: 'expired' });
+  }
+
+  console.log(`[invite] verify: token valid for ${anyMatch[0].first_name} (${anyMatch[0].email})`);
+  res.json({ valid: true, firstName: anyMatch[0].first_name, email: anyMatch[0].email });
 });
 
 // POST /api/auth/accept-invitation (PUBLIC) — set password, auto-login
@@ -182,6 +196,20 @@ router.post('/accept-invitation', async (req, res) => {
   const { token, newPassword } = req.body;
   if (!token || !newPassword) return res.status(400).json({ error: 'token and newPassword required' });
   if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+  // Check token exists at all
+  const { rows: anyMatch } = await pool.query(
+    'SELECT id, first_name, invitation_token_expiry FROM staff WHERE invitation_token = $1',
+    [token]
+  );
+  if (!anyMatch[0]) {
+    console.log(`[invite] accept: token not found — ${token.slice(0, 8)}…`);
+    return res.status(400).json({ error: 'This invitation link is no longer valid. It may have already been used. Contact your manager for a new link.' });
+  }
+  if (new Date(anyMatch[0].invitation_token_expiry) <= new Date()) {
+    console.log(`[invite] accept: token expired for ${anyMatch[0].first_name}`);
+    return res.status(400).json({ error: 'This invitation link has expired. Contact your manager to send a new invitation.' });
+  }
 
   const { rows } = await pool.query(
     'SELECT id, employee_id, first_name, last_name, email, role, status FROM staff WHERE invitation_token = $1 AND invitation_token_expiry > NOW()',
@@ -194,6 +222,7 @@ router.post('/accept-invitation', async (req, res) => {
     'UPDATE staff SET password_hash=$1, invitation_token=NULL, invitation_token_expiry=NULL, must_change_password=FALSE WHERE id=$2',
     [hash, rows[0].id]
   );
+  console.log(`[invite] accept: password set for ${rows[0].first_name} ${rows[0].last_name} (id=${rows[0].id}) — token consumed`);
 
   const user = rows[0];
   const jwtToken = jwt.sign(

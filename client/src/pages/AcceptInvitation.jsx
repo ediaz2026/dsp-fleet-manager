@@ -9,7 +9,7 @@ export default function AcceptInvitation() {
   const { token } = useParams();
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [status, setStatus] = useState('verifying'); // verifying | valid | invalid
+  const [status, setStatus] = useState('verifying'); // verifying | valid | invalid | used | expired
   const [firstName, setFirstName] = useState('');
   const [form, setForm] = useState({ newPassword: '', confirmPassword: '' });
   const [showPass, setShowPass] = useState(false);
@@ -21,8 +21,10 @@ export default function AcceptInvitation() {
         if (data.valid) {
           setFirstName(data.firstName || '');
           setStatus('valid');
+        } else if (data.reason === 'expired') {
+          setStatus('expired');
         } else {
-          setStatus('invalid');
+          setStatus('used');
         }
       })
       .catch(() => setStatus('invalid'));
@@ -40,7 +42,11 @@ export default function AcceptInvitation() {
       toast.success(`Welcome, ${data.user.firstName}!`);
       navigate('/my-schedule', { replace: true });
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Could not set up account. Contact your manager.');
+      const msg = err.response?.data?.error || 'Could not set up account. Contact your manager.';
+      toast.error(msg);
+      // If the token was consumed or expired during form fill, update the UI
+      if (err.response?.status === 400 && msg.includes('expired')) setStatus('expired');
+      else if (err.response?.status === 400 && (msg.includes('no longer valid') || msg.includes('already been used'))) setStatus('used');
     } finally {
       setLoading(false);
     }
@@ -62,11 +68,32 @@ export default function AcceptInvitation() {
             <p className="text-sm text-slate-500 text-center py-4">Loading your invitation…</p>
           )}
 
-          {status === 'invalid' && (
-            <div className="space-y-3 text-center">
+          {status === 'expired' && (
+            <div className="space-y-3 text-center py-2">
               <p className="text-sm font-medium text-red-600">This invitation link has expired.</p>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Invitation links expire after 7 days. Contact your manager to receive a new invitation.
+                Invitation links are valid for 7 days. Please contact your manager or dispatcher to send a new invitation.
+              </p>
+            </div>
+          )}
+
+          {status === 'used' && (
+            <div className="space-y-3 text-center py-2">
+              <p className="text-sm font-medium text-amber-600">This invitation link has already been used.</p>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                If you already set up your password, you can <a href="/login" className="text-blue-600 font-semibold hover:underline">log in here</a>.
+              </p>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                If you're having trouble logging in, contact your manager to send a new invitation.
+              </p>
+            </div>
+          )}
+
+          {status === 'invalid' && (
+            <div className="space-y-3 text-center py-2">
+              <p className="text-sm font-medium text-red-600">This invitation link is not valid.</p>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Please contact your manager or dispatcher to receive a new invitation.
               </p>
             </div>
           )}

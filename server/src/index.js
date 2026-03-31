@@ -390,6 +390,18 @@ runMigrations()
   .then(() => require('./db/migrateVehicleStatus')().catch(err => console.error('⚠️  migrateVehicleStatus error:', err.message)))
   .then(() => require('./db/migratePasswordReset')().catch(err => console.error('⚠️  migratePasswordReset error:', err.message)))
   .then(() => ensureAdditionalAdmins())
+  // Clean up non-working drivers from future ops_assignments on startup
+  .then(() => require('./db/pool').query(`
+    DELETE FROM ops_assignments
+    WHERE plan_date >= CURRENT_DATE
+      AND EXISTS (
+        SELECT 1 FROM shifts s
+        WHERE s.staff_id = ops_assignments.staff_id
+          AND s.shift_date = ops_assignments.plan_date
+          AND UPPER(s.shift_type) IN ('ON CALL','UTO','PTO','SUSPENSION','TRAINING')
+      )
+  `).then(r => { if (r.rowCount > 0) console.log(`[cleanup] Removed ${r.rowCount} non-working driver(s) from Ops Planner`); })
+    .catch(e => console.log('Ops cleanup:', e.message)))
   .then(() => {
     app.listen(PORT, () => {
       console.log(`\n🚀 DSP Fleet Manager API running on port ${PORT}`);

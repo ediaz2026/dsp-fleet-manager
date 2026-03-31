@@ -262,6 +262,35 @@ router.post('/upload-picklist', managerOnly, upload.single('picklist'), async (r
 });
 
 // GET /api/ops/picklist?date=YYYY-MM-DD — retrieve pick list data for a date
+// POST /api/ops/cleanup-ops — remove non-working drivers from ops_assignments for a date
+router.post('/cleanup-ops', managerOnly, async (req, res) => {
+  const date = req.body.date || new Date().toISOString().split('T')[0];
+  try {
+    const { rows } = await pool.query(`
+      DELETE FROM ops_assignments
+      WHERE plan_date = $1
+        AND EXISTS (
+          SELECT 1 FROM shifts s
+          WHERE s.staff_id = ops_assignments.staff_id
+            AND s.shift_date = ops_assignments.plan_date
+            AND UPPER(s.shift_type) IN ('ON CALL','UTO','PTO','SUSPENSION','TRAINING')
+        )
+      RETURNING staff_id
+    `, [date]);
+    const names = [];
+    if (rows.length > 0) {
+      const { rows: staff } = await pool.query(
+        `SELECT id, first_name, last_name FROM staff WHERE id = ANY($1)`,
+        [rows.map(r => r.staff_id)]
+      );
+      for (const s of staff) names.push(`${s.first_name} ${s.last_name}`);
+    }
+    res.json({ removed: rows.length, names, date });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/picklist', async (req, res) => {
   const { date } = req.query;
   if (!date) return res.status(400).json({ error: 'date query param required' });

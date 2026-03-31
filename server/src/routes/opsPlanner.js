@@ -215,9 +215,23 @@ router.get('/assignments', async (req, res) => {
 });
 
 // POST /api/ops-planner/assignments (upsert one driver's assignment)
+const OPS_EXCLUDED_TYPES = ['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING'];
+
 router.post('/assignments', authMiddleware, async (req, res) => {
   const { plan_date, staff_id, vehicle_id, device_id, notes, shift_type, route_code, name_override } = req.body;
   if (!plan_date || !staff_id) return res.status(400).json({ error: 'plan_date and staff_id required' });
+
+  // Block assignment if driver has a non-working shift type for this date
+  try {
+    const { rows: shiftRows } = await pool.query(
+      `SELECT shift_type FROM shifts WHERE staff_id = $1 AND shift_date = $2 LIMIT 1`,
+      [staff_id, plan_date]
+    );
+    if (shiftRows.length > 0 && OPS_EXCLUDED_TYPES.includes(shiftRows[0].shift_type?.toUpperCase())) {
+      return res.json({ skipped: true, reason: shiftRows[0].shift_type });
+    }
+  } catch (e) { /* non-fatal — allow assignment if check fails */ }
+
   const { rows } = await pool.query(
     `INSERT INTO ops_assignments (plan_date, staff_id, vehicle_id, device_id, notes, shift_type, route_code, name_override, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())

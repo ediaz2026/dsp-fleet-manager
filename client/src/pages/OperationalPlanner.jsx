@@ -12,6 +12,9 @@ import api from '../api/client';
 import toast from 'react-hot-toast';
 import { format, addDays, subDays, parseISO } from 'date-fns';
 
+// Shift types that should never appear in Ops Planner
+const OPS_EXCLUDED_TYPES = new Set(['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING']);
+
 // ══ SHIFT TYPE MAPPING ════════════════════════════════════════════════════════
 const AMAZON_DST_MAP = {
   'STANDARD PARCEL ELECTRIC - RIVIAN MEDIUM':             'EDV',
@@ -2150,7 +2153,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       const manualAsgn = assignmentByRouteCode[routeCode];
       let profile, internalShift, amazonEntry, primaryTid, asgn;
 
-      // An "active" manual assignment: exists, not removed, and driver is not ON CALL
+      // An "active" manual assignment: exists, not removed, and driver is working
       let activeManualAsgn = null;
 
       if (manualAsgn?.staff_id && !manualAsgn.removed_from_ops) {
@@ -2158,8 +2161,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         const st    = allStaff.find(s => s.id === manualAsgn.staff_id);
         const shift = shiftByStaffId[manualAsgn.staff_id] || null;
 
-        if (shift?.shift_type !== 'ON CALL') {
-          // Fix #4: skip ON CALL manual assignments → fall through to TID match
+        if (!OPS_EXCLUDED_TYPES.has(shift?.shift_type)) {
+          // Skip non-working shift types → fall through to TID match
           activeManualAsgn = manualAsgn;
           profile       = dp || null;
           primaryTid    = dp?.transponder_id || '';
@@ -2180,8 +2183,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         } else {
           const candidateShift = candidateProfile ? (shiftByStaffId[candidateProfile.staff_id] || null) : null;
           const candidateAsgn  = candidateProfile ? (assignments[candidateProfile.staff_id] || {}) : {};
-          // Fix #2 + #4: skip removed or ON CALL drivers from TID match
-          if (candidateShift?.shift_type === 'ON CALL' || candidateAsgn.removed_from_ops) {
+          // Skip non-working shift types or removed drivers from TID match
+          if (OPS_EXCLUDED_TYPES.has(candidateShift?.shift_type) || candidateAsgn.removed_from_ops) {
             profile = null; primaryTid = ''; internalShift = null; amazonEntry = null; asgn = {};
           } else {
             profile       = candidateProfile;

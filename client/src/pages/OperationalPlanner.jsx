@@ -1832,10 +1832,12 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   });
 
   // Create an internal shift for a driver (used when adding driver to Ops Planner)
+  // source: 'ops_planner' marks it as published immediately
   const createShiftForDriver = useMutation({
     mutationFn: ({ staff_id, shift_type }) => api.post('/shifts', {
       staff_id, shift_date: planDate, shift_type,
       start_time: '11:00', end_time: '21:00', status: 'active',
+      source: 'ops_planner',
     }).then(r => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['shifts-daily', planDate] });
@@ -1845,7 +1847,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   });
 
   // Update shift type on an existing shift (inline editing in Ops Planner)
-  // Must pass full shift data to the PUT endpoint to avoid wiping start_time / end_time / status
+  // source: 'ops_planner' bypasses publish workflow — changes take effect immediately
   const updateShiftType = useMutation({
     mutationFn: ({ shiftId, shift_type, currentShift }) =>
       api.put(`/shifts/${shiftId}`, {
@@ -1854,6 +1856,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         end_time:   (currentShift?.end_time   || '21:00:00').slice(0, 5),
         status:     currentShift?.status || 'active',
         notes:      currentShift?.notes  || null,
+        source:     'ops_planner',
       }).then(r => r.data),
     onMutate: async ({ shiftId, shift_type }) => {
       await qc.cancelQueries({ queryKey: ['shifts-daily', planDate] });
@@ -1867,7 +1870,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       if (ctx?.prev) qc.setQueryData(['shifts-daily', planDate], ctx.prev);
       toast.error('Failed to update shift type');
     },
-    onSuccess: (data) => {
+    onSuccess: (data, vars) => {
       if (data?.ops_removed) {
         toast('Driver removed from Ops Planner', { icon: '🔒' });
         qc.invalidateQueries({ queryKey: ['ops-assignments', planDate] });

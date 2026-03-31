@@ -329,11 +329,13 @@ const OPS_EXCLUDED_TYPES = ['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING'];
 
 // ── POST /api/shifts ──────────────────────────────────────────────────────────
 router.post('/', managerOnly, async (req, res) => {
-  const { staff_id, shift_date, start_time, end_time, shift_type, notes } = req.body;
+  const { staff_id, shift_date, start_time, end_time, shift_type, notes, source } = req.body;
   const type = shift_type || 'regular';
+  const pubStatus = source === 'ops_planner' ? 'published' : 'draft';
   const { rows } = await pool.query(
-    "INSERT INTO shifts (staff_id, shift_date, start_time, end_time, shift_type, status, publish_status, notes) VALUES ($1,$2,$3,$4,$5,'scheduled','draft',$6) RETURNING *",
-    [staff_id, shift_date, start_time, end_time, type, notes]
+    `INSERT INTO shifts (staff_id, shift_date, start_time, end_time, shift_type, status, publish_status, was_published, notes)
+     VALUES ($1,$2,$3,$4,$5,'scheduled',$6,$7,$8) RETURNING *`,
+    [staff_id, shift_date, start_time, end_time, type, pubStatus, source === 'ops_planner', notes]
   );
   const shift = rows[0];
 
@@ -379,7 +381,7 @@ router.post('/', managerOnly, async (req, res) => {
 
 // ── PUT /api/shifts/:id ───────────────────────────────────────────────────────
 router.put('/:id', managerOnly, async (req, res) => {
-  const { start_time, end_time, shift_type, status, notes, publish_status } = req.body;
+  const { start_time, end_time, shift_type, status, notes, publish_status, source } = req.body;
 
   // Fetch current shift + staff name for comparison / logging
   const { rows: cur } = await pool.query(
@@ -400,10 +402,13 @@ router.put('/:id', managerOnly, async (req, res) => {
     (start_time  != null && start_time  !== oldStart) ||
     (end_time    != null && end_time    !== oldEnd);
 
+  // Ops Planner changes bypass the publish workflow — always apply directly
+  const fromOpsPlanner = source === 'ops_planner';
+
   // If this shift is currently live (published and was_published), protect drivers by
   // saving edits to pending_* columns instead of overwriting the published values.
-  // Drivers continue seeing the original values; pending values go live on next publish.
-  const isCurrentlyLive = old.was_published && old.publish_status === 'published';
+  // Exception: Ops Planner changes are always instant.
+  const isCurrentlyLive = !fromOpsPlanner && old.was_published && old.publish_status === 'published';
 
   let rows;
 
@@ -428,20 +433,27 @@ router.put('/:id', managerOnly, async (req, res) => {
       ]
     ));
   } else {
-    // ── Original path: update main columns, revert to draft if core changed ───
-    const resolvedPublishStatus = coreChanged ? 'draft' : (publish_status || null);
-    const isRevertingToDraft    = coreChanged && !!old.was_published;
+    // ── Direct path: update main columns ─────────────────────────────────────
+    // Ops Planner: mark as published so it takes effect immediately
+    // Normal: revert to draft if core changed
+    const resolvedPublishStatus = fromOpsPlanner ? 'published' : (coreChanged ? 'draft' : (publish_status || null));
+    const isRevertingToDraft    = !fromOpsPlanner && coreChanged && !!old.was_published;
 
     ({ rows } = await pool.query(
       `UPDATE shifts
        SET start_time=$1, end_time=$2, shift_type=$3, status=$4, notes=$5,
            publish_status=COALESCE($6, publish_status),
+           was_published = CASE WHEN $12 THEN TRUE ELSE was_published END,
+           has_pending_changes = CASE WHEN $12 THEN FALSE ELSE has_pending_changes END,
+           pending_shift_type = CASE WHEN $12 THEN NULL ELSE pending_shift_type END,
+           pending_start_time = CASE WHEN $12 THEN NULL ELSE pending_start_time END,
+           pending_end_time = CASE WHEN $12 THEN NULL ELSE pending_end_time END,
            prev_shift_type  = CASE WHEN $7 AND prev_shift_type  IS NULL THEN $8  ELSE prev_shift_type  END,
            prev_start_time  = CASE WHEN $7 AND prev_start_time  IS NULL THEN $9  ELSE prev_start_time  END,
            prev_end_time    = CASE WHEN $7 AND prev_end_time    IS NULL THEN $10 ELSE prev_end_time    END
        WHERE id=$11 RETURNING *`,
       [start_time, end_time, shift_type, status, notes, resolvedPublishStatus,
-       isRevertingToDraft, oldType, oldStart, oldEnd, req.params.id]
+       isRevertingToDraft, oldType, oldStart, oldEnd, req.params.id, fromOpsPlanner]
     ));
   }
 

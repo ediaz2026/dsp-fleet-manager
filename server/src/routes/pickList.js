@@ -9,6 +9,12 @@ const os = require('os');
 
 router.use(authMiddleware);
 
+// Get current date in Eastern timezone (America/New_York) — avoids UTC drift after 8 PM ET
+function getEasternDate() {
+  const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  return nowET.toISOString().split('T')[0];
+}
+
 // Multer: memory storage for PDF uploads
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -264,7 +270,7 @@ router.post('/upload-picklist', managerOnly, upload.single('picklist'), async (r
 // GET /api/ops/picklist?date=YYYY-MM-DD — retrieve pick list data for a date
 // POST /api/ops/cleanup-ops — remove non-working drivers from ops_assignments for a date
 router.post('/cleanup-ops', managerOnly, async (req, res) => {
-  const date = req.body.date || new Date().toISOString().split('T')[0];
+  const date = req.body.date || getEasternDate();
   try {
     // Debug: show ALL drivers in ops_assignments with their shift types from the shifts table
     const { rows: debugRows } = await pool.query(`
@@ -331,7 +337,7 @@ router.get('/picklist', async (req, res) => {
 
 // GET /api/ops/picklist-debug?date=YYYY-MM-DD — diagnostic endpoint
 router.get('/picklist-debug', async (req, res) => {
-  const date = req.query.date || new Date().toISOString().split('T')[0];
+  const date = req.query.date || getEasternDate();
   try {
     // Pick list data in DB
     const { rows: plRows } = await pool.query(
@@ -399,7 +405,7 @@ router.get('/picklist-lock-status', async (req, res) => {
 // POST /api/ops/send-whatsapp-briefing — send morning briefing to all drivers
 router.post('/send-whatsapp-briefing', managerOnly, async (req, res) => {
   const { sendWhatsApp } = require('../services/whatsappService');
-  const date = req.body.date || new Date().toISOString().split('T')[0];
+  const date = req.body.date || getEasternDate();
 
   try {
     // Get all ops assignments for this date with driver info, vehicle, and pick list
@@ -486,7 +492,7 @@ router.post('/send-whatsapp-briefing', managerOnly, async (req, res) => {
 router.get('/my-picklist', async (req, res) => {
   try {
     const staffId = req.user.id;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getEasternDate();
 
     // ── Time-lock check ────────────────────────────────────────────
     const { rows: settingsRows } = await pool.query(

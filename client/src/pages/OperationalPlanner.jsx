@@ -2936,8 +2936,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
 
           {/* Pick List cell */}
           {pickListData.length > 0 && (() => {
-            const vName = rowVehicle?.vehicle_name?.toUpperCase() || '';
-            const pick = (vName && pickListMap[vName]) || pickListMap[effectiveRoute];
+            const pick = pickListMap[effectiveRoute.toUpperCase()] || pickListMap[effectiveRoute];
             return (
               <td className="px-2 py-2 text-[10px] whitespace-nowrap">
                 {pick ? (
@@ -4029,9 +4028,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
           .map(row => {
             const asgn = row.asgn || {};
             const route = asgn.route_code || row.routeCode || '';
-            const vObj = vehicles.find(v => v.id === asgn.vehicle_id);
-            const vName = vObj?.vehicle_name?.toUpperCase() || '';
-            const pick = (vName && pickListMap[vName]) || pickListMap[route];
+            const pick = pickListMap[route.toUpperCase()] || pickListMap[route];
             const name = asgn.name_override || row.name || '';
             return pick && name ? { name, routeCode: route, pick } : null;
           })

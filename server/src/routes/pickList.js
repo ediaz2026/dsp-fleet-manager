@@ -219,22 +219,21 @@ router.post('/upload-picklist', managerOnly, upload.single('picklist'), async (r
     let ops_drivers = {}; // vehicle_name → driver name
 
     if (pickListDate) {
-      // Get assigned vehicles from ops planner for this date
+      // Get assigned route codes (CX182) from ops planner for this date
       const { rows: opsRows } = await pool.query(`
-        SELECT UPPER(v.vehicle_name) AS vehicle_name,
+        SELECT UPPER(oa.route_code) AS route_code,
                COALESCE(oa.name_override, s.first_name || ' ' || s.last_name) AS driver_name
         FROM ops_assignments oa
         JOIN staff s ON s.id = oa.staff_id
-        LEFT JOIN vehicles v ON v.id = oa.vehicle_id
-        WHERE oa.plan_date = $1 AND oa.removed_from_ops IS NOT TRUE AND v.vehicle_name IS NOT NULL
+        WHERE oa.plan_date = $1 AND oa.removed_from_ops IS NOT TRUE AND oa.route_code IS NOT NULL
       `, [pickListDate]);
 
       const opsVehicles = new Set();
       for (const r of opsRows) {
-        const vn = r.vehicle_name?.toUpperCase();
-        if (vn) {
-          opsVehicles.add(vn);
-          ops_drivers[vn] = r.driver_name;
+        const rc = r.route_code?.toUpperCase();
+        if (rc) {
+          opsVehicles.add(rc);
+          ops_drivers[rc] = r.driver_name;
         }
       }
       const pickSet = new Set(pickListVehicles);
@@ -282,21 +281,20 @@ router.get('/picklist-debug', async (req, res) => {
       [date]
     );
 
-    // Ops assignments with vehicle names
+    // Ops assignments — use route_code (CX182) for matching
     const { rows: opsRows } = await pool.query(`
-      SELECT v.vehicle_name AS vehicle_id, oa.route_code,
+      SELECT oa.route_code,
              COALESCE(oa.name_override, s.first_name || ' ' || s.last_name) AS driver_name,
              oa.staff_id
       FROM ops_assignments oa
       JOIN staff s ON s.id = oa.staff_id
-      LEFT JOIN vehicles v ON v.id = oa.vehicle_id
-      WHERE oa.plan_date = $1 AND oa.removed_from_ops IS NOT TRUE
-      ORDER BY v.vehicle_name
+      WHERE oa.plan_date = $1 AND oa.removed_from_ops IS NOT TRUE AND oa.route_code IS NOT NULL
+      ORDER BY oa.route_code
     `, [date]);
 
-    // Matching logic
+    // Matching: pick_list_data.vehicle_id vs ops_assignments.route_code
     const plVehicles = new Set(plRows.map(r => (r.vehicle_id || '').toUpperCase()).filter(Boolean));
-    const opsVehicles = new Set(opsRows.map(r => (r.vehicle_id || '').toUpperCase()).filter(Boolean));
+    const opsVehicles = new Set(opsRows.map(r => (r.route_code || '').toUpperCase()).filter(Boolean));
 
     const matched = [...plVehicles].filter(v => opsVehicles.has(v));
     const unmatched_pick_list = [...plVehicles].filter(v => !opsVehicles.has(v));
@@ -356,7 +354,7 @@ router.post('/send-whatsapp-briefing', managerOnly, async (req, res) => {
       FROM ops_assignments oa
       JOIN staff s ON s.id = oa.staff_id
       LEFT JOIN vehicles v ON v.id = oa.vehicle_id
-      LEFT JOIN pick_list_data pl ON UPPER(pl.vehicle_id) = UPPER(v.vehicle_name) AND pl.date = oa.plan_date
+      LEFT JOIN pick_list_data pl ON UPPER(pl.vehicle_id) = UPPER(oa.route_code) AND pl.date = oa.plan_date
       WHERE oa.plan_date = $1
         AND oa.removed_from_ops IS NOT TRUE
     `, [date]);
@@ -461,36 +459,21 @@ router.get('/my-picklist', async (req, res) => {
       });
     }
 
-    // Find the driver's assigned vehicle name (CX93, HZA13, etc.) for today
+    // Find the driver's route_code (CX182) from ops_assignments for today
     const { rows: asgn } = await pool.query(
-      `SELECT oa.route_code, v.vehicle_name
-       FROM ops_assignments oa
-       LEFT JOIN vehicles v ON v.id = oa.vehicle_id
-       WHERE oa.staff_id = $1 AND oa.plan_date = $2 AND oa.removed_from_ops IS NOT TRUE`,
+      `SELECT route_code FROM ops_assignments
+       WHERE staff_id = $1 AND plan_date = $2 AND removed_from_ops IS NOT TRUE AND route_code IS NOT NULL`,
       [staffId, today]
     );
     if (!asgn.length) return res.json(null);
 
-    const vehicleName = asgn[0].vehicle_name;
+    const routeCode = asgn[0].route_code;
 
-    // Match pick list by vehicle_id (CX93) = vehicle_name, fallback to route_code
-    let pl;
-    if (vehicleName) {
-      const { rows } = await pool.query(
-        `SELECT * FROM pick_list_data WHERE date = $1 AND UPPER(vehicle_id) = UPPER($2)`,
-        [today, vehicleName]
-      );
-      pl = rows;
-    }
-    if (!pl || !pl.length) {
-      const routeCode = asgn[0].route_code;
-      if (!routeCode) return res.json(null);
-      const { rows } = await pool.query(
-        `SELECT * FROM pick_list_data WHERE date = $1 AND route_code = $2`,
-        [today, routeCode]
-      );
-      pl = rows;
-    }
+    // Match pick_list_data.vehicle_id (CX182) = ops_assignments.route_code (CX182)
+    const { rows: pl } = await pool.query(
+      `SELECT * FROM pick_list_data WHERE date = $1 AND UPPER(vehicle_id) = UPPER($2)`,
+      [today, routeCode]
+    );
     if (!pl.length) return res.json(null);
 
     const pick = pl[0];

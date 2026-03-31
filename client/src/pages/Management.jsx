@@ -220,9 +220,11 @@ export default function Management() {
       setShowInviteConfirm(false);
       refetchDrivers();
       const sent = data.results.filter(r => r.success).length;
-      const failed = data.results.filter(r => !r.success).length;
-      if (sent > 0) toast.success(`${sent} invitation${sent !== 1 ? 's' : ''} sent`);
+      const skipped = data.results.filter(r => r.skipped).length;
+      const failed = data.results.filter(r => !r.success && !r.skipped).length;
+      if (sent > 0) toast.success(`${sent} invitation${sent !== 1 ? 's' : ''} sent${skipped > 0 ? `, ${skipped} skipped (no email)` : ''}`);
       if (failed > 0) toast.error(`${failed} failed — email service may not be configured. Invitation links are shown below.`);
+      if (sent === 0 && skipped > 0) toast(`${skipped} driver${skipped !== 1 ? 's' : ''} skipped — no email address`, { icon: '⚠️' });
     },
     onError: err => toast.error(err.response?.data?.error || 'Failed to send invitations'),
   });

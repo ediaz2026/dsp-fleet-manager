@@ -16,6 +16,7 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
 // Railway injects DATABASE_URL automatically — use that to detect production and enable SSL.
@@ -372,6 +373,7 @@ runMigrations()
   .then(() => ensureAdminAccount())
   // Fix VIN column length early before any vehicle inserts
   .then(() => require('./db/pool').query(`ALTER TABLE vehicles ALTER COLUMN vin TYPE VARCHAR(50)`).catch(e => console.log('VIN migration:', e.message)))
+  .then(() => require('./db/pool').query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS license_expiration DATE`).catch(e => console.log('license_expiration migration:', e.message)))
   .then(() => ensureOpsV2Tables())
   .then(() => ensureRecurringSkip())
   .then(() => ensureMasterDriverColumns())

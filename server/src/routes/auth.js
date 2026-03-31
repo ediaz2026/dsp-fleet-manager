@@ -327,6 +327,10 @@ router.post('/send-invitations', authMiddleware, adminOnly, async (req, res) => 
       );
       if (!rows[0]) { results.push({ id, success: false, error: 'Not found' }); continue; }
       const staff = rows[0];
+      if (!staff.email || !staff.email.trim()) {
+        results.push({ id, success: false, skipped: true, name: `${staff.first_name} ${staff.last_name}`, error: 'No email address' });
+        continue;
+      }
       const token = crypto.randomBytes(32).toString('hex');
       const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       await pool.query(

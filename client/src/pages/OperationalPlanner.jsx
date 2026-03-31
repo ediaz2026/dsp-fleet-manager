@@ -3394,11 +3394,14 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             onClick={async () => {
               try {
                 const { data } = await api.post('/ops/cleanup-ops', { date: planDate });
+                console.log('[cleanup debug]', data.debug);
                 if (data.removed > 0) {
                   toast.success(`Removed ${data.removed} non-working driver${data.removed !== 1 ? 's' : ''}: ${data.names.join(', ')}`);
                   qc.invalidateQueries({ queryKey: ['ops-assignments', planDate] });
                 } else {
-                  toast('No non-working drivers found to remove', { icon: '✅' });
+                  // Show shift type breakdown so admin can see what's happening
+                  const types = data.debug ? Object.entries(data.debug).map(([t, n]) => `${t}: ${n.length}`).join(', ') : '';
+                  toast(`No non-working drivers to remove. Shift types: ${types || 'none'}`, { icon: '✅', duration: 5000 });
                 }
               } catch (err) {
                 toast.error('Cleanup failed: ' + (err?.response?.data?.error || err.message));

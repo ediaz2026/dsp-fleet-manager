@@ -266,6 +266,31 @@ router.post('/upload-picklist', managerOnly, upload.single('picklist'), async (r
 router.post('/cleanup-ops', managerOnly, async (req, res) => {
   const date = req.body.date || new Date().toISOString().split('T')[0];
   try {
+    // Debug: show ALL drivers in ops_assignments with their shift types from the shifts table
+    const { rows: debugRows } = await pool.query(`
+      SELECT oa.staff_id, oa.plan_date,
+             s2.first_name, s2.last_name,
+             sh.shift_type, sh.shift_date, sh.id AS shift_id
+      FROM ops_assignments oa
+      JOIN staff s2 ON s2.id = oa.staff_id
+      LEFT JOIN shifts sh ON sh.staff_id = oa.staff_id AND sh.shift_date = oa.plan_date
+      WHERE oa.plan_date = $1 AND oa.removed_from_ops IS NOT TRUE
+      ORDER BY sh.shift_type, s2.last_name
+    `, [date]);
+
+    console.log(`[cleanup] ── Debug for date ${date} ──`);
+    console.log(`[cleanup] Total ops_assignments: ${debugRows.length}`);
+    const byType = {};
+    for (const r of debugRows) {
+      const t = r.shift_type || '(NO SHIFT)';
+      if (!byType[t]) byType[t] = [];
+      byType[t].push(`${r.first_name} ${r.last_name}`);
+    }
+    for (const [type, names] of Object.entries(byType)) {
+      console.log(`[cleanup]   ${type}: ${names.length} drivers — ${names.join(', ')}`);
+    }
+
+    // Now do the actual cleanup
     const { rows } = await pool.query(`
       DELETE FROM ops_assignments
       WHERE plan_date = $1
@@ -277,6 +302,9 @@ router.post('/cleanup-ops', managerOnly, async (req, res) => {
         )
       RETURNING staff_id
     `, [date]);
+
+    console.log(`[cleanup] Deleted ${rows.length} non-working assignments`);
+
     const names = [];
     if (rows.length > 0) {
       const { rows: staff } = await pool.query(
@@ -284,9 +312,11 @@ router.post('/cleanup-ops', managerOnly, async (req, res) => {
         [rows.map(r => r.staff_id)]
       );
       for (const s of staff) names.push(`${s.first_name} ${s.last_name}`);
+      console.log(`[cleanup] Removed: ${names.join(', ')}`);
     }
-    res.json({ removed: rows.length, names, date });
+    res.json({ removed: rows.length, names, date, debug: byType });
   } catch (err) {
+    console.error('[cleanup] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

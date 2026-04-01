@@ -22,6 +22,7 @@ import ChangePassword from './pages/ChangePassword';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import AcceptInvitation from './pages/AcceptInvitation';
+import DriverToday from './pages/DriverToday';
 
 const MGMT_ROLES = ['manager', 'admin', 'dispatcher'];
 
@@ -29,13 +30,13 @@ function RequireAuth({ children, allowedRoles }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to={user.role === 'driver' ? '/my-schedule' : '/schedule'} replace />;
+    return <Navigate to={user.role === 'driver' ? '/today' : '/schedule'} replace />;
   }
   return children;
 }
 
 function roleHome(role) {
-  if (role === 'driver') return '/my-schedule';
+  if (role === 'driver') return '/today';
   if (role === 'manager' || role === 'dispatcher') return '/schedule';
   return '/'; // admin
 }
@@ -80,6 +81,7 @@ export default function App() {
 
         {/* Driver personal routes — all authenticated users can access */}
         <Route element={<RequireAuth><Layout /></RequireAuth>}>
+          <Route path="/today" element={<DriverToday />} />
           <Route path="/my-schedule" element={<DriverSchedule />} />
           <Route path="/my-attendance" element={<DriverAttendance />} />
           <Route path="/my-scorecard" element={<Scorecard />} />

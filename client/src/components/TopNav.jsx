@@ -2,7 +2,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Bell, LogOut, User, LayoutDashboard, Calendar, ClipboardCheck,
   DollarSign, Car, Users, Search, Cpu, Settings,
-  ChevronDown, Star, Lock, AlertTriangle, X, BarChart2, Check,
+  ChevronDown, Star, Lock, AlertTriangle, X, BarChart2, Check, CalendarDays,
 } from 'lucide-react';
 import companyLogo from '../assets/logo.png';
 import { useState, useRef, useEffect, useMemo } from 'react';
@@ -195,9 +195,10 @@ export default function TopNav() {
 
   // Drivers get a minimal nav
   const driverNav = [
-    { to: '/my-schedule', icon: Calendar, label: 'My Schedule' },
-    { to: '/my-attendance', icon: ClipboardCheck, label: 'My Attendance' },
-    { to: '/my-scorecard', icon: Star, label: 'My Scorecard' },
+    { to: '/today', icon: CalendarDays, label: 'Today' },
+    { to: '/my-schedule', icon: Calendar, label: 'Schedule' },
+    { to: '/my-attendance', icon: ClipboardCheck, label: 'Attendance' },
+    { to: '/my-scorecard', icon: Star, label: 'Scorecard' },
   ];
 
   const activeNavItems = isDriver ? driverNav : visibleNavGroups;
@@ -208,7 +209,7 @@ export default function TopNav() {
 
         {/* ── Brand ───────────────────────────────────────────────── */}
         <NavLink
-          to={isDriver ? '/my-schedule' : '/'}
+          to={isDriver ? '/today' : '/'}
           className="flex items-center flex-shrink-0"
         >
           <img

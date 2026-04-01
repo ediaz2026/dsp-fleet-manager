@@ -72,11 +72,66 @@ const SIDEBAR = [
       { id: 'bulk-import',       label: 'Bulk Import',       icon: FileSpreadsheet },
       { id: 'audit-log',     label: 'Audit Log',        icon: ClipboardList },
       { id: 'notifications', label: 'Notifications',    icon: Bell },
+      { id: 'announcements', label: 'Announcements',    icon: Info },
     ],
   },
 ];
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
+function AnnouncementsSection({ CARD, SH, FL }) {
+  const [msg, setMsg] = useState('');
+  const [expiry, setExpiry] = useState('');
+  const { data: anns = [], refetch } = useQuery({ queryKey: ['admin-announcements'], queryFn: () => api.get('/announcements').then(r => r.data) });
+
+  const postAnn = async () => {
+    if (!msg.trim()) return;
+    await api.post('/announcements', { message: msg, expires_at: expiry || null });
+    setMsg(''); setExpiry(''); refetch();
+    toast.success('Announcement posted');
+  };
+
+  return (
+    <>
+      <h1 className="text-2xl font-bold text-slate-900">Announcements</h1>
+      <p className="text-sm text-slate-500">Post messages visible to all drivers on their Today page.</p>
+      <section className={CARD}>
+        <div className="space-y-3">
+          <textarea className="input min-h-[80px]" placeholder="Type announcement message..." value={msg} onChange={e => setMsg(e.target.value)} />
+          <div className="flex items-center gap-3">
+            <div>
+              <label className={FL}>Expires (optional)</label>
+              <input type="date" className="input w-40" value={expiry} onChange={e => setExpiry(e.target.value)} />
+            </div>
+            <button className="btn-primary mt-5" onClick={postAnn}>Post Announcement</button>
+          </div>
+        </div>
+      </section>
+      {anns.length > 0 && (
+        <section className={CARD}>
+          <p className={SH}>Active Announcements</p>
+          <div className="space-y-2">
+            {anns.map(a => (
+              <div key={a.id} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex-1">
+                  <p className="text-sm text-blue-900">{a.message}</p>
+                  <p className="text-[10px] text-blue-400 mt-1">
+                    Posted {a.created_at ? format(new Date(a.created_at), 'MMM d, h:mm a') : ''}
+                    {a.expires_at ? ` · Expires ${format(new Date(a.expires_at), 'MMM d')}` : ''}
+                  </p>
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={async () => { await api.put(`/announcements/${a.id}`, { active: false }); refetch(); toast.success('Deactivated'); }} className="btn-ghost text-xs text-amber-600">Hide</button>
+                  <button onClick={async () => { await api.delete(`/announcements/${a.id}`); refetch(); toast.success('Deleted'); }} className="btn-ghost text-xs text-red-500">Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
 export default function Management() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -1780,6 +1835,11 @@ export default function Management() {
             </>
           );
         })()}
+
+        {/* ══ ANNOUNCEMENTS ════════════════════════════════════════════ */}
+        {activeSection === 'announcements' && (
+          <AnnouncementsSection CARD={CARD} SH={SH} FL={FL} />
+        )}
 
         {/* ══ AUDIT LOG ════════════════════════════════════════════════ */}
         {activeSection === 'audit-log' && (

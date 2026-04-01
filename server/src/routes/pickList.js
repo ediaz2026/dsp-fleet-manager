@@ -694,4 +694,64 @@ router.get('/my-picklist', async (req, res) => {
   }
 });
 
+// GET /api/ops/my-assignment — driver's assignment, vehicle, loadout for today
+router.get('/my-assignment', async (req, res) => {
+  try {
+    const staffId = req.user.id;
+    const today = getEasternDate();
+
+    // Get assignment with vehicle info
+    const { rows: asgn } = await pool.query(`
+      SELECT oa.*, v.vehicle_name, v.license_plate
+      FROM ops_assignments oa
+      LEFT JOIN vehicles v ON v.id = oa.vehicle_id
+      WHERE oa.staff_id = $1 AND oa.plan_date = $2 AND oa.removed_from_ops IS NOT TRUE
+    `, [staffId, today]);
+
+    if (!asgn.length) {
+      // Fallback: try TID matching like my-picklist
+      const { rows: drvRows } = await pool.query(
+        `SELECT d.transponder_id, s.employee_id FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE d.staff_id = $1`, [staffId]
+      );
+      const tid = drvRows[0]?.transponder_id || drvRows[0]?.employee_id || null;
+      if (tid) {
+        const { rows: drRows } = await pool.query(`SELECT routes FROM ops_daily_routes WHERE plan_date = $1`, [today]);
+        if (drRows[0]?.routes) {
+          const normTid = tid.trim().toUpperCase().replace(/\s/g, '');
+          for (const route of drRows[0].routes) {
+            const tids = (route.transponderIds || []).map(t => t.trim().toUpperCase().replace(/\s/g, ''));
+            if (tids.includes(normTid)) {
+              return res.json({ route_code: route.routeCode, date: today, via_tid: true });
+            }
+          }
+        }
+      }
+      return res.json(null);
+    }
+
+    const a = asgn[0];
+    // Get loadout data
+    const { rows: loadRows } = await pool.query(`SELECT loadout FROM ops_loadout WHERE plan_date = $1`, [today]);
+    let loadout = {};
+    if (loadRows[0]?.loadout && a.route_code) {
+      loadout = loadRows[0].loadout.find(l => l.routeCode === a.route_code) || {};
+    }
+
+    res.json({
+      route_code: a.route_code,
+      shift_type: a.shift_type,
+      vehicle_name: a.vehicle_name || a.license_plate || null,
+      wave: loadout.wave || a.wave_override || null,
+      wave_time: loadout.waveTime || null,
+      staging: loadout.staging || a.staging_override || null,
+      canopy: loadout.canopy || a.canopy_override || null,
+      launchpad: loadout.launchpad || a.launchpad_override || null,
+      date: today,
+    });
+  } catch (err) {
+    console.error('[my-assignment] Error:', err);
+    res.status(500).json({ error: 'Failed to load assignment' });
+  }
+});
+
 module.exports = router;

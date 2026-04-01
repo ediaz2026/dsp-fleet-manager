@@ -3134,7 +3134,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
                 <SortHeader col="canopy"    label="Canopy ⓘ"    className="text-slate-400" />
                 <SortHeader col="launchpad" label="Pad ⓘ" className="text-slate-400" />
                 <th className="px-2 py-2.5 text-left">Vehicle</th>
-                <th className="px-2 py-2.5 text-left">Device</th>
+                <th className="px-2 py-2.5 text-left w-[65px]">Device</th>
                 <SortHeader col="status" label="St" className="text-center w-10" />
                 {/* EFT — sortable, violet */}
                 {(() => {

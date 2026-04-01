@@ -107,6 +107,7 @@ export default function Dashboard() {
   const { data, isLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api.get('/dashboard').then(r => r.data),
+    staleTime: 30 * 1000,
     refetchInterval: 30000,
   });
 

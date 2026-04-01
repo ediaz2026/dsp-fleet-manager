@@ -431,8 +431,9 @@ export default function Vehicles() {
   // ── Vehicle mutations
   const saveVehicleMutation = useMutation({
     mutationFn: data => editingVehicle ? api.put(`/vehicles/${editingVehicle.id}`, data) : api.post('/vehicles', data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['vehicles'] });
+    onSuccess: async () => {
+      await qc.cancelQueries({ queryKey: ['vehicles'] });
+      await qc.invalidateQueries({ queryKey: ['vehicles'] });
       toast.success(editingVehicle ? 'Vehicle updated' : 'Vehicle added');
       setShowVehicleModal(false); setEditingVehicle(null);
     },
@@ -456,6 +457,7 @@ export default function Vehicles() {
     onSuccess: (_, { van_status, amazon_status }) => {
       qc.invalidateQueries({ queryKey: ['vehicles'] });
       qc.invalidateQueries({ queryKey: ['fleet-alerts'] });
+      qc.invalidateQueries({ queryKey: ['inactive-vehicles'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
       if (van_status    !== undefined) toast.success('Van status updated');
       if (amazon_status !== undefined) toast.success('Amazon status updated');

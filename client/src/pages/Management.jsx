@@ -1832,6 +1832,67 @@ export default function Management() {
                   <Save size={15} /> Save Pick List Settings
                 </button>
               </div>
+
+              {/* ── Driver Briefing Release ─────────────────────────────── */}
+              <div className="border-t border-slate-200 pt-6 mt-6">
+                <h2 className="text-lg font-bold text-slate-900 mb-1">Driver Briefing Release</h2>
+                <p className="text-sm text-slate-500 mb-4">Control when drivers can see their daily assignment, route and pick list.</p>
+              </div>
+
+              <section className={CARD}>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="briefing_mode" className="accent-blue-600"
+                        checked={(settings.briefing_release_mode || 'timer') === 'timer'}
+                        onChange={() => setSettings(s => ({ ...s, briefing_release_mode: 'timer' }))} />
+                      <span className="text-sm font-medium text-slate-700">Automatic timer</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="briefing_mode" className="accent-blue-600"
+                        checked={settings.briefing_release_mode === 'manual'}
+                        onChange={() => setSettings(s => ({ ...s, briefing_release_mode: 'manual' }))} />
+                      <span className="text-sm font-medium text-slate-700">Manual release</span>
+                    </label>
+                  </div>
+
+                  {(settings.briefing_release_mode || 'timer') === 'timer' && (
+                    <div className="flex items-center gap-3 ml-4">
+                      <label className="text-sm text-slate-600">Release time:</label>
+                      <input type="time" className="input w-36" value={settings.briefing_release_time || '06:00'}
+                        onChange={e => setSettings(s => ({ ...s, briefing_release_time: e.target.value }))} />
+                    </div>
+                  )}
+
+                  {settings.briefing_release_mode === 'manual' && (
+                    <div className="ml-4 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <button className="btn-primary bg-green-600 hover:bg-green-700 text-sm"
+                          onClick={() => api.post('/ops/release-briefing').then(() => { toast.success('Briefing released — drivers can now see their assignment'); qc.invalidateQueries({ queryKey: ['settings'] }); })}>
+                          Release Briefing Now
+                        </button>
+                        <button className="btn-danger text-sm"
+                          onClick={() => api.post('/ops/lock-briefing').then(() => { toast.success('Briefing locked'); qc.invalidateQueries({ queryKey: ['settings'] }); })}>
+                          Lock Briefing
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <div className="flex justify-end pt-2">
+                <button className="btn-primary flex items-center gap-2"
+                  onClick={() => {
+                    const keys = {
+                      briefing_release_mode: settings.briefing_release_mode || 'timer',
+                      briefing_release_time: settings.briefing_release_time || '06:00',
+                    };
+                    api.put('/settings', keys).then(() => { qc.invalidateQueries({ queryKey: ['settings'] }); toast.success('Briefing settings saved'); }).catch(() => toast.error('Failed to save'));
+                  }}>
+                  <Save size={15} /> Save Briefing Settings
+                </button>
+              </div>
             </>
           );
         })()}

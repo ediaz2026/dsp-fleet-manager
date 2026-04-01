@@ -769,4 +769,66 @@ router.get('/my-assignment', async (req, res) => {
   }
 });
 
+// ── Briefing release control ──────────────────────────────────────────────────
+
+function getEasternNow() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+}
+
+function fmt12h(timeStr) {
+  if (!timeStr) return '6:00 AM';
+  const [h, m] = timeStr.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+async function getBriefingStatus() {
+  const { rows } = await pool.query(
+    `SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('briefing_release_mode','briefing_release_time','briefing_released_today','briefing_released_date')`
+  );
+  const s = {};
+  for (const r of rows) s[r.setting_key] = r.setting_value;
+
+  const mode = s.briefing_release_mode || 'timer';
+  const releaseTime = s.briefing_release_time || '06:00';
+  const today = getEasternDate();
+  const nowET = getEasternNow();
+
+  let released = false;
+
+  if (mode === 'timer') {
+    const [h, m] = releaseTime.split(':').map(Number);
+    const currentMinutes = nowET.getHours() * 60 + nowET.getMinutes();
+    released = currentMinutes >= h * 60 + m;
+  } else {
+    // Manual mode — auto-reset if date doesn't match today
+    released = s.briefing_released_today === 'true' && s.briefing_released_date === today;
+  }
+
+  return { released, release_time: fmt12h(releaseTime), mode };
+}
+
+// GET /api/ops/briefing-status — check if briefing is released
+router.get('/briefing-status', async (req, res) => {
+  try {
+    res.json(await getBriefingStatus());
+  } catch (err) {
+    res.json({ released: true, release_time: '6:00 AM', mode: 'timer' });
+  }
+});
+
+// POST /api/ops/release-briefing — manual release (admin/manager)
+router.post('/release-briefing', managerOnly, async (req, res) => {
+  const today = getEasternDate();
+  await pool.query(`INSERT INTO settings (setting_key, setting_value, updated_at) VALUES ('briefing_released_today', 'true', NOW()) ON CONFLICT (setting_key) DO UPDATE SET setting_value='true', updated_at=NOW()`);
+  await pool.query(`INSERT INTO settings (setting_key, setting_value, updated_at) VALUES ('briefing_released_date', $1, NOW()) ON CONFLICT (setting_key) DO UPDATE SET setting_value=$1, updated_at=NOW()`, [today]);
+  res.json({ success: true, released_at: new Date().toISOString() });
+});
+
+// POST /api/ops/lock-briefing — re-lock (admin/manager)
+router.post('/lock-briefing', managerOnly, async (req, res) => {
+  await pool.query(`INSERT INTO settings (setting_key, setting_value, updated_at) VALUES ('briefing_released_today', 'false', NOW()) ON CONFLICT (setting_key) DO UPDATE SET setting_value='false', updated_at=NOW()`);
+  res.json({ success: true });
+});
+
 module.exports = router;

@@ -69,6 +69,15 @@ export default function DriverToday() {
     return { day, dateStr, shift, isToday: dateStr === today };
   });
 
+  // Briefing release status
+  const { data: briefingStatus } = useQuery({
+    queryKey: ['briefing-status'],
+    queryFn: () => api.get('/ops/briefing-status').then(r => r.data),
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
+  });
+  const briefingReleased = briefingStatus?.released !== false;
+
   const initials = `${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`;
   const [showBags, setShowBags] = useState(false);
 
@@ -103,8 +112,25 @@ export default function DriverToday() {
             </div>
           )}
 
-          {/* ── Today's Assignment ──────────────────────────────────────── */}
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          {/* ── Briefing locked state ──────────────────────────────────── */}
+          {!briefingReleased && (
+            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+              <div className="bg-[#1a3a5c] px-4 py-3">
+                <p className="text-white font-bold text-sm">Today's Assignment</p>
+              </div>
+              <div className="p-8 text-center">
+                <Lock size={36} className="mx-auto text-slate-300 mb-3" />
+                <p className="font-bold text-[#374151] text-lg mb-1">Briefing Locked</p>
+                <p className="text-sm text-[#6B7280]">
+                  Your briefing will be available at <span className="font-bold text-[#2563EB]">{briefingStatus?.release_time || '6:00 AM'}</span>
+                </p>
+                <p className="text-xs text-[#94a3b8] mt-2">Check back then for your route, vehicle and pick list details</p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Today's Assignment (released) ────────────────────────────── */}
+          {briefingReleased && <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="bg-[#1a3a5c] px-4 py-3">
               <p className="text-white font-bold text-sm">Today's Assignment</p>
             </div>
@@ -161,10 +187,10 @@ export default function DriverToday() {
                 <p className="text-sm text-slate-400">No route assigned yet — check back later</p>
               </div>
             )}
-          </div>
+          </div>}
 
           {/* ── Pick List ──────────────────────────────────────────────── */}
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          {briefingReleased && <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <button
               className="w-full bg-[#166534] px-4 py-3 flex items-center justify-between"
               onClick={() => plData && setShowBags(v => !v)}
@@ -227,7 +253,7 @@ export default function DriverToday() {
                 <p className="text-sm text-slate-400">Pick list not available yet</p>
               </div>
             )}
-          </div>
+          </div>}
 
           {/* ── This Week ──────────────────────────────────────────────── */}
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">

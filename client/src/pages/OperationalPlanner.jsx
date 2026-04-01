@@ -3393,6 +3393,20 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
               <MessageCircle size={12} /> WhatsApp Briefing
             </button>
           )}
+          {picklistLockStatus && !picklistLockStatus.locked ? null : (
+            <button
+              onClick={async () => {
+                try {
+                  await api.post('/ops/release-briefing');
+                  toast.success('Briefing released — drivers can now see their assignment');
+                  qc.invalidateQueries({ queryKey: ['picklist-lock-status'] });
+                } catch { toast.error('Failed to release briefing'); }
+              }}
+              className="font-semibold px-2 py-0.5 rounded transition-colors text-green-700 bg-green-50 hover:bg-green-100"
+            >
+              📢 Release Briefing
+            </button>
+          )}
           <button
             onClick={async () => {
               try {

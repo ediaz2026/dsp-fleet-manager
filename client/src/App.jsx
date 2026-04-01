@@ -23,6 +23,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import AcceptInvitation from './pages/AcceptInvitation';
 import DriverToday from './pages/DriverToday';
+import DriverLayout from './components/DriverLayout';
 
 const MGMT_ROLES = ['manager', 'admin', 'dispatcher'];
 
@@ -79,11 +80,9 @@ export default function App() {
           <Route path="analytics" element={<Analytics />} />
         </Route>
 
-        {/* Driver Today page — no top nav, full-screen layout */}
-        <Route path="/today" element={<RequireAuth><DriverToday /></RequireAuth>} />
-
-        {/* Driver personal routes — all authenticated users can access */}
-        <Route element={<RequireAuth><Layout /></RequireAuth>}>
+        {/* Driver pages — bottom tab bar, no top nav */}
+        <Route element={<RequireAuth><DriverLayout /></RequireAuth>}>
+          <Route path="/today" element={<DriverToday />} />
           <Route path="/my-schedule" element={<DriverSchedule />} />
           <Route path="/my-attendance" element={<DriverAttendance />} />
           <Route path="/my-scorecard" element={<Scorecard />} />

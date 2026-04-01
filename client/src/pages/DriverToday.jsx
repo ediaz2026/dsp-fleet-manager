@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, startOfWeek, addDays } from 'date-fns';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { MapPin, Clock, Truck, Package, Layers, Navigation, Info, Lock, CalendarDays, Calendar, ClipboardCheck, Star } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { MapPin, Clock, Truck, Layers, Navigation, Info, Lock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import { resolveColor, buildShiftTypeMap } from '../utils/shiftColors';
@@ -20,37 +20,6 @@ function titleCase(str) {
 }
 
 const DAYS = ['S','M','T','W','T','F','S'];
-
-// Bottom tab bar for driver portal
-function BottomTabBar() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const tabs = [
-    { to: '/today', icon: CalendarDays, label: 'Today' },
-    { to: '/my-schedule', icon: Calendar, label: 'Schedule' },
-    { to: '/my-attendance', icon: ClipboardCheck, label: 'Attendance' },
-    { to: '/my-scorecard', icon: Star, label: 'Scorecard' },
-  ];
-  return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 px-2 pb-[env(safe-area-inset-bottom)]">
-      <div className="flex justify-around max-w-lg mx-auto">
-        {tabs.map(t => {
-          const active = location.pathname === t.to;
-          return (
-            <button
-              key={t.to}
-              onClick={() => navigate(t.to)}
-              className={`flex flex-col items-center gap-0.5 py-2 px-3 min-w-[60px] transition-colors ${active ? 'text-[#1a3a5c]' : 'text-slate-400'}`}
-            >
-              <t.icon size={20} strokeWidth={active ? 2.5 : 1.5} />
-              <span className={`text-[10px] font-semibold ${active ? 'text-[#1a3a5c]' : 'text-slate-400'}`}>{t.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 export default function DriverToday() {
   const { user } = useAuth();
@@ -108,8 +77,7 @@ export default function DriverToday() {
   const plData = pickList && !pickList.locked ? pickList : null;
 
   return (
-    <>
-      <div className="min-h-screen bg-[#F1F5F9] pb-24" style={{ paddingTop: 0, marginTop: 0 }}>
+      <div className="bg-[#F1F5F9]" style={{ paddingTop: 0, marginTop: 0 }}>
         {/* ── Header — flush to top, no gap ───────────────────────────── */}
         <div className="bg-[#1a3a5c] text-white px-5 pt-[max(env(safe-area-inset-top),20px)] pb-8 rounded-b-3xl">
           <div className="flex items-center justify-between mb-4">
@@ -290,10 +258,7 @@ export default function DriverToday() {
           </div>
         </div>
       </div>
-
-      {/* ── Bottom Tab Bar ──────────────────────────────────────────── */}
-      <BottomTabBar />
-    </>
+    </div>
   );
 }
 

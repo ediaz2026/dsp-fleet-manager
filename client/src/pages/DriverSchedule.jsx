@@ -267,7 +267,7 @@ function DriverScheduleInner() {
   }, [weekOffset, isLoading]);
 
   return (
-    <div className="p-3 sm:p-4 md:p-6 max-w-2xl mx-auto">
+    <div className="p-3 sm:p-4 md:p-6 max-w-2xl mx-auto pb-4">
 
       {/* ── PWA Install Banner ──────────────────────────────────────────────── */}
       <PwaInstallBanner />

@@ -109,9 +109,9 @@ export default function DriverToday() {
 
   return (
     <>
-      <div className="min-h-screen bg-[#F1F5F9] pb-24">
-        {/* ── Header ─────────────────────────────────────────────────── */}
-        <div className="bg-[#1a3a5c] text-white px-5 pt-5 pb-8 rounded-b-3xl">
+      <div className="min-h-screen bg-[#F1F5F9] pb-24" style={{ paddingTop: 0, marginTop: 0 }}>
+        {/* ── Header — flush to top, no gap ───────────────────────────── */}
+        <div className="bg-[#1a3a5c] text-white px-5 pt-[max(env(safe-area-inset-top),20px)] pb-8 rounded-b-3xl">
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-blue-200 font-medium">{format(new Date(), 'EEEE, MMMM d')}</p>
             <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold">

@@ -331,7 +331,7 @@ export default function Vehicles() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const qc = useQueryClient();
-  const isManager = ['manager', 'admin'].includes(user?.role);
+  const isManager = ['manager', 'admin', 'dispatcher'].includes(user?.role);
 
   // Determine initial section from URL or location state
   const urlTab = searchParams.get('tab');

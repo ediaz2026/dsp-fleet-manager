@@ -700,7 +700,12 @@ router.get('/my-assignment', async (req, res) => {
     const staffId = req.user.id;
     const today = getEasternDate();
 
-    // Get assignment with vehicle info
+    let routeCode = null;
+    let vehicleName = null;
+    let shiftType = null;
+    let overrides = {};
+
+    // Step 1: Try ops_assignments
     const { rows: asgn } = await pool.query(`
       SELECT oa.*, v.vehicle_name, v.license_plate
       FROM ops_assignments oa
@@ -708,8 +713,16 @@ router.get('/my-assignment', async (req, res) => {
       WHERE oa.staff_id = $1 AND oa.plan_date = $2 AND oa.removed_from_ops IS NOT TRUE
     `, [staffId, today]);
 
-    if (!asgn.length) {
-      // Fallback: try TID matching like my-picklist
+    if (asgn.length) {
+      const a = asgn[0];
+      routeCode = a.route_code;
+      vehicleName = a.vehicle_name || a.license_plate || null;
+      shiftType = a.shift_type;
+      overrides = { wave: a.wave_override, staging: a.staging_override, canopy: a.canopy_override, launchpad: a.launchpad_override };
+    }
+
+    // Step 2: Fallback — TID matching via ops_daily_routes
+    if (!routeCode) {
       const { rows: drvRows } = await pool.query(
         `SELECT d.transponder_id, s.employee_id FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE d.staff_id = $1`, [staffId]
       );
@@ -721,31 +734,33 @@ router.get('/my-assignment', async (req, res) => {
           for (const route of drRows[0].routes) {
             const tids = (route.transponderIds || []).map(t => t.trim().toUpperCase().replace(/\s/g, ''));
             if (tids.includes(normTid)) {
-              return res.json({ route_code: route.routeCode, date: today, via_tid: true });
+              routeCode = route.routeCode;
+              break;
             }
           }
         }
       }
-      return res.json(null);
     }
 
-    const a = asgn[0];
-    // Get loadout data
+    if (!routeCode) return res.json(null);
+
+    // Step 3: Get loadout data — match by route_code
     const { rows: loadRows } = await pool.query(`SELECT loadout FROM ops_loadout WHERE plan_date = $1`, [today]);
     let loadout = {};
-    if (loadRows[0]?.loadout && a.route_code) {
-      loadout = loadRows[0].loadout.find(l => l.routeCode === a.route_code) || {};
+    if (loadRows[0]?.loadout) {
+      // Try matching by route_code directly, or by any loadout entry containing the route
+      loadout = loadRows[0].loadout.find(l => l.routeCode === routeCode) || {};
     }
 
     res.json({
-      route_code: a.route_code,
-      shift_type: a.shift_type,
-      vehicle_name: a.vehicle_name || a.license_plate || null,
-      wave: loadout.wave || a.wave_override || null,
+      route_code: routeCode,
+      shift_type: shiftType,
+      vehicle_name: vehicleName,
+      wave: loadout.wave || overrides.wave || null,
       wave_time: loadout.waveTime || null,
-      staging: loadout.staging || a.staging_override || null,
-      canopy: loadout.canopy || a.canopy_override || null,
-      launchpad: loadout.launchpad || a.launchpad_override || null,
+      staging: loadout.staging || overrides.staging || null,
+      canopy: loadout.canopy || overrides.canopy || null,
+      launchpad: loadout.launchpad || overrides.launchpad || null,
       date: today,
     });
   } catch (err) {

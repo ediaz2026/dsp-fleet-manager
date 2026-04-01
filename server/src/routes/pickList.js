@@ -53,34 +53,53 @@ import pdfplumber
 from datetime import datetime
 
 pdf_path = sys.argv[1]
+import sys as _sys
+STG_PATTERN = re.compile(r'(?:^|\\s)(STG\\.[A-Z0-9]+\\.\\d+)', re.IGNORECASE)
 
-# Step 1: Extract text page-by-page, group by route
-# A new route starts when a page begins with "STG."
-# Continuation pages do NOT start with "STG." — they contain bag rows, totals, etc.
-route_groups = []   # list of { 'first_line': str, 'pages': [str, ...] }
-current_group = None
+# Step 1: Extract text page-by-page, split on STG. markers (even mid-page)
+# Collect text segments — each starting with an STG. line
+segments = []  # list of strings, each starting with "STG.xxx..."
+current_seg = None
 
 with pdfplumber.open(pdf_path) as pdf:
     for page in pdf.pages:
         text = page.extract_text()
         if not text:
             continue
-        first_line = text.strip().split('\\n')[0].strip()
+        page_lines = text.split('\\n')
 
-        if first_line.startswith('STG.'):
-            # New route starts
-            if current_group:
-                route_groups.append(current_group)
-            current_group = { 'first_line': first_line, 'pages': [text] }
-        else:
-            # Continuation page — append to current route
-            if current_group:
-                current_group['pages'].append(text)
+        for line in page_lines:
+            stg_match = STG_PATTERN.search(line)
+            if stg_match:
+                # Found an STG. marker — save previous segment, start new one
+                if current_seg is not None:
+                    segments.append(current_seg)
+                # The line might have text before STG. (belongs to previous route)
+                # and text from STG. onward (new route)
+                marker_pos = stg_match.start(1)
+                before = line[:marker_pos].strip()
+                if before and current_seg is not None:
+                    # Append pre-STG text to the PREVIOUS segment we just saved
+                    segments[-1] += '\\n' + before if segments else before
+                elif before and segments:
+                    segments[-1] += '\\n' + before
+                current_seg = line[marker_pos:].strip()
+            else:
+                # Regular line — append to current segment
+                if current_seg is not None:
+                    current_seg += '\\n' + line
+                # else: text before any STG. marker — skip
 
-    if current_group:
-        route_groups.append(current_group)
+    if current_seg is not None:
+        segments.append(current_seg)
 
-import sys as _sys
+# Build route groups from segments
+route_groups = []
+for seg in segments:
+    lines = seg.split('\\n')
+    first_line = lines[0].strip()
+    route_groups.append({ 'first_line': first_line, 'pages': [seg] })
+
 print(f"Grouped {len(route_groups)} routes from PDF", file=_sys.stderr)
 
 results = []

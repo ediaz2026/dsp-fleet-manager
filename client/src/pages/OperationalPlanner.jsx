@@ -740,7 +740,7 @@ function Step2Tab({ planDate, routesData, driverProfiles, loading, onUpload }) {
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-slate-100 bg-slate-50 text-[10px] font-semibold text-content-muted uppercase tracking-wide">
-            <th className="px-3 py-2.5 text-left">Route Code</th>
+            <th className="px-3 py-2.5 text-left">Route</th>
             <th className="px-3 py-2.5 text-left">Driver</th>
             <th className="px-3 py-2.5 text-left">Transporter ID(s)</th>
             <th className="px-3 py-2.5 text-left">Delivery Service Type</th>
@@ -3127,7 +3127,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
                 </th>
                 <SortHeader col="name"      label="Driver Name" />
                 <SortHeader col="shiftType" label="Shift" />
-                <SortHeader col="routeCode" label="Route Code" />
+                <SortHeader col="routeCode" label="Route" />
                 <SortHeader col="wave"      label="Wave ⓘ"      className="text-slate-400" />
                 <SortHeader col="waveTime"  label="Wave Time ⓘ" className="text-slate-400" />
                 <SortHeader col="staging"   label="Staging ⓘ"   className="text-slate-400" />
@@ -3460,7 +3460,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50 text-[10px] font-semibold text-content-muted uppercase tracking-wide">
-                        <th className="px-3 py-2.5 text-left">Route Code</th>
+                        <th className="px-3 py-2.5 text-left">Route</th>
                         <th className="px-3 py-2.5 text-left">Wave</th>
                         <th className="px-3 py-2.5 text-left">Wave Time</th>
                         <th className="px-3 py-2.5 text-left">Staging</th>

@@ -96,11 +96,13 @@ with pdfplumber.open(pdf_path) as pdf:
 # Build route groups from segments
 route_groups = []
 for seg in segments:
-    lines = seg.split('\\n')
-    first_line = lines[0].strip()
+    seg_lines = seg.split('\\n')
+    first_line = seg_lines[0].strip()
     route_groups.append({ 'first_line': first_line, 'pages': [seg] })
 
-print(f"Grouped {len(route_groups)} routes from PDF", file=_sys.stderr)
+# Log all route codes found for debugging
+all_codes = [g['first_line'].split()[0] for g in route_groups]
+print(f"Grouped {len(route_groups)} routes from PDF: {', '.join(all_codes[:10])}{'...' if len(all_codes) > 10 else ''}", file=_sys.stderr)
 
 results = []
 for group in route_groups:
@@ -172,7 +174,7 @@ for group in route_groups:
     if commercial_match:
         commercial_packages = int(commercial_match.group(1))
 
-    print(f"Route {route_code} ({vehicle_id}): {len(group['pages'])} pages, raw_text={len(chunk)} chars, bags={bags}", file=_sys.stderr)
+    print(f"Route {route_code} vid={vehicle_id} dsp={dsp_code} pages={len(group['pages'])} chars={len(chunk)} bags={bags}", file=_sys.stderr)
 
     results.append({
         'route_code': route_code,

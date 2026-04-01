@@ -2422,6 +2422,18 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         case 'canopy':        return (l.canopy || '').toLowerCase();
         case 'launchpad':     return (l.launchpad || '').toLowerCase();
         case 'status':        return (row.status || '');
+        case 'vehicle': {
+          const asgn = row.asgn || {};
+          const v = vehicles.find(v => v.id === asgn.vehicle_id);
+          return (v?.vehicle_name || '').toLowerCase();
+        }
+        case 'device':        return (row.asgn?.device_id || '').toLowerCase();
+        case 'rts':           return (row.asgn?.finish_time || '');
+        case 'pickList': {
+          const rc = (row.asgn?.route_code || row.routeCode || '').toUpperCase();
+          const pl = pickListMap[rc];
+          return pl ? String(pl.total_packages || 0).padStart(5, '0') : '';
+        }
         case 'eft': {
           const effectiveRoute = row.asgn?.route_code || row.routeCode || '';
           const wt  = l.waveTime || null;
@@ -2439,7 +2451,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       }
       return 0;
     });
-  }, [filteredRows, sortKeys, loadoutMap]);
+  }, [filteredRows, sortKeys, loadoutMap, vehicles, pickListMap]);
 
   // Unique values for filter dropdowns
   const filterOptions = useMemo(() => {
@@ -3133,8 +3145,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
                 <SortHeader col="staging"   label="Staging ⓘ"   className="text-slate-400" />
                 <SortHeader col="canopy"    label="Canopy ⓘ"    className="text-slate-400" />
                 <SortHeader col="launchpad" label="Pad ⓘ" className="text-slate-400" />
-                <th className="px-2 py-2.5 text-left">Vehicle</th>
-                <th className="px-2 py-2.5 text-left w-[65px]">Device</th>
+                <SortHeader col="vehicle" label="Vehicle" />
+                <SortHeader col="device"  label="Device" className="w-[65px]" />
                 <SortHeader col="status" label="St" className="text-center w-10" />
                 {/* EFT — sortable, violet */}
                 {(() => {
@@ -3160,8 +3172,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
                     </th>
                   );
                 })()}
-                <th className="px-2 py-2.5 text-center whitespace-nowrap">RTS</th>
-                {pickListData.length > 0 && <th className="px-2 py-2.5 text-left whitespace-nowrap">Pick List</th>}
+                <SortHeader col="rts" label="RTS" className="text-center" />
+                {pickListData.length > 0 && <SortHeader col="pickList" label="Pick List" />}
                 <th className="px-2 py-2.5 text-center">Rescue</th>
               </tr>
             </thead>

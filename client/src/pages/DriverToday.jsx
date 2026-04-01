@@ -258,7 +258,6 @@ export default function DriverToday() {
           </div>
         </div>
       </div>
-    </div>
   );
 }
 

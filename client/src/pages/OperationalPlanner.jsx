@@ -2303,8 +2303,12 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       const profile = d.transponderId ? transpToProfile[norm(d.transponderId)] : null;
       // Skip if effectively assigned to a route in section1 — mark covered so DSP-only loop doesn't duplicate
       if (profile?.staff_id && effectivelyRoutedStaffIds.has(profile.staff_id)) { coveredStaffIds.add(profile.staff_id); continue; }
-      // Skip if manually assigned to a route — mark covered so DSP-only loop doesn't duplicate
-      if (profile?.staff_id && manuallyAssignedStaffIds.has(profile.staff_id)) { coveredStaffIds.add(profile.staff_id); continue; }
+      // Skip if manually assigned to a REAL route (in Amazon routes file) — mark covered so DSP-only loop doesn't duplicate
+      // Drivers with custom routes (AX44, FLEX) fall through to get a row in section3
+      if (profile?.staff_id && manuallyAssignedStaffIds.has(profile.staff_id)) {
+        const drvAsgn = assignmentsArr.find(a => a.staff_id === profile.staff_id && a.route_code);
+        if (drvAsgn?.route_code && realRouteCodeSet.has(drvAsgn.route_code)) { coveredStaffIds.add(profile.staff_id); continue; }
+      }
       // Skip if TID is in routes file but has no profile match (handled by section1)
       if (!profile && d.transponderId && routedTids.has(norm(d.transponderId))) continue;
 

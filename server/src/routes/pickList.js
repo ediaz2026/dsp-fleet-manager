@@ -620,30 +620,56 @@ router.get('/my-picklist', async (req, res) => {
 
     const pick = pl[0];
 
-    // Parse bag details from raw_text
+    // Parse bag details from raw_text (two-column format)
+    // Left column:  bag# zone color barcode pkgs
+    // Right column: bag# zone pkgs (overflow — no color/barcode)
     const bagDetails = [];
+    const overflowDetails = [];
     if (pick.raw_text) {
       const lines = pick.raw_text.split('\n');
-      const COLORS = /orange|green|navy|yellow|black|blue|red|purple|white/i;
+      const SKIP = /^(sort\s+zone|total\s+packages|commercial\s+packages|stg\.|cx\d|hza\d|dmf5|\s*$)/i;
+      const LEFT_RE = /(\d{1,3})\s+([A-Z0-9][\w.\-]+)\s+(Orange|Green|Navy|Yellow|Black|Blue|Red|Purple|White)\s+(\S+)\s+(\d{1,4})/i;
+      const RIGHT_RE = /(\d{1,4})\s+(\d{1,3})\s+([A-Z0-9][\w.\-]+)\s+(\d{1,4})\s*$/;
+
       for (const line of lines) {
         const trimmed = line.trim();
-        // Pattern: bag_number zone color [code] package_count
-        // e.g. "1 A-26.1A Orange 4126 11" or "1 A-26.1A Orange 11"
-        const match = trimmed.match(/^(\d{1,3})\s+(\S+)\s+(Orange|Green|Navy|Yellow|Black|Blue|Red|Purple|White)\s+(?:(\S+)\s+)?(\d{1,4})$/i);
-        if (match) {
+        if (!trimmed || SKIP.test(trimmed)) continue;
+
+        // Try left column (bag with color + barcode)
+        const leftMatch = trimmed.match(LEFT_RE);
+        if (leftMatch) {
           bagDetails.push({
-            bag: parseInt(match[1]),
-            zone: match[2],
-            color: match[3],
-            code: match[4] || '',
-            pkgs: parseInt(match[5]),
+            bag: parseInt(leftMatch[1]),
+            zone: leftMatch[2],
+            color: leftMatch[3],
+            code: leftMatch[4],
+            pkgs: parseInt(leftMatch[5]),
           });
         }
+
+        // Try right column (overflow — no color, at end of line)
+        // Format: ...leftPkgs rightBag# rightZone rightPkgs
+        const rightMatch = trimmed.match(RIGHT_RE);
+        if (rightMatch) {
+          const rBag = parseInt(rightMatch[2]);
+          const rZone = rightMatch[3];
+          const rPkgs = parseInt(rightMatch[4]);
+          // Avoid duplicating left-column data: only add if bag# + zone differ from left match
+          const isDuplicate = leftMatch && parseInt(leftMatch[1]) === rBag && leftMatch[2] === rZone;
+          if (!isDuplicate) {
+            overflowDetails.push({
+              bag: rBag,
+              zone: rZone,
+              color: 'Overflow',
+              code: '',
+              pkgs: rPkgs,
+            });
+          }
+        }
       }
-      console.log(`[my-picklist] Parsed ${bagDetails.length} bag details from ${lines.length} lines of raw_text`);
+      console.log(`[my-picklist] Parsed ${bagDetails.length} bags + ${overflowDetails.length} overflow from ${lines.length} lines`);
       if (bagDetails.length === 0 && lines.length > 5) {
-        // Log first 5 non-empty lines for debugging
-        const samples = lines.filter(l => l.trim()).slice(0, 5);
+        const samples = lines.filter(l => l.trim()).slice(0, 8);
         console.log(`[my-picklist] Sample raw_text lines:`, samples);
       }
     }
@@ -657,6 +683,7 @@ router.get('/my-picklist', async (req, res) => {
       total_packages: pick.total_packages,
       commercial_packages: pick.commercial_packages,
       bag_details: bagDetails,
+      overflow_details: overflowDetails,
       raw_text: pick.raw_text,
     });
   } catch (err) {

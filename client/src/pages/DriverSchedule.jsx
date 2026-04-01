@@ -130,7 +130,7 @@ function TodaysPickList({ userId }) {
     </div>
   );
 
-  const { route_code, wave_time, bags, overflow, total_packages, commercial_packages, bag_details = [] } = pickList;
+  const { route_code, wave_time, bags, overflow, total_packages, commercial_packages, bag_details = [], overflow_details = [] } = pickList;
 
   return (
     <div className="mt-5">
@@ -184,14 +184,30 @@ function TodaysPickList({ userId }) {
         )}
 
         {/* ── Overflow section ───────────────────────────────────────── */}
-        {overflow > 0 && (
-          <div className="border-t border-[#E2E8F0] bg-[#FFFBEB] px-4 py-3">
-            <p className="font-bold text-sm text-[#92400E]">
-              📦 Overflow: {overflow} package{overflow !== 1 ? 's' : ''}
-            </p>
-            <p className="text-xs text-[#B45309] mt-0.5">
-              These are loaded separately — check staging area
-            </p>
+        {(overflow > 0 || overflow_details.length > 0) && (
+          <div className="border-t border-[#E2E8F0]">
+            <div className="bg-[#FFFBEB] px-4 py-2.5">
+              <p className="font-bold text-sm text-[#92400E]">
+                📦 Overflow: {overflow} package{overflow !== 1 ? 's' : ''}
+              </p>
+            </div>
+            {overflow_details.length > 0 && (
+              <div className="divide-y divide-[#FEF3C7]">
+                {overflow_details.map((b, i) => (
+                  <div
+                    key={`ov-${i}`}
+                    className="flex items-center gap-3 px-4 min-h-[48px] bg-[#FFFBEB]"
+                    style={{ borderLeft: '4px solid #F59E0B' }}
+                  >
+                    <span className="font-bold text-base w-8 text-center text-[#92400E]">{b.bag}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold text-sm text-[#92400E]">{b.zone}</span>
+                    </div>
+                    <span className="font-bold text-sm text-[#92400E]">{b.pkgs} pkgs</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

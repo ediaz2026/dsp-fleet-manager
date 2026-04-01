@@ -1,11 +1,12 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { CalendarDays, Calendar, ClipboardCheck, Star } from 'lucide-react';
+import { CalendarDays, Calendar, ClipboardCheck, Star, User } from 'lucide-react';
 
 const TABS = [
   { to: '/today', icon: CalendarDays, label: 'Today' },
   { to: '/my-schedule', icon: Calendar, label: 'Schedule' },
   { to: '/my-attendance', icon: ClipboardCheck, label: 'Attendance' },
   { to: '/my-scorecard', icon: Star, label: 'Scorecard' },
+  { to: '/my-profile', icon: User, label: 'Profile' },
 ];
 
 export default function DriverLayout() {

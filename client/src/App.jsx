@@ -23,6 +23,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import AcceptInvitation from './pages/AcceptInvitation';
 import DriverToday from './pages/DriverToday';
+import DriverProfile from './pages/DriverProfile';
 import DriverLayout from './components/DriverLayout';
 
 const MGMT_ROLES = ['manager', 'admin', 'dispatcher'];
@@ -86,6 +87,7 @@ export default function App() {
           <Route path="/my-schedule" element={<DriverSchedule />} />
           <Route path="/my-attendance" element={<DriverAttendance />} />
           <Route path="/my-scorecard" element={<Scorecard />} />
+          <Route path="/my-profile" element={<DriverProfile />} />
         </Route>
 
         {/* Change password — all roles */}

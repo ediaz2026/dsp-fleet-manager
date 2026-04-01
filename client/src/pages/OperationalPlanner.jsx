@@ -2999,7 +2999,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       );
     };
 
-    const rows = sortedRows;
+    const rows = sortedRows.filter(r => r.shiftType !== 'DISPATCH AM' && r.shiftType !== 'DISPATCH PM');
 
     return (
       <div className="space-y-2">
@@ -3337,6 +3337,18 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
           </div>
         </div>
       </div>
+
+      {/* ── Dispatcher header bar ─────────────────────────────────────────── */}
+      {hasAnyData && (() => {
+        const dispAM = internalShifts.filter(s => s.shift_type === 'DISPATCH AM').map(s => `${s.first_name} ${s.last_name}`);
+        const dispPM = internalShifts.filter(s => s.shift_type === 'DISPATCH PM').map(s => `${s.first_name} ${s.last_name}`);
+        return (
+          <div className="bg-[#1a3a5c] text-white rounded-xl px-5 py-2.5 flex items-center justify-between text-sm">
+            <span><span className="font-bold">OPEN:</span> {dispAM.length ? dispAM.join(' / ') : '—'}</span>
+            <span><span className="font-bold">CLOSE:</span> {dispPM.length ? dispPM.join(' / ') : '—'}</span>
+          </div>
+        );
+      })()}
 
       {/* ── Summary bar ──────────────────────────────────────────────────── */}
       {hasAnyData && (

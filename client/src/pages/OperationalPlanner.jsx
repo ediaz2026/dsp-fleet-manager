@@ -2520,101 +2520,104 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     return s;
   }, [section1Rows]);
 
-  // ── Export to Excel ─────────────────────────────────────────────────────────
+  // ── Export RTS Sheet ─────────────────────────────────────────────────────────
   const handleExport = () => {
     if (!sortedRows.length) return;
 
-    const STATUS_LABELS = {
-      fully_matched:    'Matched',
-      helper_matched:   'Helper OK',
-      wrongly_rostered: 'Not in DSP',
-      not_in_amazon:    'Not in Amazon',
-      unassigned_route: 'Unassigned',
-      multiple_das:     'Multiple DAs',
-    };
+    const EXCLUDED_TYPES = new Set(['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING', 'DISPATCH AM', 'DISPATCH PM']);
+    const ATT_MAP = { ncns: 'NCNS', late: 'LATE', called_out: 'CO' };
 
-    // Column order per spec: # | Driver Name | Transporter ID | Shift Type | Route Code |
-    //   Vehicle | Device | Canopy | Launchpad | Staging | Wave | Wave Time | EFT | Actual Finish | Status
-    const headers = [
-      '#', 'Driver Name', 'Transporter ID', 'Shift Type', 'Route Code',
-      'Vehicle', 'Device', 'Canopy', 'Launchpad', 'Staging',
-      'Wave', 'Wave Time', 'EFT', 'Actual Finish', 'Status',
+    // Find dispatchers
+    const dispatchAM = internalShifts.find(s => s.shift_type === 'DISPATCH AM');
+    const dispatchPM = internalShifts.find(s => s.shift_type === 'DISPATCH PM');
+    const openName = dispatchAM ? `${dispatchAM.first_name} ${dispatchAM.last_name}` : '________';
+    const closeName = dispatchPM ? `${dispatchPM.first_name} ${dispatchPM.last_name}` : '________';
+
+    // Format date
+    const dateLabel = format(parseISO(planDate), 'EEEE, MMMM d, yyyy');
+
+    // Build filtered + sorted rows
+    const rtsRows = sortedRows
+      .filter(row => {
+        const type = (row.shiftType || '').toUpperCase();
+        if (EXCLUDED_TYPES.has(type)) return false;
+        const rc = (row.asgn?.route_code || row.routeCode || '').toUpperCase();
+        if (rc.startsWith('AT')) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const sa = (loadoutMap[a.routeCode]?.staging || a.asgn?.staging_override || 'ZZZ').toUpperCase();
+        const sb = (loadoutMap[b.routeCode]?.staging || b.asgn?.staging_override || 'ZZZ').toUpperCase();
+        return sa.localeCompare(sb);
+      });
+
+    // Header rows
+    const aoa = [
+      ['Last Mile DSP — DMF5', '', '', '', '', '', '', ''],
+      [dateLabel, '', '', '', '', '', `OPEN: ${openName}`, ''],
+      ['', '', '', '', '', '', `CLOSE: ${closeName}`, ''],
+      [],
+      ['#', 'DRIVER NAME', 'VEHICLE #', 'DEVICE #', 'POWER BANK', 'STAGING', 'WAVE / CANOPY', 'RTS TIME', 'STATUS'],
     ];
 
-    const dataRows = sortedRows.map((row, i) => {
-      const staffId    = row.profile?.staff_id || null;
-      const asgn       = row.asgn || (staffId ? (assignments[staffId] || {}) : {});
-      const loadout    = loadoutMap[row.routeCode] || row.loadout || {};
+    // Data rows
+    rtsRows.forEach((row, i) => {
+      const staffId = row.profile?.staff_id || null;
+      const asgn = row.asgn || (staffId ? (assignments[staffId] || {}) : {});
+      const loadout = loadoutMap[row.routeCode] || row.loadout || {};
       const vehicleObj = vehicles.find(v => v.id === asgn.vehicle_id);
+      const name = row.name || '';
+      const parts = name.split(/\s+/);
+      const lastName = parts.length > 1 ? parts.slice(-1)[0] : parts[0] || '';
+      const firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+      const driverName = `${lastName}, ${firstName}`.toUpperCase();
 
-      // EFT calculation (same as renderRow)
-      const effectiveRoute = asgn.route_code || row.routeCode || '';
-      const waveTime   = loadout.waveTime || null;
-      const durationMin = effectiveRoute ? durationByRoute[effectiveRoute] : null;
-      const departTime  = waveTime ? addMinutesToTime(waveTime, 30) : null;
-      const eftTime     = departTime && durationMin ? addMinutesToTime(departTime, durationMin) : null;
+      const wave = loadout.wave || '';
+      const canopyInitial = (loadout.canopy || '')[0] || '';
+      const waveCanopy = wave ? `${wave}${canopyInitial ? ' ' + canopyInitial : ''}` : canopyInitial;
 
-      return [
+      const shift = staffId ? shiftByStaffId[staffId] : null;
+      const att = shift?.attendance_status ? (ATT_MAP[shift.attendance_status] || '') : '';
+
+      aoa.push([
         i + 1,
-        row.name || '',
-        row.transponderId || '',
-        row.shiftType || '',
-        row.routeCode || '',
+        driverName,
         vehicleObj?.vehicle_name || '',
         asgn.device_id || '',
-        loadout.canopy || '',
-        shortLaunchpad(loadout.launchpad || row.launchpad || ''),
-        loadout.staging || '',
-        loadout.wave || row.wave || '',
-        loadout.waveTime || row.waveTime || '',
-        eftTime ? formatTime12h(eftTime) : '',
-        asgn.finish_time || '',
-        STATUS_LABELS[row.status] || row.status || '',
-      ];
+        '',
+        loadout.staging || asgn.staging_override || '',
+        waveCanopy,
+        '',
+        att,
+      ]);
     });
 
-    const aoa = [headers, ...dataRows];
-    const ws  = XLSX.utils.aoa_to_sheet(aoa);
+    // Extras section
+    aoa.push([]);
+    aoa.push(['EXTRAS / CALL OUTS / NOTES:']);
+    aoa.push([]);
+    aoa.push([]);
+    aoa.push([]);
 
-    // Column widths (characters)
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Column widths
     ws['!cols'] = [
-      { wch: 5 },  { wch: 26 }, { wch: 18 }, { wch: 13 }, { wch: 12 },
-      { wch: 16 }, { wch: 14 }, { wch: 9 },  { wch: 11 }, { wch: 12 },
-      { wch: 7 },  { wch: 11 }, { wch: 10 }, { wch: 14 }, { wch: 16 },
+      { wch: 4 }, { wch: 24 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
+      { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 8 },
     ];
 
-    // Freeze top row
-    ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+    // Row heights
+    ws['!rows'] = aoa.map((_, i) => ({ hpt: i < 4 ? 18 : i === 4 ? 20 : 22 }));
 
-    // Auto-filter on entire header row
-    ws['!autofilter'] = { ref: ws['!ref'] };
+    // Freeze header row (row 5 = index 4)
+    ws['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
 
-    // Header row styling (bold + light-blue fill)
-    for (let c = 0; c < headers.length; c++) {
-      const addr = XLSX.utils.encode_cell({ r: 0, c });
-      if (!ws[addr]) continue;
-      ws[addr].s = {
-        fill:      { fgColor: { rgb: 'DBEAFE' }, patternType: 'solid' },
-        font:      { bold: true, sz: 11 },
-        alignment: { horizontal: 'center', vertical: 'center', wrapText: false },
-        border:    { bottom: { style: 'thin', color: { rgb: '93C5FD' } } },
-      };
-    }
-
-    // Alternate row shading (every even data row — row index 2, 4, 6…)
-    for (let r = 2; r < aoa.length; r += 2) {
-      for (let c = 0; c < headers.length; c++) {
-        const addr = XLSX.utils.encode_cell({ r, c });
-        if (!ws[addr]) ws[addr] = { t: 's', v: '' };
-        ws[addr].s = { fill: { fgColor: { rgb: 'F0F9FF' }, patternType: 'solid' } };
-      }
-    }
-
-    const sheetName = `Ops Planner ${planDate}`;
+    const sheetName = `RTS ${planDate}`;
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
-    XLSX.writeFile(wb, `OpsPlanner_${planDate}.xlsx`, { cellStyles: true });
-    toast.success(`Exported ${sortedRows.length} rows to OpsPlanner_${planDate}.xlsx`);
+    XLSX.writeFile(wb, `RTS_Sheet_${planDate}.xlsx`);
+    toast.success(`Exported RTS sheet — ${rtsRows.length} drivers`);
   };
 
   // ── Add Driver to Ops Planner ───────────────────────────────────────────────

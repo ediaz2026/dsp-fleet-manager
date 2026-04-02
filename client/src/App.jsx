@@ -24,6 +24,7 @@ import ResetPassword from './pages/ResetPassword';
 import AcceptInvitation from './pages/AcceptInvitation';
 import DriverToday from './pages/DriverToday';
 import DriverProfile from './pages/DriverProfile';
+import SignOutSheet from './pages/SignOutSheet';
 import DriverLayout from './components/DriverLayout';
 
 const MGMT_ROLES = ['manager', 'admin', 'dispatcher'];
@@ -63,6 +64,7 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/accept-invitation/:token" element={<AcceptInvitation />} />
+        <Route path="/sign-out-sheet" element={<RequireAuth><SignOutSheet /></RequireAuth>} />
 
         {/* Protected routes */}
         <Route path="/" element={<RequireAuth allowedRoles={MGMT_ROLES}><Layout /></RequireAuth>}>

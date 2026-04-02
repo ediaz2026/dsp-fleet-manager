@@ -2536,104 +2536,62 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     return s;
   }, [section1Rows]);
 
-  // ── Export RTS Sheet ─────────────────────────────────────────────────────────
-  const handleExport = () => {
-    if (!sortedRows.length) return;
-
-    const EXCLUDED_TYPES = new Set(['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING', 'DISPATCH AM', 'DISPATCH PM']);
-    const ATT_MAP = { ncns: 'NCNS', late: 'LATE', called_out: 'CO' };
-
-    // Find dispatchers
-    const dispatchAM = internalShifts.find(s => s.shift_type === 'DISPATCH AM');
-    const dispatchPM = internalShifts.find(s => s.shift_type === 'DISPATCH PM');
-    const openName = dispatchAM ? `${dispatchAM.first_name} ${dispatchAM.last_name}` : '________';
-    const closeName = dispatchPM ? `${dispatchPM.first_name} ${dispatchPM.last_name}` : '________';
-
-    // Format date
+  // ── Sign-Out Sheet helpers ───────────────────────────────────────────────────
+  const getSignOutData = () => {
+    const EX = new Set(['ON CALL','UTO','PTO','SUSPENSION','TRAINING','DISPATCH AM','DISPATCH PM']);
+    const ATT = { ncns: 'NCNS', late: 'LATE', called_out: 'CALL OUT' };
+    const dispAM = internalShifts.filter(s => s.shift_type === 'DISPATCH AM').map(s => `${s.first_name} ${s.last_name}`);
+    const dispPM = internalShifts.filter(s => s.shift_type === 'DISPATCH PM').map(s => `${s.first_name} ${s.last_name}`);
     const dateLabel = format(parseISO(planDate), 'EEEE, MMMM d, yyyy');
-
-    // Build filtered + sorted rows
-    const rtsRows = sortedRows
-      .filter(row => {
-        const type = (row.shiftType || '').toUpperCase();
-        if (EXCLUDED_TYPES.has(type)) return false;
-        const rc = (row.asgn?.route_code || row.routeCode || '').toUpperCase();
-        if (rc.startsWith('AT')) return false;
-        return true;
-      })
+    const rows = sortedRows
+      .filter(r => !EX.has((r.shiftType||'').toUpperCase()) && !(r.asgn?.route_code||r.routeCode||'').toUpperCase().startsWith('AT'))
       .sort((a, b) => {
-        const sa = (loadoutMap[a.routeCode]?.staging || a.asgn?.staging_override || 'ZZZ').toUpperCase();
-        const sb = (loadoutMap[b.routeCode]?.staging || b.asgn?.staging_override || 'ZZZ').toUpperCase();
-        return sa.localeCompare(sb);
+        const la = loadoutMap[a.routeCode] || {}, lb = loadoutMap[b.routeCode] || {};
+        const wa = la.wave || '', wb_ = lb.wave || '';
+        const ca = (la.canopy||'')[0]||'', cb = (lb.canopy||'')[0]||'';
+        const sa = `${wa}${ca}`, sb = `${wb_}${cb}`;
+        return sa.localeCompare(sb, undefined, {numeric:true}) || (a.routeCode||'').localeCompare(b.routeCode||'', undefined, {numeric:true});
+      })
+      .map((row, i) => {
+        const sid = row.profile?.staff_id || null;
+        const asgn = row.asgn || (sid ? (assignments[sid]||{}) : {});
+        const lo = loadoutMap[row.routeCode] || row.loadout || {};
+        const v = vehicles.find(x => x.id === asgn.vehicle_id);
+        const wave = lo.wave || '';
+        const ci = (lo.canopy||'')[0]||'';
+        const station = wave ? `W${wave.replace(/\D/g,'')}${ci?'-'+ci:''}` : ci;
+        const shift = sid ? shiftByStaffId[sid] : null;
+        const att = shift?.attendance_status ? (ATT[shift.attendance_status]||'') : '';
+        return { num: i+1, route: asgn.route_code||row.routeCode||'', name: (row.name||'').toUpperCase(), van: v?.vehicle_name||'', device: asgn.device_id||'', staging: lo.staging||asgn.staging_override||'', station, att, attStatus: shift?.attendance_status||'' };
       });
+    return { dateLabel, dispAM, dispPM, rows };
+  };
 
-    // Header rows
+  const handlePrintSignOut = () => { window.open(`/sign-out-sheet?date=${planDate}`, '_blank'); };
+
+  const handleExport = () => {
+    const { dateLabel, dispAM, dispPM, rows } = getSignOutData();
+    if (!rows.length) return;
+    const openN = dispAM.length ? dispAM.join(' \\ ') : '________';
+    const closeN = dispPM.length ? dispPM.join(' \\ ') : '________';
     const aoa = [
-      ['Last Mile DSP — DMF5', '', '', '', '', '', '', ''],
-      [dateLabel, '', '', '', '', '', `OPEN: ${openName}`, ''],
-      ['', '', '', '', '', '', `CLOSE: ${closeName}`, ''],
+      [dateLabel, '', '', 'Last Mile DSP — DMF5', '', '', '', '', '', `OPEN: ${openN}`, ''],
+      ['', '', '', '', '', '', '', '', '', `CLOSING: ${closeN}`, ''],
       [],
-      ['#', 'DRIVER NAME', 'VEHICLE #', 'DEVICE #', 'POWER BANK', 'STAGING', 'WAVE / CANOPY', 'RTS TIME', 'STATUS'],
+      ['#','ROUTE','DELIVERY ASSOCIATE','VAN #','DEVICE #','POWER BANK #','STG #','SIGNATURE','RTS TIME','STATION','EXTRAS'],
     ];
-
-    // Data rows
-    rtsRows.forEach((row, i) => {
-      const staffId = row.profile?.staff_id || null;
-      const asgn = row.asgn || (staffId ? (assignments[staffId] || {}) : {});
-      const loadout = loadoutMap[row.routeCode] || row.loadout || {};
-      const vehicleObj = vehicles.find(v => v.id === asgn.vehicle_id);
-      const name = row.name || '';
-      const parts = name.split(/\s+/);
-      const lastName = parts.length > 1 ? parts.slice(-1)[0] : parts[0] || '';
-      const firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
-      const driverName = `${lastName}, ${firstName}`.toUpperCase();
-
-      const wave = loadout.wave || '';
-      const canopyInitial = (loadout.canopy || '')[0] || '';
-      const waveCanopy = wave ? `${wave}${canopyInitial ? ' ' + canopyInitial : ''}` : canopyInitial;
-
-      const shift = staffId ? shiftByStaffId[staffId] : null;
-      const att = shift?.attendance_status ? (ATT_MAP[shift.attendance_status] || '') : '';
-
-      aoa.push([
-        i + 1,
-        driverName,
-        vehicleObj?.vehicle_name || '',
-        asgn.device_id || '',
-        '',
-        loadout.staging || asgn.staging_override || '',
-        waveCanopy,
-        '',
-        att,
-      ]);
-    });
-
-    // Extras section
-    aoa.push([]);
-    aoa.push(['EXTRAS / CALL OUTS / NOTES:']);
-    aoa.push([]);
-    aoa.push([]);
-    aoa.push([]);
+    for (const r of rows) aoa.push([r.num, r.route, r.name, r.van, r.device, '', r.staging, '', '', r.station, r.att]);
+    aoa.push([]); aoa.push(['CALL OUTS / NOTES:']); aoa.push([]); aoa.push([]); aoa.push([]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:4},{wch:9},{wch:24},{wch:8},{wch:8},{wch:11},{wch:10},{wch:18},{wch:9},{wch:9},{wch:11}];
+    ws['!rows'] = aoa.map((_,i) => ({ hpt: i < 3 ? 16 : i === 3 ? 18 : 22 }));
+    ws['!freeze'] = { xSplit:0, ySplit:4, topLeftCell:'A5', activePane:'bottomLeft', state:'frozen' };
 
-    // Column widths
-    ws['!cols'] = [
-      { wch: 4 }, { wch: 24 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
-      { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 8 },
-    ];
-
-    // Row heights
-    ws['!rows'] = aoa.map((_, i) => ({ hpt: i < 4 ? 18 : i === 4 ? 20 : 22 }));
-
-    // Freeze header row (row 5 = index 4)
-    ws['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
-
-    const sheetName = `RTS ${planDate}`;
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
-    XLSX.writeFile(wb, `RTS_Sheet_${planDate}.xlsx`);
-    toast.success(`Exported RTS sheet — ${rtsRows.length} drivers`);
+    XLSX.utils.book_append_sheet(wb, ws, `SignOut ${planDate}`);
+    XLSX.writeFile(wb, `SignOut_${planDate}.xlsx`);
+    toast.success(`Exported sign-out sheet — ${rows.length} drivers`);
   };
 
   // ── Add Driver to Ops Planner ───────────────────────────────────────────────
@@ -3287,9 +3245,15 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             🗑 Clear Day
           </button>
           <button
+            onClick={handlePrintSignOut}
+            disabled={sortedRows.length === 0}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-card-border bg-white hover:border-primary text-content-muted hover:text-primary font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            🖨️ Print
+          </button>
+          <button
             onClick={handleExport}
             disabled={sortedRows.length === 0}
-            title={sortedRows.length ? `Export ${sortedRows.length} rows to Excel` : 'No data to export'}
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-card-border bg-white hover:border-primary text-content-muted hover:text-primary font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Download size={14} /> Export

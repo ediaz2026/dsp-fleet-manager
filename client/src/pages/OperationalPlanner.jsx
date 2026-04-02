@@ -2522,6 +2522,13 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   const [showLegend, setShowLegend] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [removeConfirm, setRemoveConfirm] = useState(null); // { staffId, displayName }
+  const [rowActionMenu, setRowActionMenu] = useState(null); // key of open row menu
+  useEffect(() => {
+    if (!rowActionMenu) return;
+    const h = () => setRowActionMenu(null);
+    document.addEventListener('click', h);
+    return () => document.removeEventListener('click', h);
+  }, [rowActionMenu]);
 
   const availableDates = rosterData?.available_dates || [];
 
@@ -2554,7 +2561,14 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         ['#','ROUTE','DELIVERY ASSOCIATE','VAN #','DEVICE #','POWER BANK #','STG #','SIGNATURE','RTS TIME','STATION','EXTRAS'],
       ];
       rows.forEach((r, i) => aoa.push([i + 1, r.route, r.name, r.van, r.device, '', r.staging, '', '', r.station, r.att]));
-      aoa.push([]); aoa.push(['CALL OUTS / NOTES:']); aoa.push([]); aoa.push([]); aoa.push([]);
+      // Attendance issues
+      const issues = (data.attIssues || []);
+      aoa.push([]);
+      if (issues.length > 0) {
+        aoa.push(['ATTENDANCE ISSUES:']);
+        for (const r of issues) aoa.push([`${r.att}: ${r.name} — ${r.route}`]);
+      }
+      aoa.push([]); aoa.push(['CALL OUTS / NOTES:']); aoa.push([]); aoa.push([]);
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       ws['!cols'] = [{wch:4},{wch:9},{wch:24},{wch:8},{wch:8},{wch:11},{wch:10},{wch:18},{wch:9},{wch:9},{wch:11}];
@@ -2674,6 +2688,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       const displayName = resolvedDA?.name || asgn.name_override || row.name;
       const displayTid  = resolvedDA?.transponderId || row.transponderId;
       const isRescued   = displayName && rescueCountByName[displayName] > 0;
+      const attSt = staffId ? shiftByStaffId[staffId]?.attendance_status : null;
+      const attBorder = attSt === 'ncns' ? 'border-l-4 border-red-500' : attSt === 'called_out' ? 'border-l-4 border-orange-400' : attSt === 'late' ? 'border-l-4 border-yellow-400' : '';
       const rowBg = isRescued
         ? 'bg-orange-50 hover:bg-orange-100'
         : (ROW_BG[row.status] || 'hover:bg-slate-50');
@@ -2796,7 +2812,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       if (staffId) excludeIds.delete(staffId);
 
       return (
-        <tr key={key} className={`transition-colors text-xs group/row ${rowBg}`}>
+        <tr key={key} className={`transition-colors text-xs group/row ${rowBg} ${attBorder}`}>
           <td className="px-2 py-2 text-center font-mono text-[10px] text-content-muted select-none">
             {staffId ? (
               <>
@@ -2923,26 +2939,51 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             );
           })()}
 
-          {/* Rescue button + badges */}
-          <td className="px-2 py-2 text-center whitespace-nowrap">
-            <button
-              onClick={() => {
-                setRescueModal({ staffId, displayName, effectiveRoute });
-                setRescueForm({ rescuerId: null, rescuerName: '', rescueTime: '', packages: '', reason: '', notes: '' });
-              }}
-              className="px-1.5 py-0.5 rounded text-sm hover:bg-orange-100 transition-colors"
-              title="Log rescue"
-            >🚨</button>
-            {rescueCountByName[displayName] > 0 && (
-              <span className="ml-0.5 text-[9px] font-bold text-orange-600 align-middle">
-                ×{rescueCountByName[displayName]}
-              </span>
-            )}
-            {creditCountByName[displayName] > 0 && (
-              <span className="ml-1 text-[9px] font-bold text-blue-600 align-middle">
-                💪×{creditCountByName[displayName]}
-              </span>
-            )}
+          {/* Actions dropdown */}
+          <td className="px-1 py-2 text-center whitespace-nowrap">
+            <div className="relative inline-block">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRowActionMenu(prev => prev === key ? null : key);
+                }}
+                className="px-1.5 py-0.5 rounded text-xs hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-700"
+              >▼</button>
+              {rowActionMenu === key && (
+                <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1 text-left" onClick={e => e.stopPropagation()}>
+                  <p className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase">Attendance</p>
+                  {[{s:'late',l:'Late',ic:'🟡'},{s:'called_out',l:'Call Out',ic:'🟠'},{s:'ncns',l:'NCNS',ic:'🔴'}].map(({s,l,ic}) => {
+                    const shift = staffId ? shiftByStaffId[staffId] : null;
+                    const isActive = shift?.attendance_status === s;
+                    return (
+                      <button key={s} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 transition-colors"
+                        onClick={async () => {
+                          setRowActionMenu(null);
+                          if (staffId && shift) {
+                            const newStatus = isActive ? 'present' : s;
+                            await api.post('/attendance', { staff_id: staffId, shift_id: shift.id, attendance_date: planDate, status: newStatus });
+                            qc.invalidateQueries({ queryKey: ['shifts-daily', planDate] });
+                            toast.success(isActive ? `Unmarked ${displayName}` : `Marked ${displayName} as ${l}`);
+                          }
+                        }}>
+                        <span>{ic}</span><span>{l}</span>{isActive && <span className="ml-auto text-green-600">✓</span>}
+                      </button>
+                    );
+                  })}
+                  <div className="border-t border-slate-100 my-1" />
+                  <button className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
+                    onClick={() => { setRowActionMenu(null); setRescueModal({ staffId, displayName, effectiveRoute }); setRescueForm({ rescuerId: null, rescuerName: '', rescueTime: '', packages: '', reason: '', notes: '' }); }}>
+                    <span>🚨</span><span>Log Rescue</span>
+                    {rescueCountByName[displayName] > 0 && <span className="ml-auto text-[9px] font-bold text-orange-600">×{rescueCountByName[displayName]}</span>}
+                  </button>
+                  <div className="border-t border-slate-100 my-1" />
+                  <button className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-500 hover:bg-red-50 transition-colors"
+                    onClick={() => { setRowActionMenu(null); if (staffId) setRemoveConfirm({ staffId, displayName }); }}>
+                    <span>🗑️</span><span>Remove Driver</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </td>
         </tr>
       );
@@ -3111,7 +3152,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
                 })()}
                 <SortHeader col="rts" label="RTS" className="text-center" />
                 {pickListData.length > 0 && <SortHeader col="pickList" label="Pick List" />}
-                <th className="px-2 py-2.5 text-center">Rescue</th>
+                <th className="px-2 py-2.5 text-center w-10">▼</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">

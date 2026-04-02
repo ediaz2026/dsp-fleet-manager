@@ -96,8 +96,24 @@ export default function SignOutSheet() {
         </tbody>
       </table>
 
-      <div style={{ marginTop: 16, fontSize: 10, fontWeight: 'bold' }}>CALL OUTS / NOTES:</div>
-      <div style={{ borderBottom: '1px solid #ccc', marginTop: 12, height: 16 }} />
+      {/* Attendance Issues */}
+      {(data?.attIssues?.length > 0) ? (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 6 }}>ATTENDANCE ISSUES:</div>
+          {data.attIssues.map((r, i) => {
+            const ac = attColor(r.attStatus);
+            return (
+              <div key={i} style={{ fontSize: 9, padding: '3px 8px', marginBottom: 2, borderRadius: 3, ...ac }}>
+                <strong>{r.att}:</strong> {r.name} — {r.route}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ marginTop: 16, fontSize: 10, fontWeight: 'bold' }}>ATTENDANCE ISSUES: None</div>
+      )}
+
+      <div style={{ marginTop: 12, fontSize: 10, fontWeight: 'bold' }}>CALL OUTS / NOTES:</div>
       <div style={{ borderBottom: '1px solid #ccc', marginTop: 12, height: 16 }} />
       <div style={{ borderBottom: '1px solid #ccc', marginTop: 12, height: 16 }} />
 

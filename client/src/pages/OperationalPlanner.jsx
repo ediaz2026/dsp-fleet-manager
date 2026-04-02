@@ -2564,9 +2564,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       // Build extras cells for EXTRAS column
       const ex = data.extras || {};
       const extrasCells = [];
-      // Blank notes section
-      extrasCells.push('NOTES:');
-      for (let j = 0; j < 5; j++) extrasCells.push('');
+      // Blank rows at top for manual notes
+      for (let j = 0; j < 6; j++) extrasCells.push('');
       const secs = [
         { label: 'CALL OUTS:', min: 5, items: ex.callOuts || [] },
         { label: 'NO CALL NO SHOW:', min: 5, items: ex.ncns || [] },

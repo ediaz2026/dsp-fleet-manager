@@ -11,9 +11,8 @@ const HDR_S = { background: '#1a3a5c', color: '#fff', fontWeight: 'bold', fontSi
 
 function buildExtrasColumn(extras) {
   const cells = [];
-  // Blank notes rows at top
-  cells.push({ text: 'NOTES:', isHeader: true, navy: true });
-  for (let j = 0; j < 5; j++) cells.push({ text: '', isHeader: false });
+  // Blank rows at top for manual notes
+  for (let j = 0; j < 6; j++) cells.push({ text: '', isHeader: false });
   // Attendance sections
   const sections = [
     { label: 'CALL OUTS:', min: 5, items: extras.callOuts || [] },

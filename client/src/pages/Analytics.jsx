@@ -9,7 +9,7 @@ import {
   ChevronLeft, ChevronRight, Download, BarChart2, TrendingUp,
   AlertTriangle, Users, Shield, X, Filter,
 } from 'lucide-react';
-import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, addWeeks, addMonths, subMonths, getDaysInMonth } from 'date-fns';
+import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, addWeeks, addMonths, subMonths, subDays, getDaysInMonth } from 'date-fns';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 
@@ -135,6 +135,67 @@ function VolumeShareTab() {
     },
     enabled: vsView === 'week' || vsView === 'month',
   });
+
+  // Trend data — last 30 days for line chart
+  const trendStart = format(subDays(new Date(), 30), 'yyyy-MM-dd');
+  const trendEnd = format(new Date(), 'yyyy-MM-dd');
+  const { data: trendRaw = [] } = useQuery({
+    queryKey: ['volume-share-trend', trendStart],
+    queryFn: () => api.get('/analytics/volume-share', { params: { start: trendStart, end: trendEnd } }).then(r => r.data),
+    enabled: chartType === 'line',
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Build trend line data
+  const { trendLineData, trendDsps, trendInsight } = useMemo(() => {
+    if (!trendRaw.length) return { trendLineData: [], trendDsps: [], trendInsight: '' };
+    const allDsps = new Set();
+    for (const rec of trendRaw) {
+      const vol = typeof rec.volume === 'string' ? JSON.parse(rec.volume) : (rec.volume || {});
+      for (const dsp of Object.keys(vol)) allDsps.add(dsp);
+    }
+    const dsps = [...allDsps].sort((a, b) => a === 'LSMD' ? -1 : b === 'LSMD' ? 1 : a.localeCompare(b));
+    const lineData = trendRaw.map(rec => {
+      const vol = typeof rec.volume === 'string' ? JSON.parse(rec.volume) : (rec.volume || {});
+      const point = { date: format(parseISO(String(rec.plan_date).slice(0, 10)), 'M/d') };
+      for (const dsp of dsps) point[dsp] = vol[dsp] || 0;
+      return point;
+    });
+    // Insight — compare LSMD first half vs second half
+    let insight = '';
+    if (lineData.length >= 4) {
+      const mid = Math.floor(lineData.length / 2);
+      const first = lineData.slice(0, mid).reduce((s, p) => s + (p.LSMD || 0), 0) / mid;
+      const second = lineData.slice(mid).reduce((s, p) => s + (p.LSMD || 0), 0) / (lineData.length - mid);
+      const change = first > 0 ? ((second - first) / first * 100).toFixed(1) : 0;
+      insight = `LSMD averaged ${second.toFixed(0)} routes over the last ${lineData.length - mid} days (${change > 0 ? '+' : ''}${change}% vs prior period).`;
+    }
+    return { trendLineData: lineData, trendDsps: dsps, trendInsight: insight };
+  }, [trendRaw]);
+
+  // Trend arrows for table — compare current period vs previous
+  const trendArrows = useMemo(() => {
+    if (trendRaw.length < 4) return {};
+    const mid = Math.floor(trendRaw.length / 2);
+    const arrows = {};
+    const allDsps = new Set();
+    const firstHalf = {}, secondHalf = {};
+    for (let i = 0; i < trendRaw.length; i++) {
+      const vol = typeof trendRaw[i].volume === 'string' ? JSON.parse(trendRaw[i].volume) : (trendRaw[i].volume || {});
+      for (const [dsp, count] of Object.entries(vol)) {
+        allDsps.add(dsp);
+        const target = i < mid ? firstHalf : secondHalf;
+        target[dsp] = (target[dsp] || 0) + Number(count);
+      }
+    }
+    for (const dsp of allDsps) {
+      const prev = (firstHalf[dsp] || 0) / mid;
+      const curr = (secondHalf[dsp] || 0) / (trendRaw.length - mid);
+      const changePct = prev > 0 ? ((curr - prev) / prev * 100) : 0;
+      arrows[dsp] = { pct: changePct.toFixed(1), dir: changePct > 5 ? 'up' : changePct < -5 ? 'down' : 'flat' };
+    }
+    return arrows;
+  }, [trendRaw]);
 
   // Day view navigation
   const dateStrs = dateList.map(d => String(d.plan_date).slice(0, 10)).sort();
@@ -265,7 +326,7 @@ function VolumeShareTab() {
 
         {/* Bar / Pie toggle */}
         <div className="flex border border-card-border rounded-lg overflow-hidden ml-2">
-          {['bar', 'pie'].map(t => (
+          {['bar', 'pie', 'line'].map(t => (
             <button key={t} onClick={() => setChartType(t)}
               className={`px-3 py-1.5 text-xs font-semibold capitalize transition-all ${chartType === t ? 'bg-primary text-white' : 'bg-white text-content-muted hover:bg-slate-50'}`}>
               {t}
@@ -299,6 +360,7 @@ function VolumeShareTab() {
                   <th className="pb-2 text-left">DSP</th>
                   <th className="pb-2 text-right">Routes</th>
                   <th className="pb-2 text-right">Share</th>
+                  <th className="pb-2 text-right">Trend</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -308,6 +370,14 @@ function VolumeShareTab() {
                     <td className="py-2 text-right font-semibold">{r.count}</td>
                     <td className="py-2 text-right">
                       <span className={`font-bold ${r.dsp === 'LSMD' ? 'text-blue-600' : 'text-content-muted'}`}>{r.pct}%</span>
+                    </td>
+                    <td className="py-2 text-right text-[10px] pl-1 whitespace-nowrap">
+                      {trendArrows[r.dsp] && (() => {
+                        const t = trendArrows[r.dsp];
+                        const color = t.dir === 'up' ? 'text-green-600' : t.dir === 'down' ? 'text-red-500' : 'text-slate-400';
+                        const arrow = t.dir === 'up' ? '↑' : t.dir === 'down' ? '↓' : '→';
+                        return <span className={`font-semibold ${color}`}>{arrow} {t.pct > 0 ? '+' : ''}{t.pct}%</span>;
+                      })()}
                     </td>
                   </tr>
                 ))}
@@ -329,7 +399,7 @@ function VolumeShareTab() {
                   <Bar dataKey="value" radius={[4, 4, 0, 0]}>{chartData.map((c, i) => <Cell key={i} fill={c.fill} />)}</Bar>
                 </BarChart>
               </ResponsiveContainer>
-            ) : (
+            ) : chartType === 'pie' ? (
               <ResponsiveContainer width="100%" height={280}>
                 <PieChart>
                   <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100}>
@@ -339,6 +409,23 @@ function VolumeShareTab() {
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
+            ) : (
+              <div>
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={trendLineData} margin={{ top: 4, right: 8, left: -20, bottom: 4 }}>
+                    <XAxis dataKey="date" tick={{ fontSize: 9 }} interval={Math.max(0, Math.floor(trendLineData.length / 8))} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip />
+                    {trendDsps.map((dsp, i) => (
+                      <Line key={dsp} type="monotone" dataKey={dsp} dot={false}
+                        stroke={dsp === 'LSMD' ? LSMD_COLOR : DSP_COLORS[i % DSP_COLORS.length]}
+                        strokeWidth={dsp === 'LSMD' ? 3 : 1.5}
+                        strokeOpacity={dsp === 'LSMD' ? 1 : 0.5} />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+                {trendInsight && <p className="text-xs text-content-muted mt-2 italic">{trendInsight}</p>}
+              </div>
             )}
           </Card>
         </div>

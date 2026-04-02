@@ -2560,25 +2560,36 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         [],
         ['#','ROUTE','DELIVERY ASSOCIATE','VAN','DEV','PWR BNK','STG','SIGNATURE','RTS','STN','EXTRAS'],
       ];
-      rows.forEach((r, i) => aoa.push([i + 1, r.route, r.name, r.van, r.device, '', r.staging, '', '', r.station, r.att]));
-      // Extras — structured sections in EXTRAS column (col 11)
+      // Build extras cells for EXTRAS column
       const ex = data.extras || {};
-      const e = (label) => ['','','','','','','','','','', label];
-      const sections = [
+      const extrasCells = [];
+      const secs = [
         { label: 'EXTRAS:', min: 8, items: ex.helpers || [] },
         { label: 'CALL OUTS:', min: 5, items: ex.callOuts || [] },
         { label: 'NO CALL NO SHOW:', min: 5, items: ex.ncns || [] },
         { label: 'LATE:', min: 8, items: ex.lates || [] },
         { label: 'TRAINING:', min: 5, items: ex.training || [] },
       ];
-      for (const sec of sections) {
-        aoa.push(e(sec.label));
-        const count = Math.max(sec.min, sec.items.length);
-        for (let j = 0; j < count; j++) aoa.push(e(sec.items[j] || ''));
+      for (const sec of secs) {
+        extrasCells.push(sec.label);
+        const cnt = Math.max(sec.min, sec.items.length);
+        for (let j = 0; j < cnt; j++) extrasCells.push(sec.items[j] || '');
+      }
+
+      // Merge driver rows with extras column
+      const totalRows = Math.max(rows.length, extrasCells.length);
+      for (let i = 0; i < totalRows; i++) {
+        const r = rows[i];
+        const ec = extrasCells[i] || '';
+        if (r) {
+          aoa.push([i + 1, r.route, r.name, r.van, r.device, '', r.staging, '', '', r.station, ec || r.att]);
+        } else {
+          aoa.push(['', '', '', '', '', '', '', '', '', '', ec]);
+        }
       }
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws['!cols'] = [{wch:3},{wch:8},{wch:22},{wch:6},{wch:5},{wch:8},{wch:9},{wch:14},{wch:6},{wch:6},{wch:9}];
+      ws['!cols'] = [{wch:3},{wch:8},{wch:22},{wch:6},{wch:5},{wch:8},{wch:9},{wch:14},{wch:6},{wch:6},{wch:25}];
       ws['!rows'] = aoa.map((_,i) => ({ hpt: i < 3 ? 14 : i === 3 ? 16 : 18 }));
       ws['!freeze'] = { xSplit:0, ySplit:4, topLeftCell:'A5', activePane:'bottomLeft', state:'frozen' };
       const wb = XLSX.utils.book_new();

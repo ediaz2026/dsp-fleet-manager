@@ -2590,7 +2590,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       }
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws['!cols'] = [{wch:3},{wch:8},{wch:22},{wch:6},{wch:5},{wch:8},{wch:9},{wch:14},{wch:6},{wch:6},{wch:25}];
+      ws['!cols'] = [{wch:3},{wch:8},{wch:22},{wch:6},{wch:5},{wch:8},{wch:8},{wch:14},{wch:6},{wch:5},{wch:20}];
       ws['!rows'] = aoa.map((_,i) => ({ hpt: i < 3 ? 14 : i === 3 ? 16 : 18 }));
       ws['!freeze'] = { xSplit:0, ySplit:4, topLeftCell:'A5', activePane:'bottomLeft', state:'frozen' };
       const wb = XLSX.utils.book_new();

@@ -94,11 +94,11 @@ export default function SignOutSheet() {
           <col style={{ width: 38 }} />
           <col style={{ width: 38 }} />
           <col style={{ width: 48 }} />
-          <col style={{ width: 52 }} />
+          <col style={{ width: 45 }} />
           <col style={{ width: 80 }} />
           <col style={{ width: 38 }} />
-          <col style={{ width: 36 }} />
-          <col style={{ width: 180 }} />
+          <col style={{ width: 32 }} />
+          <col style={{ width: 150 }} />
         </colgroup>
         <thead>
           <tr>{['#','ROUTE','DELIVERY ASSOCIATE','VAN','DEV','PWR BNK','STG','SIGNATURE','RTS','STN','EXTRAS'].map(h => <th key={h} style={HDR_S}>{h}</th>)}</tr>

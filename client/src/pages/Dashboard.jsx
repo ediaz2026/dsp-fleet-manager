@@ -396,26 +396,30 @@ export default function Dashboard() {
           GROUP 3 — PEOPLE
       ════════════════════════════════════════════════════════════ */}
       <GroupHeader label="People" />
-      <div className="grid grid-cols-3 gap-2.5">
+      <div className="grid grid-cols-5 gap-2.5">
 
-        {/* Total Drivers Scheduled */}
-        <StatCard
-          title="Drivers Scheduled"
-          value={parseInt(driversScheduled.total || 0)}
-          subtitle="working today"
-          icon={Users}
-          tint={parseInt(driversScheduled.total || 0) > 0 ? 'success' : 'neutral'}
-          extra={(() => {
-            const ds = driversScheduled;
-            const parts = [];
-            if (parseInt(ds.edv || 0)) parts.push(`EDV: ${ds.edv}`);
-            if (parseInt(ds.step_van || 0)) parts.push(`SV: ${ds.step_van}`);
-            if (parseInt(ds.helper || 0)) parts.push(`Helper: ${ds.helper}`);
-            if (parseInt(ds.extra || 0)) parts.push(`Extra: ${ds.extra}`);
-            return parts.length ? parts.join(' | ') : null;
-          })()}
-          onClick={() => navigate('/schedule')}
-        />
+        {/* Rostered */}
+        {(() => {
+          const ds = driversScheduled;
+          const rostered = parseInt(ds.edv||0) + parseInt(ds.step_van||0) + parseInt(ds.helper||0) + parseInt(ds.extra||0);
+          const parts = [];
+          if (parseInt(ds.edv||0)) parts.push(`EDV: ${ds.edv}`);
+          if (parseInt(ds.step_van||0)) parts.push(`SV: ${ds.step_van}`);
+          if (parseInt(ds.helper||0)) parts.push(`Helper: ${ds.helper}`);
+          if (parseInt(ds.extra||0)) parts.push(`Extra: ${ds.extra}`);
+          return <StatCard title="Rostered" value={rostered} subtitle="rostered today" icon={Users}
+            tint={rostered > 0 ? 'success' : 'neutral'} extra={parts.join(' | ') || null} onClick={() => navigate('/schedule')} />;
+        })()}
+
+        {/* Dispatchers */}
+        {(() => {
+          const am = todayShifts.filter(s => s.shift_type === 'DISPATCH AM').map(s => `${s.first_name} ${s.last_name}`);
+          const pm = todayShifts.filter(s => s.shift_type === 'DISPATCH PM').map(s => `${s.first_name} ${s.last_name}`);
+          const total = am.length + pm.length;
+          const extra = `AM: ${am[0] || '—'}\nPM: ${pm[0] || '—'}`;
+          return <StatCard title="Dispatchers" value={total} subtitle="on duty today" icon={Users}
+            tint={total > 0 ? 'success' : 'neutral'} extra={extra} onClick={() => navigate('/schedule')} />;
+        })()}
 
         {/* Weekly Attendance */}
         <StatCard

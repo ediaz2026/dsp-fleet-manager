@@ -2561,12 +2561,13 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         ['#','ROUTE','DELIVERY ASSOCIATE','VAN','DEV','PWR BNK','STG','SIGNATURE','RTS','STN','EXTRAS'],
       ];
       rows.forEach((r, i) => aoa.push([i + 1, r.route, r.name, r.van, r.device, '', r.staging, '', '', r.station, r.att]));
-      // Extras section
+      // Extras — attendance under EXTRAS column (column 11)
       const ex = data.extras || {};
-      aoa.push([]);
-      aoa.push(['CALL OUTS:', (ex.callOuts || []).join(', ')]);
-      aoa.push(['LATES:', (ex.lates || []).join(', ')]);
-      aoa.push(['NCNS:', (ex.ncns || []).join(', ')]);
+      const mkExtra = (label, val) => ['','','','','','','','','','', `${label} ${(val||[]).join(', ')}`];
+      aoa.push(mkExtra('CALL OUTS:', ex.callOuts));
+      aoa.push(mkExtra('LATES:', ex.lates));
+      aoa.push(mkExtra('NCNS:', ex.ncns));
+      aoa.push(mkExtra('TRAINING:', ex.training));
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       ws['!cols'] = [{wch:3},{wch:8},{wch:22},{wch:6},{wch:5},{wch:8},{wch:9},{wch:14},{wch:6},{wch:6},{wch:9}];

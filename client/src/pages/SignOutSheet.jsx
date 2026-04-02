@@ -98,17 +98,26 @@ export default function SignOutSheet() {
         </tbody>
       </table>
 
-      {/* Extras/Attendance section */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 7, marginTop: 6 }}>
+      {/* Extras/Attendance — continuation rows under the EXTRAS column */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 7, tableLayout: 'fixed' }}>
+        <colgroup>
+          <col style={{ width: 18 }} /><col style={{ width: 48 }} /><col style={{ width: 125 }} />
+          <col style={{ width: 38 }} /><col style={{ width: 38 }} /><col style={{ width: 48 }} />
+          <col style={{ width: 52 }} /><col style={{ width: 80 }} /><col style={{ width: 38 }} />
+          <col style={{ width: 36 }} /><col style={{ width: 50 }} />
+        </colgroup>
         <tbody>
           {[
             { label: 'CALL OUTS:', val: extras.callOuts },
             { label: 'LATES:', val: extras.lates },
             { label: 'NCNS:', val: extras.ncns },
+            { label: 'TRAINING:', val: extras.training },
           ].map(({ label, val }, i) => (
             <tr key={i}>
-              <td style={{ border: BD, padding: '2px 4px', fontWeight: 'bold', fontSize: 7, width: 80, background: '#f0f0f0' }}>{label}</td>
-              <td style={{ border: BD, padding: '2px 4px', fontSize: 7, minHeight: 14 }}>{(val || []).join(', ') || ''}</td>
+              {Array.from({ length: 10 }, (_, c) => <td key={c} style={{ border: BD, padding: '1px 2px' }} />)}
+              <td style={{ border: BD, padding: '2px 3px', fontSize: 7 }}>
+                <span style={{ fontWeight: 'bold' }}>{label}</span> {(val || []).join(', ')}
+              </td>
             </tr>
           ))}
         </tbody>

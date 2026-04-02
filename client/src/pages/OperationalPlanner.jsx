@@ -2564,8 +2564,10 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       // Build extras cells for EXTRAS column
       const ex = data.extras || {};
       const extrasCells = [];
-      // Blank rows at top for manual notes
-      for (let j = 0; j < 6; j++) extrasCells.push('');
+      // Top rows: EXTRA drivers + blank for manual notes
+      const extraDrivers = ex.extraDrivers || [];
+      const topCount = Math.max(6, extraDrivers.length);
+      for (let j = 0; j < topCount; j++) extrasCells.push(extraDrivers[j] || '');
       const secs = [
         { label: 'CALL OUTS:', min: 5, items: ex.callOuts || [] },
         { label: 'NO CALL NO SHOW:', min: 5, items: ex.ncns || [] },

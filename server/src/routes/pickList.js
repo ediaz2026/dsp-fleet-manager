@@ -839,7 +839,7 @@ router.get('/sign-out-data', async (req, res) => {
 
   try {
     // Fetch all data sources in parallel
-    const [shiftsRes, routesRes, loadoutRes, asgnRes, vehiclesRes, driversRes, staffRes] = await Promise.all([
+    const [shiftsRes, routesRes, loadoutRes, asgnRes, vehiclesRes, driversRes, staffRes, attRes] = await Promise.all([
       pool.query(`SELECT s.*, st.first_name, st.last_name FROM shifts s JOIN staff st ON st.id = s.staff_id WHERE s.shift_date = $1`, [date]),
       pool.query(`SELECT routes FROM ops_daily_routes WHERE plan_date = $1`, [date]),
       pool.query(`SELECT loadout FROM ops_loadout WHERE plan_date = $1`, [date]),
@@ -847,6 +847,7 @@ router.get('/sign-out-data', async (req, res) => {
       pool.query(`SELECT id, vehicle_name, license_plate FROM vehicles`),
       pool.query(`SELECT d.staff_id, d.transponder_id, s.employee_id, s.first_name, s.last_name FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE s.status NOT IN ('terminated','deleted')`),
       pool.query(`SELECT id, first_name, last_name FROM staff WHERE status NOT IN ('terminated','deleted')`),
+      pool.query(`SELECT a.staff_id, a.status, s.first_name, s.last_name FROM attendance a JOIN staff s ON s.id = a.staff_id WHERE a.attendance_date = $1 AND a.status IN ('ncns','called_out','late')`, [date]),
     ]);
 
     const shifts = shiftsRes.rows;
@@ -856,10 +857,12 @@ router.get('/sign-out-data', async (req, res) => {
     const vehiclesList = vehiclesRes.rows;
     const driversList = driversRes.rows;
     const staffList = staffRes.rows;
+    const attRows = attRes.rows;
 
     // Build maps
     const shiftByStaff = {}; for (const s of shifts) shiftByStaff[s.staff_id] = s;
     const asgnByStaff = {}; for (const a of asgnArr) asgnByStaff[a.staff_id] = a;
+    const attByStaff = {}; for (const a of attRows) attByStaff[a.staff_id] = a;
     const loadoutMap = {}; for (const l of loadoutArr) loadoutMap[l.routeCode] = l;
     const tidToDriver = {};
     for (const d of driversList) {
@@ -920,7 +923,10 @@ router.get('/sign-out-data', async (req, res) => {
       }
       const waveNum = wave.replace(/\D/g, '');
       const station = waveNum ? `W${waveNum}${pad ? '-' + pad : ''}` : '';
-      const att = shift?.attendance_status ? (ATT_LABELS[shift.attendance_status] || '') : '';
+      // Use attendance table first, fallback to shift.attendance_status
+      const attRecord = attByStaff[staffId];
+      const attStatus = attRecord?.status || shift?.attendance_status || '';
+      const att = attStatus ? (ATT_LABELS[attStatus] || '') : '';
 
       rows.push({
         route: displayRoute,
@@ -930,7 +936,7 @@ router.get('/sign-out-data', async (req, res) => {
         staging: lo.staging || asgn?.staging_override || '',
         station,
         att,
-        attStatus: shift?.attendance_status || '',
+        attStatus,
       });
     }
 
@@ -958,11 +964,40 @@ router.get('/sign-out-data', async (req, res) => {
     // Sort by station then route
     rows.sort((a, b) => (a.station || 'ZZZ').localeCompare(b.station || 'ZZZ', undefined, { numeric: true }) || a.route.localeCompare(b.route, undefined, { numeric: true }));
 
-    // Extras by category (helpers excluded — they appear in main list)
+    // Extras by category — from attendance table + main rows, with route codes
+    // Build name+route lookup from rows
+    const rowByStaff = {};
+    for (const r of rows) { const key = r.name; if (key) rowByStaff[key] = r; }
+
+    const fmtAtt = (staffId) => {
+      const st = staffList.find(x => x.id === staffId);
+      const name = st ? `${st.first_name} ${st.last_name}`.toUpperCase() : '';
+      const asgn = asgnByStaff[staffId];
+      const route = asgn?.route_code || '';
+      return route ? `${name} — ${route}` : name;
+    };
+
+    // From attendance table (authoritative)
+    const attCallOuts = attRows.filter(a => a.status === 'called_out').map(a => fmtAtt(a.staff_id));
+    const attNcns = attRows.filter(a => a.status === 'ncns').map(a => fmtAtt(a.staff_id));
+    const attLates = attRows.filter(a => a.status === 'late').map(a => fmtAtt(a.staff_id));
+
+    // Fallback: also check rows for attendance from shift data not in attendance table
+    const attStaffIds = new Set(attRows.map(a => a.staff_id));
+    for (const r of rows) {
+      if (r.attStatus === 'called_out' && !attCallOuts.some(x => x.startsWith(r.name))) attCallOuts.push(r.route ? `${r.name} — ${r.route}` : r.name);
+      if (r.attStatus === 'ncns' && !attNcns.some(x => x.startsWith(r.name))) attNcns.push(r.route ? `${r.name} — ${r.route}` : r.name);
+      if (r.attStatus === 'late' && !attLates.some(x => x.startsWith(r.name))) attLates.push(r.route ? `${r.name} — ${r.route}` : r.name);
+    }
+
+    // Extra shift type drivers
+    const extraDrivers = shifts.filter(s => (s.shift_type || '').toUpperCase() === 'EXTRA').map(s => `${s.first_name} ${s.last_name}`.toUpperCase());
+
     const extras = {
-      callOuts: rows.filter(r => r.attStatus === 'called_out').map(r => r.name),
-      ncns: rows.filter(r => r.attStatus === 'ncns').map(r => r.name),
-      lates: rows.filter(r => r.attStatus === 'late').map(r => r.name),
+      extraDrivers,
+      callOuts: attCallOuts,
+      ncns: attNcns,
+      lates: attLates,
       training: shifts.filter(s => (s.shift_type || '').toUpperCase() === 'TRAINING').map(s => `${s.first_name} ${s.last_name}`.toUpperCase()),
     };
 

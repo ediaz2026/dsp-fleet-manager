@@ -152,6 +152,7 @@ export default function Dashboard() {
     flaggedInspections = [], upcomingExpirations = [],
     recentViolations = [], vehicleStats = {},
     routes_today = 0, driverAlerts = { d30: 0, d60: 0, d90: 0 },
+    driversScheduled = {},
     hoursSummary = {},
   } = data || {};
 
@@ -396,6 +397,25 @@ export default function Dashboard() {
       ════════════════════════════════════════════════════════════ */}
       <GroupHeader label="People" />
       <div className="grid grid-cols-3 gap-2.5">
+
+        {/* Total Drivers Scheduled */}
+        <StatCard
+          title="Drivers Scheduled"
+          value={parseInt(driversScheduled.total || 0)}
+          subtitle="working today"
+          icon={Users}
+          tint={parseInt(driversScheduled.total || 0) > 0 ? 'success' : 'neutral'}
+          extra={(() => {
+            const ds = driversScheduled;
+            const parts = [];
+            if (parseInt(ds.edv || 0)) parts.push(`EDV: ${ds.edv}`);
+            if (parseInt(ds.step_van || 0)) parts.push(`SV: ${ds.step_van}`);
+            if (parseInt(ds.helper || 0)) parts.push(`Helper: ${ds.helper}`);
+            if (parseInt(ds.extra || 0)) parts.push(`Extra: ${ds.extra}`);
+            return parts.length ? parts.join(' | ') : null;
+          })()}
+          onClick={() => navigate('/schedule')}
+        />
 
         {/* Weekly Attendance */}
         <StatCard

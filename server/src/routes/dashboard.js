@@ -24,6 +24,7 @@ router.get('/', async (req, res) => {
     driverReportStats,
     routesToday,
     driverAlerts,
+    driversScheduled,
   ] = await Promise.all([
     // Today's schedule
     pool.query(`
@@ -136,11 +137,17 @@ router.get('/', async (req, res) => {
     pool.query(`SELECT COUNT(*) AS pending FROM driver_reports WHERE status = 'pending'`)
       .catch(() => ({ rows: [{ pending: 0 }] })),
 
-    // Routes today — from ops planner session
+    // Routes today — from ops_assignments (all drivers with a route code, excluding helpers/dispatchers)
     pool.query(`
-      SELECT COALESCE(jsonb_array_length(rows), 0) AS routes_today
-      FROM ops_planner_sessions WHERE plan_date = CURRENT_DATE
-    `).catch(() => ({ rows: [] })),
+      SELECT COUNT(*) AS routes_today
+      FROM ops_assignments oa
+      JOIN staff st ON st.id = oa.staff_id
+      LEFT JOIN shifts sh ON sh.staff_id = oa.staff_id AND sh.shift_date = oa.plan_date
+      WHERE oa.plan_date = CURRENT_DATE
+        AND oa.removed_from_ops IS NOT TRUE
+        AND oa.route_code IS NOT NULL
+        AND UPPER(COALESCE(sh.shift_type, '')) NOT IN ('HELPER','EXTRA','DISPATCH AM','DISPATCH PM')
+    `).catch(() => ({ rows: [{ routes_today: 0 }] })),
 
     // Driver license expiration alerts (30 / 60 / 90 day windows)
     pool.query(`
@@ -151,6 +158,21 @@ router.get('/', async (req, res) => {
       FROM staff
       WHERE role = 'driver' AND status = 'active' AND license_expiration IS NOT NULL
     `).catch(() => ({ rows: [{ d30: 0, d60: 0, d90: 0 }] })),
+
+    // Total drivers scheduled today by shift type
+    pool.query(`
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE UPPER(shift_type) = 'EDV') AS edv,
+        COUNT(*) FILTER (WHERE UPPER(shift_type) = 'STEP VAN') AS step_van,
+        COUNT(*) FILTER (WHERE UPPER(shift_type) = 'HELPER') AS helper,
+        COUNT(*) FILTER (WHERE UPPER(shift_type) = 'EXTRA') AS extra,
+        COUNT(*) FILTER (WHERE UPPER(shift_type) = 'DISPATCH AM') AS dispatch_am,
+        COUNT(*) FILTER (WHERE UPPER(shift_type) = 'DISPATCH PM') AS dispatch_pm
+      FROM shifts
+      WHERE shift_date = CURRENT_DATE
+        AND UPPER(shift_type) IN ('EDV','STEP VAN','HELPER','EXTRA','DISPATCH AM','DISPATCH PM')
+    `).catch(() => ({ rows: [{ total: 0, edv: 0, step_van: 0, helper: 0, extra: 0, dispatch_am: 0, dispatch_pm: 0 }] })),
   ]);
 
   res.json({
@@ -167,6 +189,7 @@ router.get('/', async (req, res) => {
     pendingDriverReports: parseInt(driverReportStats.rows[0]?.pending || 0, 10),
     routes_today: parseInt(routesToday.rows[0]?.routes_today || 0, 10),
     driverAlerts: driverAlerts.rows[0] || { d30: 0, d60: 0, d90: 0 },
+    driversScheduled: driversScheduled.rows[0] || { total: 0, edv: 0, step_van: 0, helper: 0, extra: 0, dispatch_am: 0, dispatch_pm: 0 },
     generatedAt: new Date(),
   });
 });

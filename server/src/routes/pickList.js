@@ -907,19 +907,19 @@ router.get('/sign-out-data', async (req, res) => {
       const lo = loadoutMap[routeCode] || {};
       const v = asgn?.vehicle_name || asgn?.license_plate || '';
       const wave = lo.wave || '';
-      // Pad: extract letter from "Launchpad C" → "C", "Sideline" → "SL"
+      // Pad: extract from launchpad field only — "Launchpad C"→"C", "Sideline"→"SL", "C"→"C"
       let pad = '';
-      const lp = (lo.launchpad || asgn?.launchpad_override || '').trim().toUpperCase();
+      const lp = (lo.launchpad || asgn?.launchpad_override || '').trim();
       if (lp) {
-        const m = lp.match(/LAUNCHPAD\s+([A-Z])/);
+        const upper = lp.toUpperCase();
+        const m = upper.match(/LAUNCHPAD\s+([A-Z])/);
         if (m) pad = m[1];
-        else if (/SIDELINE|SIDE LINE/i.test(lp)) pad = 'SL';
-        else if (/MIDDLE/i.test(lp)) pad = 'M';
-        else if (lp.length <= 2) pad = lp;
+        else if (/SIDELINE/i.test(upper)) pad = 'SL';
+        else if (/MIDDLE/i.test(upper)) pad = 'M';
+        else if (/^[A-Z]{1,2}$/i.test(lp.trim())) pad = lp.trim().toUpperCase();
       }
-      if (!pad) pad = (lo.canopy || '')[0] || '';
       const waveNum = wave.replace(/\D/g, '');
-      const station = waveNum ? `W${waveNum}${pad ? '-' + pad : ''}` : (pad || '');
+      const station = waveNum ? `W${waveNum}${pad ? '-' + pad : ''}` : '';
       const att = shift?.attendance_status ? (ATT_LABELS[shift.attendance_status] || '') : '';
 
       rows.push({

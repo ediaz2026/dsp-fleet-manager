@@ -2558,21 +2558,19 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         [dateLabel, '', '', 'Last Mile DSP — DMF5', '', '', '', '', '', `OPEN: ${openN}`, ''],
         ['', '', '', '', '', '', '', '', '', `CLOSING: ${closeN}`, ''],
         [],
-        ['#','ROUTE','DELIVERY ASSOCIATE','VAN #','DEVICE #','POWER BANK #','STG #','SIGNATURE','RTS TIME','STATION','EXTRAS'],
+        ['#','ROUTE','DELIVERY ASSOCIATE','VAN','DEV','PWR BNK','STG','SIGNATURE','RTS','STN','EXTRAS'],
       ];
       rows.forEach((r, i) => aoa.push([i + 1, r.route, r.name, r.van, r.device, '', r.staging, '', '', r.station, r.att]));
       // Extras section
       const ex = data.extras || {};
       aoa.push([]);
-      aoa.push(['EXTRAS']);
       aoa.push(['CALL OUTS:', (ex.callOuts || []).join(', ')]);
       aoa.push(['LATES:', (ex.lates || []).join(', ')]);
       aoa.push(['NCNS:', (ex.ncns || []).join(', ')]);
-      aoa.push(['TRAINING:', (ex.training || []).join(', ')]);
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws['!cols'] = [{wch:4},{wch:9},{wch:24},{wch:8},{wch:8},{wch:11},{wch:10},{wch:18},{wch:9},{wch:9},{wch:11}];
-      ws['!rows'] = aoa.map((_,i) => ({ hpt: i < 3 ? 16 : i === 3 ? 18 : 22 }));
+      ws['!cols'] = [{wch:3},{wch:8},{wch:22},{wch:6},{wch:5},{wch:8},{wch:9},{wch:14},{wch:6},{wch:6},{wch:9}];
+      ws['!rows'] = aoa.map((_,i) => ({ hpt: i < 3 ? 14 : i === 3 ? 16 : 18 }));
       ws['!freeze'] = { xSplit:0, ySplit:4, topLeftCell:'A5', activePane:'bottomLeft', state:'frozen' };
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, `SignOut ${planDate}`);

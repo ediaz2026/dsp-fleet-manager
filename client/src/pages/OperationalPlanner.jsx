@@ -1313,7 +1313,7 @@ function InlineRouteCode({ currentCode, allRouteCodes = [], assignedRouteMap, my
 
 // ══ INLINE VEHICLE / DEVICE CELLS ════════════════════════════════════════════
 
-function InlineAssignment({ staffId, assignment, vehicles, assignedVehicleMap, myName, onSave }) {
+function InlineAssignment({ staffId, assignment, vehicles, assignedVehicleMap, myName, onSave, onPatch }) {
   const [vehicleId, setVehicleId] = useState(String(assignment?.vehicle_id || ''));
   const [deviceId,  setDeviceId]  = useState(assignment?.device_id || '');
   const [reassignConfirmVehicle, setReassignConfirmVehicle] = useState(null);
@@ -1331,7 +1331,7 @@ function InlineAssignment({ staffId, assignment, vehicles, assignedVehicleMap, m
     const val = e.target.value;
     if (val === '__clear__') {
       setVehicleId('');
-      onSave({ vehicle_id: null, device_id: deviceId || null });
+      (onPatch || onSave)({ vehicle_id: null });
       toast.success(`Vehicle cleared for ${myName}`);
       return;
     }
@@ -2951,6 +2951,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             assignedVehicleMap={assignedVehicleMap}
             myName={displayName}
             onSave={data => staffId && saveAssignment.mutate({ staffId, data })}
+            onPatch={data => staffId && patchAssignment.mutate({ staffId, data })}
           />
           <td className="px-2 py-2 text-center w-10"><StatusPill status={row.status} /></td>
 

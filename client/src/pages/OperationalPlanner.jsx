@@ -2502,12 +2502,13 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   const totalLoadoutRoutes = (loadoutData?.loadout || []).length;
 
   const summaryCounts = useMemo(() => {
-    const assignedRoutes = section1Rows.filter(r =>
-      r.status !== 'unassigned_route' && r.status !== 'multiple_das'
-    ).length;
+    // All rows with a route code (Amazon + custom/flex)
+    const allWithRoute = allRows.filter(r => (r.asgn?.route_code || r.routeCode) && r.shiftType !== 'HELPER');
+    const assignedRoutes = allWithRoute.filter(r => r.name && r.status !== 'unassigned_route' && r.status !== 'multiple_das').length;
+    const totalRoutes = allWithRoute.length;
     return {
-      totalBlocks: section1Rows.length + section2Rows.length,
-      routes: section1Rows.length,
+      totalBlocks: allRows.filter(r => r.shiftType !== 'DISPATCH AM' && r.shiftType !== 'DISPATCH PM').length,
+      routes: totalRoutes,
       assignedRoutes,
       helpers: section2Rows.length,
       wronglyRostered: allRows.filter(r => r.status === 'wrongly_rostered').length,

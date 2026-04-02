@@ -10,17 +10,19 @@ const TDC = { ...TD, textAlign: 'center' };
 const HDR_S = { background: '#1a3a5c', color: '#fff', fontWeight: 'bold', fontSize: 6.5, padding: '3px 2px', border: BD, textAlign: 'center', whiteSpace: 'nowrap' };
 
 function buildExtrasColumn(extras) {
-  // Build a flat array of cell values for the EXTRAS column
   const cells = [];
+  // Blank notes rows at top
+  cells.push({ text: 'NOTES:', isHeader: true, navy: true });
+  for (let j = 0; j < 5; j++) cells.push({ text: '', isHeader: false });
+  // Attendance sections
   const sections = [
-    { label: 'EXTRAS:', min: 8, items: extras.helpers || [], navy: true },
     { label: 'CALL OUTS:', min: 5, items: extras.callOuts || [] },
     { label: 'NO CALL NO SHOW:', min: 5, items: extras.ncns || [] },
     { label: 'LATE:', min: 8, items: extras.lates || [] },
     { label: 'TRAINING:', min: 5, items: extras.training || [] },
   ];
   for (const sec of sections) {
-    cells.push({ text: sec.label, isHeader: true, navy: sec.navy });
+    cells.push({ text: sec.label, isHeader: true });
     const count = Math.max(sec.min, sec.items.length);
     for (let j = 0; j < count; j++) {
       cells.push({ text: sec.items[j] || '', isHeader: false });
@@ -98,7 +100,7 @@ export default function SignOutSheet() {
           <col style={{ width: 80 }} />
           <col style={{ width: 38 }} />
           <col style={{ width: 32 }} />
-          <col style={{ width: 150 }} />
+          <col style={{ width: 120 }} />
         </colgroup>
         <thead>
           <tr>{['#','ROUTE','DELIVERY ASSOCIATE','VAN','DEV','PWR BNK','STG','SIGNATURE','RTS','STN','EXTRAS'].map(h => <th key={h} style={HDR_S}>{h}</th>)}</tr>

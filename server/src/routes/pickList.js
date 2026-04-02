@@ -958,10 +958,8 @@ router.get('/sign-out-data', async (req, res) => {
     // Sort by station then route
     rows.sort((a, b) => (a.station || 'ZZZ').localeCompare(b.station || 'ZZZ', undefined, { numeric: true }) || a.route.localeCompare(b.route, undefined, { numeric: true }));
 
-    // Extras by category
-    const helperShifts = shifts.filter(s => (s.shift_type || '').toUpperCase() === 'HELPER');
+    // Extras by category (helpers excluded — they appear in main list)
     const extras = {
-      helpers: helperShifts.map(s => `${s.first_name} ${s.last_name}`.toUpperCase()),
       callOuts: rows.filter(r => r.attStatus === 'called_out').map(r => r.name),
       ncns: rows.filter(r => r.attStatus === 'ncns').map(r => r.name),
       lates: rows.filter(r => r.attStatus === 'late').map(r => r.name),

@@ -2564,8 +2564,10 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       // Build extras cells for EXTRAS column
       const ex = data.extras || {};
       const extrasCells = [];
+      // Blank notes section
+      extrasCells.push('NOTES:');
+      for (let j = 0; j < 5; j++) extrasCells.push('');
       const secs = [
-        { label: 'EXTRAS:', min: 8, items: ex.helpers || [] },
         { label: 'CALL OUTS:', min: 5, items: ex.callOuts || [] },
         { label: 'NO CALL NO SHOW:', min: 5, items: ex.ncns || [] },
         { label: 'LATE:', min: 8, items: ex.lates || [] },
@@ -2590,7 +2592,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       }
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws['!cols'] = [{wch:3},{wch:8},{wch:22},{wch:6},{wch:5},{wch:8},{wch:8},{wch:14},{wch:6},{wch:5},{wch:20}];
+      ws['!cols'] = [{wch:3},{wch:8},{wch:22},{wch:6},{wch:5},{wch:8},{wch:8},{wch:14},{wch:6},{wch:5},{wch:18}];
       ws['!rows'] = aoa.map((_,i) => ({ hpt: i < 3 ? 14 : i === 3 ? 16 : 18 }));
       ws['!freeze'] = { xSplit:0, ySplit:4, topLeftCell:'A5', activePane:'bottomLeft', state:'frozen' };
       const wb = XLSX.utils.book_new();

@@ -98,30 +98,51 @@ export default function SignOutSheet() {
         </tbody>
       </table>
 
-      {/* Extras/Attendance — continuation rows under the EXTRAS column */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 7, tableLayout: 'fixed' }}>
-        <colgroup>
+      {/* Extras — structured sections under EXTRAS column only */}
+      {(() => {
+        const COLS = <colgroup>
           <col style={{ width: 18 }} /><col style={{ width: 48 }} /><col style={{ width: 125 }} />
           <col style={{ width: 38 }} /><col style={{ width: 38 }} /><col style={{ width: 48 }} />
           <col style={{ width: 52 }} /><col style={{ width: 80 }} /><col style={{ width: 38 }} />
           <col style={{ width: 36 }} /><col style={{ width: 50 }} />
-        </colgroup>
-        <tbody>
-          {[
-            { label: 'CALL OUTS:', val: extras.callOuts },
-            { label: 'LATES:', val: extras.lates },
-            { label: 'NCNS:', val: extras.ncns },
-            { label: 'TRAINING:', val: extras.training },
-          ].map(({ label, val }, i) => (
-            <tr key={i}>
-              {Array.from({ length: 10 }, (_, c) => <td key={c} style={{ border: BD, padding: '1px 2px' }} />)}
-              <td style={{ border: BD, padding: '2px 3px', fontSize: 7 }}>
-                <span style={{ fontWeight: 'bold' }}>{label}</span> {(val || []).join(', ')}
-              </td>
+        </colgroup>;
+        const empty = (_, c) => <td key={c} style={{ padding: '1px 2px' }} />;
+        const hdrStyle = { padding: '2px 3px', fontSize: 7, fontWeight: 'bold', background: '#e8e8e8', borderLeft: '3px solid #1a3a5c', border: BD };
+        const blankStyle = { padding: '1px 3px', fontSize: 7, borderBottom: '1px solid #ccc' };
+        const sections = [
+          { label: 'EXTRAS:', min: 8, items: extras.helpers || [], isHeader: true },
+          { label: 'CALL OUTS:', min: 5, items: extras.callOuts || [] },
+          { label: 'NO CALL NO SHOW:', min: 5, items: extras.ncns || [] },
+          { label: 'LATE:', min: 8, items: extras.lates || [] },
+          { label: 'TRAINING:', min: 5, items: extras.training || [] },
+        ];
+        const sectionRows = [];
+        for (const sec of sections) {
+          // Section header row
+          sectionRows.push(
+            <tr key={`h-${sec.label}`}>
+              {Array.from({ length: 10 }, empty)}
+              <td style={sec.isHeader ? { ...hdrStyle, background: '#1a3a5c', color: '#fff' } : hdrStyle}>{sec.label}</td>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          );
+          // Content rows (auto-filled + blank remainder)
+          const count = Math.max(sec.min, sec.items.length);
+          for (let j = 0; j < count; j++) {
+            sectionRows.push(
+              <tr key={`${sec.label}-${j}`}>
+                {Array.from({ length: 10 }, empty)}
+                <td style={blankStyle}>{sec.items[j] || ''}</td>
+              </tr>
+            );
+          }
+        }
+        return (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 7, tableLayout: 'fixed' }}>
+            {COLS}
+            <tbody>{sectionRows}</tbody>
+          </table>
+        );
+      })()}
 
       {!data && <p style={{ textAlign: 'center', color: '#999', marginTop: 40 }}>Loading...</p>}
     </div>

@@ -2561,13 +2561,21 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         ['#','ROUTE','DELIVERY ASSOCIATE','VAN','DEV','PWR BNK','STG','SIGNATURE','RTS','STN','EXTRAS'],
       ];
       rows.forEach((r, i) => aoa.push([i + 1, r.route, r.name, r.van, r.device, '', r.staging, '', '', r.station, r.att]));
-      // Extras — attendance under EXTRAS column (column 11)
+      // Extras — structured sections in EXTRAS column (col 11)
       const ex = data.extras || {};
-      const mkExtra = (label, val) => ['','','','','','','','','','', `${label} ${(val||[]).join(', ')}`];
-      aoa.push(mkExtra('CALL OUTS:', ex.callOuts));
-      aoa.push(mkExtra('LATES:', ex.lates));
-      aoa.push(mkExtra('NCNS:', ex.ncns));
-      aoa.push(mkExtra('TRAINING:', ex.training));
+      const e = (label) => ['','','','','','','','','','', label];
+      const sections = [
+        { label: 'EXTRAS:', min: 8, items: ex.helpers || [] },
+        { label: 'CALL OUTS:', min: 5, items: ex.callOuts || [] },
+        { label: 'NO CALL NO SHOW:', min: 5, items: ex.ncns || [] },
+        { label: 'LATE:', min: 8, items: ex.lates || [] },
+        { label: 'TRAINING:', min: 5, items: ex.training || [] },
+      ];
+      for (const sec of sections) {
+        aoa.push(e(sec.label));
+        const count = Math.max(sec.min, sec.items.length);
+        for (let j = 0; j < count; j++) aoa.push(e(sec.items[j] || ''));
+      }
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       ws['!cols'] = [{wch:3},{wch:8},{wch:22},{wch:6},{wch:5},{wch:8},{wch:9},{wch:14},{wch:6},{wch:6},{wch:9}];

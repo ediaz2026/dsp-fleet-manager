@@ -907,11 +907,17 @@ router.get('/sign-out-data', async (req, res) => {
       const lo = loadoutMap[routeCode] || {};
       const v = asgn?.vehicle_name || asgn?.license_plate || '';
       const wave = lo.wave || '';
-      // Pad: use launchpad first char(s), fallback to canopy initial
+      // Pad: extract letter from "Launchpad C" → "C", "Sideline" → "SL"
       let pad = '';
-      const lp = (lo.launchpad || asgn?.launchpad_override || '').trim();
-      if (lp) { pad = lp.length <= 2 ? lp : lp[0]; }
-      else { pad = (lo.canopy || '')[0] || ''; }
+      const lp = (lo.launchpad || asgn?.launchpad_override || '').trim().toUpperCase();
+      if (lp) {
+        const m = lp.match(/LAUNCHPAD\s+([A-Z])/);
+        if (m) pad = m[1];
+        else if (/SIDELINE|SIDE LINE/i.test(lp)) pad = 'SL';
+        else if (/MIDDLE/i.test(lp)) pad = 'M';
+        else if (lp.length <= 2) pad = lp;
+      }
+      if (!pad) pad = (lo.canopy || '')[0] || '';
       const waveNum = wave.replace(/\D/g, '');
       const station = waveNum ? `W${waveNum}${pad ? '-' + pad : ''}` : (pad || '');
       const att = shift?.attendance_status ? (ATT_LABELS[shift.attendance_status] || '') : '';
@@ -952,10 +958,17 @@ router.get('/sign-out-data', async (req, res) => {
     // Sort by station then route
     rows.sort((a, b) => (a.station || 'ZZZ').localeCompare(b.station || 'ZZZ', undefined, { numeric: true }) || a.route.localeCompare(b.route, undefined, { numeric: true }));
 
-    // Attendance summary
-    const attIssues = rows.filter(r => r.attStatus && r.attStatus !== 'present');
+    // Attendance summary by category
+    const extras = {
+      callOuts: rows.filter(r => r.attStatus === 'called_out').map(r => `${r.name} — ${r.route}`),
+      lates: rows.filter(r => r.attStatus === 'late').map(r => `${r.name} — ${r.route}`),
+      ncns: rows.filter(r => r.attStatus === 'ncns').map(r => `${r.name} — ${r.route}`),
+    };
+    // Training drivers (not in main list but in shifts)
+    const trainingDrivers = shifts.filter(s => s.shift_type === 'TRAINING').map(s => `${s.first_name} ${s.last_name}`.toUpperCase());
+    extras.training = trainingDrivers;
 
-    res.json({ date, dispAM, dispPM, rows, attIssues });
+    res.json({ date, dispAM, dispPM, rows, extras });
   } catch (err) {
     console.error('[sign-out-data] Error:', err.message);
     res.status(500).json({ error: err.message });

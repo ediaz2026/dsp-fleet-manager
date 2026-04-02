@@ -2561,14 +2561,14 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         ['#','ROUTE','DELIVERY ASSOCIATE','VAN #','DEVICE #','POWER BANK #','STG #','SIGNATURE','RTS TIME','STATION','EXTRAS'],
       ];
       rows.forEach((r, i) => aoa.push([i + 1, r.route, r.name, r.van, r.device, '', r.staging, '', '', r.station, r.att]));
-      // Attendance issues
-      const issues = (data.attIssues || []);
+      // Extras section
+      const ex = data.extras || {};
       aoa.push([]);
-      if (issues.length > 0) {
-        aoa.push(['ATTENDANCE ISSUES:']);
-        for (const r of issues) aoa.push([`${r.att}: ${r.name} — ${r.route}`]);
-      }
-      aoa.push([]); aoa.push(['CALL OUTS / NOTES:']); aoa.push([]); aoa.push([]);
+      aoa.push(['EXTRAS']);
+      aoa.push(['CALL OUTS:', (ex.callOuts || []).join(', ')]);
+      aoa.push(['LATES:', (ex.lates || []).join(', ')]);
+      aoa.push(['NCNS:', (ex.ncns || []).join(', ')]);
+      aoa.push(['TRAINING:', (ex.training || []).join(', ')]);
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       ws['!cols'] = [{wch:4},{wch:9},{wch:24},{wch:8},{wch:8},{wch:11},{wch:10},{wch:18},{wch:9},{wch:9},{wch:11}];

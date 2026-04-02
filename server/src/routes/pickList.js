@@ -831,4 +831,105 @@ router.post('/lock-briefing', managerOnly, async (req, res) => {
   res.json({ success: true });
 });
 
+// GET /api/ops/sign-out-data?date= — full driver list for sign-out sheet (matches Ops Planner display)
+router.get('/sign-out-data', async (req, res) => {
+  const date = req.query.date || getEasternDate();
+  const OPS_EX = new Set(['ON CALL','UTO','PTO','SUSPENSION','TRAINING','DISPATCH AM','DISPATCH PM']);
+  const ATT_LABELS = { ncns: 'NCNS', late: 'LATE', called_out: 'CALL OUT' };
+
+  try {
+    // Fetch all data sources in parallel
+    const [shiftsRes, routesRes, loadoutRes, asgnRes, vehiclesRes, driversRes, staffRes] = await Promise.all([
+      pool.query(`SELECT s.*, st.first_name, st.last_name FROM shifts s JOIN staff st ON st.id = s.staff_id WHERE s.shift_date = $1`, [date]),
+      pool.query(`SELECT routes FROM ops_daily_routes WHERE plan_date = $1`, [date]),
+      pool.query(`SELECT loadout FROM ops_loadout WHERE plan_date = $1`, [date]),
+      pool.query(`SELECT oa.*, v.vehicle_name, v.license_plate FROM ops_assignments oa LEFT JOIN vehicles v ON v.id = oa.vehicle_id WHERE oa.plan_date = $1 AND oa.removed_from_ops IS NOT TRUE`, [date]),
+      pool.query(`SELECT id, vehicle_name, license_plate FROM vehicles`),
+      pool.query(`SELECT d.staff_id, d.transponder_id, s.employee_id, s.first_name, s.last_name FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE s.status NOT IN ('terminated','deleted')`),
+      pool.query(`SELECT id, first_name, last_name FROM staff WHERE status NOT IN ('terminated','deleted')`),
+    ]);
+
+    const shifts = shiftsRes.rows;
+    const routes = routesRes.rows[0]?.routes || [];
+    const loadoutArr = loadoutRes.rows[0]?.loadout || [];
+    const asgnArr = asgnRes.rows;
+    const vehiclesList = vehiclesRes.rows;
+    const driversList = driversRes.rows;
+    const staffList = staffRes.rows;
+
+    // Build maps
+    const shiftByStaff = {}; for (const s of shifts) shiftByStaff[s.staff_id] = s;
+    const asgnByStaff = {}; for (const a of asgnArr) asgnByStaff[a.staff_id] = a;
+    const loadoutMap = {}; for (const l of loadoutArr) loadoutMap[l.routeCode] = l;
+    const tidToDriver = {};
+    for (const d of driversList) {
+      if (d.transponder_id) tidToDriver[d.transponder_id.trim().toUpperCase()] = d;
+      if (d.employee_id) tidToDriver[d.employee_id.trim().toUpperCase()] = d;
+    }
+
+    // Dispatchers
+    const dispAM = shifts.filter(s => s.shift_type === 'DISPATCH AM').map(s => `${s.first_name} ${s.last_name}`);
+    const dispPM = shifts.filter(s => s.shift_type === 'DISPATCH PM').map(s => `${s.first_name} ${s.last_name}`);
+
+    const seen = new Set();
+    const rows = [];
+
+    function addRow(staffId, routeCode, asgn) {
+      if (seen.has(staffId)) return;
+      const shift = shiftByStaff[staffId];
+      const type = (shift?.shift_type || asgn?.shift_type || '').toUpperCase();
+      if (OPS_EX.has(type)) return;
+      if ((routeCode || '').toUpperCase().startsWith('AT')) return;
+      seen.add(staffId);
+
+      const st = staffList.find(x => x.id === staffId);
+      const lo = loadoutMap[routeCode] || {};
+      const v = asgn?.vehicle_name || asgn?.license_plate || '';
+      const wave = lo.wave || '';
+      const ci = (lo.canopy || '')[0] || '';
+      const station = wave ? `W${wave.replace(/\\D/g, '')}${ci ? '-' + ci : ''}` : (ci || '');
+      const att = shift?.attendance_status ? (ATT_LABELS[shift.attendance_status] || '') : '';
+
+      rows.push({
+        route: routeCode || '',
+        name: st ? `${st.first_name} ${st.last_name}`.toUpperCase() : '',
+        van: v,
+        device: asgn?.device_id || '',
+        staging: lo.staging || asgn?.staging_override || '',
+        station,
+        att,
+        attStatus: shift?.attendance_status || '',
+      });
+    }
+
+    // 1. Drivers from ops_assignments
+    for (const a of asgnArr) {
+      if (a.staff_id) addRow(a.staff_id, a.route_code, a);
+    }
+
+    // 2. Drivers matched via TID from ops_daily_routes
+    for (const route of routes) {
+      const rc = route.routeCode;
+      for (const tid of (route.transponderIds || [])) {
+        const d = tidToDriver[tid.trim().toUpperCase()];
+        if (d?.staff_id) addRow(d.staff_id, rc, asgnByStaff[d.staff_id] || {});
+      }
+    }
+
+    // 3. DSP-only drivers from shifts
+    for (const s of shifts) {
+      const asgn = asgnByStaff[s.staff_id];
+      if (asgn?.route_code) addRow(s.staff_id, asgn.route_code, asgn);
+    }
+
+    // Sort by station then route
+    rows.sort((a, b) => (a.station || 'ZZZ').localeCompare(b.station || 'ZZZ', undefined, { numeric: true }) || a.route.localeCompare(b.route, undefined, { numeric: true }));
+
+    res.json({ date, dispAM, dispPM, rows });
+  } catch (err) {
+    console.error('[sign-out-data] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

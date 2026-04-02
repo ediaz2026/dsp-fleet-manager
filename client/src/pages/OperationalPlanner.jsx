@@ -1316,6 +1316,7 @@ function InlineRouteCode({ currentCode, allRouteCodes = [], assignedRouteMap, my
 function InlineAssignment({ staffId, assignment, vehicles, assignedVehicleMap, myName, onSave }) {
   const [vehicleId, setVehicleId] = useState(String(assignment?.vehicle_id || ''));
   const [deviceId,  setDeviceId]  = useState(assignment?.device_id || '');
+  const [reassignConfirmVehicle, setReassignConfirmVehicle] = useState(null);
 
   useEffect(() => {
     setVehicleId(String(assignment?.vehicle_id || ''));
@@ -1323,11 +1324,33 @@ function InlineAssignment({ staffId, assignment, vehicles, assignedVehicleMap, m
   }, [assignment?.vehicle_id, assignment?.device_id]);
 
   const activeVehicles = vehicles.filter(v => v.status === 'active');
+  const available = activeVehicles.filter(v => !assignedVehicleMap?.[v.id] || assignedVehicleMap[v.id] === myName);
+  const assigned = activeVehicles.filter(v => assignedVehicleMap?.[v.id] && assignedVehicleMap[v.id] !== myName);
 
   const handleVehicleChange = (e) => {
     const val = e.target.value;
+    if (val === '__clear__') {
+      setVehicleId('');
+      onSave({ vehicle_id: null, device_id: deviceId || null });
+      toast.success(`Vehicle cleared for ${myName}`);
+      return;
+    }
+    const vid = parseInt(val);
+    const takenBy = assignedVehicleMap?.[vid];
+    if (takenBy && takenBy !== myName) {
+      setReassignConfirmVehicle({ vid, name: vehicles.find(v => v.id === vid)?.vehicle_name || val, from: takenBy });
+      return;
+    }
     setVehicleId(val);
-    onSave({ vehicle_id: val ? parseInt(val) : null, device_id: deviceId || null });
+    onSave({ vehicle_id: vid || null, device_id: deviceId || null });
+  };
+
+  const doReassign = () => {
+    if (!reassignConfirmVehicle) return;
+    setVehicleId(String(reassignConfirmVehicle.vid));
+    onSave({ vehicle_id: reassignConfirmVehicle.vid, device_id: deviceId || null });
+    toast.success(`${reassignConfirmVehicle.name} reassigned from ${reassignConfirmVehicle.from} to ${myName}`);
+    setReassignConfirmVehicle(null);
   };
 
   const handleDeviceBlur = () => {
@@ -1345,25 +1368,37 @@ function InlineAssignment({ staffId, assignment, vehicles, assignedVehicleMap, m
 
   return (
     <>
-      <td className="px-2 py-1.5">
+      <td className="px-2 py-1.5 relative">
         <select
           value={vehicleId}
           onChange={handleVehicleChange}
           className="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 bg-white text-content w-28 max-w-full"
         >
           <option value="">— Vehicle</option>
-          {activeVehicles.map(v => {
-            const takenBy = assignedVehicleMap?.[v.id];
-            const isMine  = takenBy === myName;
-            const isTaken = !!takenBy && !isMine;
-            const label   = `${v.vehicle_name || v.license_plate || `#${v.id}`}${isTaken ? ` (${takenBy})` : ''}`;
-            return (
-              <option key={v.id} value={String(v.id)} disabled={isTaken} style={isTaken ? { color: '#9ca3af' } : {}}>
-                {label}
+          <option value="__clear__">✕ Clear Vehicle</option>
+          {available.length > 0 && <optgroup label="Available">
+            {available.map(v => (
+              <option key={v.id} value={String(v.id)}>{v.vehicle_name || v.license_plate || `#${v.id}`}</option>
+            ))}
+          </optgroup>}
+          {assigned.length > 0 && <optgroup label="Assigned">
+            {assigned.map(v => (
+              <option key={v.id} value={String(v.id)} style={{ color: '#9ca3af' }}>
+                {v.vehicle_name || v.license_plate || `#${v.id}`} ({assignedVehicleMap[v.id]})
               </option>
-            );
-          })}
+            ))}
+          </optgroup>}
         </select>
+        {reassignConfirmVehicle && (
+          <div className="absolute z-50 top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl p-3 w-56 text-xs" onClick={e => e.stopPropagation()}>
+            <p className="font-semibold text-slate-800 mb-1">{reassignConfirmVehicle.name} is assigned to {reassignConfirmVehicle.from}</p>
+            <p className="text-slate-500 mb-2">Reassign to {myName}?</p>
+            <div className="flex gap-2">
+              <button className="btn-primary text-xs py-1 px-3" onClick={doReassign}>Reassign</button>
+              <button className="btn-secondary text-xs py-1 px-3" onClick={() => setReassignConfirmVehicle(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
       </td>
       <td className="px-2 py-1.5">
         <input
@@ -1371,8 +1406,8 @@ function InlineAssignment({ staffId, assignment, vehicles, assignedVehicleMap, m
           value={deviceId}
           onChange={e => setDeviceId(e.target.value)}
           onBlur={handleDeviceBlur}
-          placeholder="Device ID"
-          className="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 bg-white w-24 max-w-full"
+          placeholder="Device"
+          className="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 bg-white w-16 max-w-full"
         />
       </td>
     </>

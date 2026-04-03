@@ -964,6 +964,9 @@ router.get('/sign-out-data', async (req, res) => {
     // Sort by station then route
     rows.sort((a, b) => (a.station || 'ZZZ').localeCompare(b.station || 'ZZZ', undefined, { numeric: true }) || a.route.localeCompare(b.route, undefined, { numeric: true }));
 
+    // Remove EXTRA drivers from main list — they go in EXTRAS column only
+    const filteredRows = rows.filter(r => r.route !== 'EXTRA');
+
     // Extras by category — from attendance table + main rows, with route codes
     // Build name+route lookup from rows
     const rowByStaff = {};
@@ -1001,7 +1004,7 @@ router.get('/sign-out-data', async (req, res) => {
       training: shifts.filter(s => (s.shift_type || '').toUpperCase() === 'TRAINING').map(s => `${s.first_name} ${s.last_name}`.toUpperCase()),
     };
 
-    res.json({ date, dispAM, dispPM, rows, extras });
+    res.json({ date, dispAM, dispPM, rows: filteredRows, extras });
   } catch (err) {
     console.error('[sign-out-data] Error:', err.message);
     res.status(500).json({ error: err.message });

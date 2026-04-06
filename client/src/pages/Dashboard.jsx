@@ -397,7 +397,7 @@ export default function Dashboard() {
           GROUP 3 — PEOPLE
       ════════════════════════════════════════════════════════════ */}
       <GroupHeader label="People" />
-      <div className="grid grid-cols-5 gap-2.5">
+      <div className="grid grid-cols-4 gap-2.5">
 
         {/* Rostered */}
         {(() => {
@@ -463,16 +463,6 @@ export default function Dashboard() {
           </span>
         </div>
 
-        {/* Driver Alerts */}
-        <StatCard
-          title="Driver Alerts"
-          value={totalDriverAlerts}
-          subtitle="license expiring"
-          icon={AlertCircle}
-          tint={driverAlerts.d30 > 0 ? 'danger' : driverAlerts.d60 > 0 ? 'warning' : totalDriverAlerts > 0 ? 'warning' : 'success'}
-          extra={driverAlertExtra}
-          onClick={() => navigate('/drivers', { state: { section: 'driver-alerts' } })}
-        />
       </div>
 
       {/* ════════════════════════════════════════════════════════════

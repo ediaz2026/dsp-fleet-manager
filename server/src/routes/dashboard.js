@@ -157,14 +157,15 @@ router.get('/', async (req, res) => {
       return { rows: [{ routes_today: routeCount, helpers_today: helpers, blocks_today: routeCount + helpers }] };
     })().catch(() => ({ rows: [{ routes_today: 0, helpers_today: 0, blocks_today: 0 }] })),
 
-    // Driver license expiration alerts (30 / 60 / 90 day windows)
+    // Driver license expiration alerts (30 / 60 / 90 day windows) — from drivers table
     pool.query(`
       SELECT
-        COUNT(*) FILTER (WHERE license_expiration BETWEEN CURRENT_DATE AND CURRENT_DATE + 30)      AS d30,
-        COUNT(*) FILTER (WHERE license_expiration BETWEEN CURRENT_DATE + 31 AND CURRENT_DATE + 60) AS d60,
-        COUNT(*) FILTER (WHERE license_expiration BETWEEN CURRENT_DATE + 61 AND CURRENT_DATE + 90) AS d90
-      FROM staff
-      WHERE role = 'driver' AND status = 'active' AND license_expiration IS NOT NULL
+        COUNT(*) FILTER (WHERE d.license_expiration BETWEEN CURRENT_DATE AND CURRENT_DATE + 30)      AS d30,
+        COUNT(*) FILTER (WHERE d.license_expiration BETWEEN CURRENT_DATE + 31 AND CURRENT_DATE + 60) AS d60,
+        COUNT(*) FILTER (WHERE d.license_expiration BETWEEN CURRENT_DATE + 61 AND CURRENT_DATE + 90) AS d90
+      FROM drivers d
+      JOIN staff s ON s.id = d.staff_id
+      WHERE s.role = 'driver' AND s.status = 'active' AND d.license_expiration IS NOT NULL
     `).catch(() => ({ rows: [{ d30: 0, d60: 0, d90: 0 }] })),
 
     // Total drivers scheduled today by shift type

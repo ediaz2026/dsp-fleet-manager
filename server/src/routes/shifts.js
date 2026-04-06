@@ -325,7 +325,7 @@ router.post('/publish-selected', managerOnly, async (req, res) => {
 });
 
 // Shift types that should not appear in Ops Planner
-const OPS_EXCLUDED_TYPES = ['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING'];
+const OPS_EXCLUDED_TYPES = ['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING', 'TRAINER'];
 
 // ── POST /api/shifts ──────────────────────────────────────────────────────────
 router.post('/', managerOnly, async (req, res) => {

@@ -343,7 +343,7 @@ router.post('/cleanup-ops', managerOnly, async (req, res) => {
           SELECT 1 FROM shifts s
           WHERE s.staff_id = ops_assignments.staff_id
             AND s.shift_date = ops_assignments.plan_date
-            AND UPPER(s.shift_type) IN ('ON CALL','UTO','PTO','SUSPENSION','TRAINING')
+            AND UPPER(s.shift_type) IN ('ON CALL','UTO','PTO','SUSPENSION','TRAINING','TRAINER')
         )
       RETURNING staff_id
     `, [date]);
@@ -834,7 +834,7 @@ router.post('/lock-briefing', managerOnly, async (req, res) => {
 // GET /api/ops/sign-out-data?date= — full driver list for sign-out sheet (matches Ops Planner display)
 router.get('/sign-out-data', async (req, res) => {
   const date = req.query.date || getEasternDate();
-  const OPS_EX = new Set(['ON CALL','UTO','PTO','SUSPENSION','TRAINING','DISPATCH AM','DISPATCH PM']);
+  const OPS_EX = new Set(['ON CALL','UTO','PTO','SUSPENSION','TRAINING','TRAINER','DISPATCH AM','DISPATCH PM']);
   const ATT_LABELS = { ncns: 'NCNS', late: 'LATE', called_out: 'CALL OUT' };
 
   try {
@@ -1001,7 +1001,7 @@ router.get('/sign-out-data', async (req, res) => {
       callOuts: attCallOuts,
       ncns: attNcns,
       lates: attLates,
-      training: shifts.filter(s => (s.shift_type || '').toUpperCase() === 'TRAINING').map(s => `${s.first_name} ${s.last_name}`.toUpperCase()),
+      training: shifts.filter(s => ['TRAINING','TRAINER'].includes((s.shift_type || '').toUpperCase())).map(s => `${s.first_name} ${s.last_name}`.toUpperCase()),
     };
 
     res.json({ date, dispAM, dispPM, rows: filteredRows, extras });

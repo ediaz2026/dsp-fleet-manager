@@ -215,7 +215,7 @@ router.get('/assignments', async (req, res) => {
 });
 
 // POST /api/ops-planner/assignments (upsert one driver's assignment)
-const OPS_EXCLUDED_TYPES = ['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING'];
+const OPS_EXCLUDED_TYPES = ['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING', 'TRAINER'];
 
 router.post('/assignments', authMiddleware, async (req, res) => {
   const { plan_date, staff_id, vehicle_id, device_id, notes, shift_type, route_code, name_override } = req.body;

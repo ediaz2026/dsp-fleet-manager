@@ -401,7 +401,7 @@ runMigrations()
         SELECT 1 FROM shifts s
         WHERE s.staff_id = ops_assignments.staff_id
           AND s.shift_date = ops_assignments.plan_date
-          AND UPPER(s.shift_type) IN ('ON CALL','UTO','PTO','SUSPENSION','TRAINING')
+          AND UPPER(s.shift_type) IN ('ON CALL','UTO','PTO','SUSPENSION','TRAINING','TRAINER')
       )
   `).then(r => { if (r.rowCount > 0) console.log(`[cleanup] Removed ${r.rowCount} non-working driver(s) from Ops Planner`); })
     .catch(e => console.log('Ops cleanup:', e.message)))

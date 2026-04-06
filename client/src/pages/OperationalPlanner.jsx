@@ -13,7 +13,7 @@ import toast from 'react-hot-toast';
 import { format, addDays, subDays, parseISO } from 'date-fns';
 
 // Shift types that should never appear in Ops Planner
-const OPS_EXCLUDED_TYPES = new Set(['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING']);
+const OPS_EXCLUDED_TYPES = new Set(['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING', 'TRAINER']);
 
 // ══ SHIFT TYPE MAPPING ════════════════════════════════════════════════════════
 const AMAZON_DST_MAP = {
@@ -1147,7 +1147,7 @@ function Step4Tab({ planDate, combinedDrivers, vehicles, assignments, onSaveAssi
 
 const SHIFT_TYPES = [
   'EDV', 'STEP VAN', 'HELPER', 'ON CALL', 'EXTRA',
-  'DISPATCH AM', 'DISPATCH PM', 'UTO', 'PTO', 'TRAINING', 'SUSPENSION',
+  'DISPATCH AM', 'DISPATCH PM', 'UTO', 'PTO', 'TRAINING', 'TRAINER', 'SUSPENSION',
 ];
 
 function InlineShiftType({ currentType, onSave }) {

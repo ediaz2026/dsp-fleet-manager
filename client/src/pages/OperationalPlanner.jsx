@@ -2542,7 +2542,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     const assignedRoutes = allWithRoute.filter(r => r.name && r.status !== 'unassigned_route' && r.status !== 'multiple_das').length;
     const totalRoutes = allWithRoute.length;
     return {
-      totalBlocks: allRows.filter(r => r.shiftType !== 'DISPATCH AM' && r.shiftType !== 'DISPATCH PM').length,
+      totalBlocks: totalRoutes + section2Rows.length,
       routes: totalRoutes,
       assignedRoutes,
       helpers: section2Rows.length,

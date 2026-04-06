@@ -151,7 +151,8 @@ export default function Dashboard() {
     todayShifts = [], fleetAlerts = [], attendanceIssues = [],
     flaggedInspections = [], upcomingExpirations = [],
     recentViolations = [], vehicleStats = {},
-    routes_today = 0, driverAlerts = { d30: 0, d60: 0, d90: 0 },
+    routes_today = 0, blocks_today = 0, helpers_today = 0,
+    driverAlerts = { d30: 0, d60: 0, d90: 0 },
     driversScheduled = {},
     hoursSummary = {},
   } = data || {};
@@ -243,8 +244,8 @@ export default function Dashboard() {
           </div>
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0">Routes Today</p>
-            <p className="text-[1.75rem] font-black text-slate-900 leading-none">{totalRouteCount || routes_today || 0}</p>
-            <p className="text-[12px] text-slate-500 mt-0.5">in ops planner</p>
+            <p className="text-[1.75rem] font-black text-slate-900 leading-none">{totalRouteCount || routes_today || 0}<span className="text-lg text-slate-400 font-bold">/{blocks_today || (totalRouteCount || 0)}</span></p>
+            <p className="text-[12px] text-slate-500 mt-0.5">routes / blocks</p>
           </div>
           <span className="absolute bottom-2.5 right-3 flex items-center gap-0.5 text-[10px] text-slate-400 group-hover:text-indigo-500 font-medium transition-colors">
             View all <ChevronRight size={10} />

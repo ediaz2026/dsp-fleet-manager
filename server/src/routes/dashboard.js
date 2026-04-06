@@ -137,17 +137,25 @@ router.get('/', async (req, res) => {
     pool.query(`SELECT COUNT(*) AS pending FROM driver_reports WHERE status = 'pending'`)
       .catch(() => ({ rows: [{ pending: 0 }] })),
 
-    // Routes today — from ops_assignments (all drivers with a route code, excluding helpers/dispatchers)
-    pool.query(`
-      SELECT COUNT(*) AS routes_today
-      FROM ops_assignments oa
-      JOIN staff st ON st.id = oa.staff_id
-      LEFT JOIN shifts sh ON sh.staff_id = oa.staff_id AND sh.shift_date = oa.plan_date
-      WHERE oa.plan_date = CURRENT_DATE
-        AND oa.removed_from_ops IS NOT TRUE
-        AND oa.route_code IS NOT NULL
-        AND UPPER(COALESCE(sh.shift_type, '')) NOT IN ('HELPER','EXTRA','DISPATCH AM','DISPATCH PM')
-    `).catch(() => ({ rows: [{ routes_today: 0 }] })),
+    // Routes + helpers today — from ops_assignments + ops_daily_routes + shifts
+    (async () => {
+      const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const today = etNow.toISOString().split('T')[0];
+      // Routes from ops_assignments
+      const { rows: asgnRoutes } = await pool.query(
+        `SELECT COUNT(*) AS c FROM ops_assignments WHERE plan_date = $1 AND removed_from_ops IS NOT TRUE AND route_code IS NOT NULL`, [today]
+      ).catch(() => ({ rows: [{ c: 0 }] }));
+      // Routes from TID matching in ops_daily_routes
+      const { rows: drRows } = await pool.query(`SELECT routes FROM ops_daily_routes WHERE plan_date = $1`, [today]).catch(() => ({ rows: [] }));
+      const tidRouteCount = drRows[0]?.routes?.length || 0;
+      const routeCount = Math.max(parseInt(asgnRoutes[0]?.c || 0), tidRouteCount);
+      // Helpers from shifts
+      const { rows: helpRows } = await pool.query(
+        `SELECT COUNT(*) AS c FROM shifts WHERE shift_date = $1 AND UPPER(shift_type) = 'HELPER'`, [today]
+      ).catch(() => ({ rows: [{ c: 0 }] }));
+      const helpers = parseInt(helpRows[0]?.c || 0);
+      return { rows: [{ routes_today: routeCount, helpers_today: helpers, blocks_today: routeCount + helpers }] };
+    })().catch(() => ({ rows: [{ routes_today: 0, helpers_today: 0, blocks_today: 0 }] })),
 
     // Driver license expiration alerts (30 / 60 / 90 day windows)
     pool.query(`
@@ -188,6 +196,8 @@ router.get('/', async (req, res) => {
     repairStats: repairStats.rows[0],
     pendingDriverReports: parseInt(driverReportStats.rows[0]?.pending || 0, 10),
     routes_today: parseInt(routesToday.rows[0]?.routes_today || 0, 10),
+    helpers_today: parseInt(routesToday.rows[0]?.helpers_today || 0, 10),
+    blocks_today: parseInt(routesToday.rows[0]?.blocks_today || 0, 10),
     driverAlerts: driverAlerts.rows[0] || { d30: 0, d60: 0, d90: 0 },
     driversScheduled: driversScheduled.rows[0] || { total: 0, edv: 0, step_van: 0, helper: 0, extra: 0, dispatch_am: 0, dispatch_pm: 0 },
     generatedAt: new Date(),

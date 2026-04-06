@@ -414,10 +414,11 @@ export default function Dashboard() {
 
         {/* Dispatchers */}
         {(() => {
-          const am = todayShifts.filter(s => s.shift_type === 'DISPATCH AM').map(s => `${s.first_name} ${s.last_name}`);
-          const pm = todayShifts.filter(s => s.shift_type === 'DISPATCH PM').map(s => `${s.first_name} ${s.last_name}`);
+          const initials = s => `${s.first_name?.[0] || ''}${s.last_name?.[0] || ''}`;
+          const am = todayShifts.filter(s => s.shift_type === 'DISPATCH AM');
+          const pm = todayShifts.filter(s => s.shift_type === 'DISPATCH PM');
           const total = am.length + pm.length;
-          const extra = `AM: ${am[0] || '—'}\nPM: ${pm[0] || '—'}`;
+          const extra = `AM: ${am.map(initials).join('/') || '—'}  PM: ${pm.map(initials).join('/') || '—'}`;
           return <StatCard title="Dispatchers" value={total} subtitle="on duty today" icon={Users}
             tint={total > 0 ? 'success' : 'neutral'} extra={extra} onClick={() => navigate('/schedule')} />;
         })()}

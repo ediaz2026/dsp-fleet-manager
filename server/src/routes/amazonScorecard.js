@@ -41,6 +41,18 @@ pool.query(`
   )
 `).catch(e => console.error('[amazon-scorecard] Table error:', e.message));
 pool.query(`ALTER TABLE amazon_scorecards ADD COLUMN IF NOT EXISTS transporter_id VARCHAR(50)`).catch(() => {});
+// Fix column types if table was created with wrong types
+const fixCols = [
+  'final_ranking DECIMAL(6,2)', 'speeding_score DECIMAL(6,2)', 'seatbelt_score DECIMAL(6,2)',
+  'distraction_score DECIMAL(6,2)', 'sign_signal_score DECIMAL(6,2)', 'following_dist_score DECIMAL(6,2)',
+  'dcr_score DECIMAL(6,2)', 'pod_rate DECIMAL(5,4)', 'perfect_incentive DECIMAL(10,2)',
+  'incentive_per_package DECIMAL(10,2)', 'cdf_revised DECIMAL(6,2)', 'dsb_revised DECIMAL(6,2)',
+  'rank_position DECIMAL(6,2)', 'packages DECIMAL(10,2)',
+];
+for (const c of fixCols) {
+  const [name, ...type] = c.split(' ');
+  pool.query(`ALTER TABLE amazon_scorecards ALTER COLUMN ${name} TYPE ${type.join(' ')} USING ${name}::${type.join(' ')}`).catch(() => {});
+}
 pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_amazon_sc_week_name ON amazon_scorecards (week_label, driver_name) WHERE staff_id IS NULL`).catch(() => {});
 
 // POST /api/amazon-scorecard/upload — parse Excel with dynamic header detection
@@ -173,9 +185,9 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
         parseNum(getVal(r, COL.distraction)),
         parseNum(getVal(r, COL.signSignal)),
         parseNum(getVal(r, COL.followDist)),
-        parseInt(getVal(r, COL.cdf)) || 0,
+        parseNum(getVal(r, COL.cdf)) || 0,
         parseNum(getVal(r, COL.dcr)),
-        parseInt(getVal(r, COL.dsbRevised)) || 0,
+        parseNum(getVal(r, COL.dsbRevised)) || 0,
         parseNum(getVal(r, COL.pod)),
       ]);
       uploaded++;

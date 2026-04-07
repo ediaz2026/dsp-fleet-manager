@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useLocation } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Award, CheckCircle, XCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
@@ -114,8 +115,10 @@ function CelebrationOverlay({ type, onDone }) {
 
 export default function DriverScorecard() {
   const { user } = useAuth();
+  const location = useLocation();
   const [selectedWeek, setSelectedWeek] = useState(null);
-  const [showAnim, setShowAnim] = useState(null); // 'perfect' | 'top4' | 'rocket' | null
+  const [showAnim, setShowAnim] = useState(null);
+  const [animKey, setAnimKey] = useState(Date.now());
 
   const { data: weeks = [] } = useQuery({
     queryKey: ['amazon-scorecard-weeks'],
@@ -139,22 +142,24 @@ export default function DriverScorecard() {
   const isTop4 = sc && sc.rank_position && sc.rank_position <= 4 && sc.packages > 899 && sc.incentive_per_package > 0;
   const isNext4 = sc && sc.rank_position && sc.rank_position > 4 && sc.rank_position <= 8 && sc.packages > 899 && sc.incentive_per_package > 0;
 
-  // Animation plays every time scorecard loads or week changes
+  // Reset animation every time tab is selected or week changes
   useEffect(() => {
-    if (!sc) return;
-    const isPerfectScore = sc.final_ranking == 100;
-    if (isPerfectScore && isTop4) setShowAnim('combo');
-    else if (isPerfectScore) setShowAnim('perfect');
-    else if (isTop4) setShowAnim('top4');
-    else if (isNext4) setShowAnim('rocket');
-    else setShowAnim(null);
-  }, [sc, weekParam]);
+    setAnimKey(Date.now());
+    if (sc) {
+      const isPerfectScore = sc.final_ranking == 100;
+      if (isPerfectScore && isTop4) setShowAnim('combo');
+      else if (isPerfectScore) setShowAnim('perfect');
+      else if (isTop4) setShowAnim('top4');
+      else if (isNext4) setShowAnim('rocket');
+      else setShowAnim(null);
+    }
+  }, [location.pathname, sc, weekParam]);
 
   const dismissAnim = () => setShowAnim(null);
 
   return (
     <div className="bg-[#F1F5F9]">
-      {showAnim && <CelebrationOverlay type={showAnim} onDone={dismissAnim} />}
+      {showAnim && <CelebrationOverlay key={animKey} type={showAnim} onDone={dismissAnim} />}
 
       {/* Header */}
       <div className="bg-[#1a3a5c] text-white px-5 pt-[max(env(safe-area-inset-top),20px)] pb-6 rounded-b-3xl">

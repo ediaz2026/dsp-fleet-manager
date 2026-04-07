@@ -42,13 +42,13 @@ pool.query(`
 `).catch(e => console.error('[amazon-scorecard] Table error:', e.message));
 pool.query(`ALTER TABLE amazon_scorecards ADD COLUMN IF NOT EXISTS transporter_id VARCHAR(50)`).catch(() => {});
 pool.query(`ALTER TABLE amazon_scorecards ALTER COLUMN packages TYPE INTEGER USING packages::INTEGER`).catch(() => {});
+pool.query(`ALTER TABLE amazon_scorecards ALTER COLUMN rank_position TYPE INTEGER USING rank_position::INTEGER`).catch(() => {});
 // Fix column types if table was created with wrong types
 const fixCols = [
   'final_ranking DECIMAL(6,2)', 'speeding_score DECIMAL(6,2)', 'seatbelt_score DECIMAL(6,2)',
   'distraction_score DECIMAL(6,2)', 'sign_signal_score DECIMAL(6,2)', 'following_dist_score DECIMAL(6,2)',
   'dcr_score DECIMAL(6,2)', 'pod_rate DECIMAL(5,4)', 'perfect_incentive DECIMAL(10,2)',
   'incentive_per_package DECIMAL(10,2)', 'cdf_revised DECIMAL(6,2)', 'dsb_revised DECIMAL(6,2)',
-  'rank_position DECIMAL(6,2)',
 ];
 for (const c of fixCols) {
   const [name, ...type] = c.split(' ');
@@ -172,7 +172,7 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
       `, [
         weekLabel, amazonWeek, year, staffId, driverName, tid || null,
-        parseNum(getVal(r, COL.rank)),
+        parseInt(getVal(r, COL.rank)) || null,
         COL.standing >= 0 ? String(r[COL.standing] || '').trim() || null : null,
         parseNum(getVal(r, COL.ranking)),
         parseBool(getVal(r, COL.bonus)),

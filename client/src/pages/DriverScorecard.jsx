@@ -144,6 +144,16 @@ export default function DriverScorecard() {
       <div className="bg-[#1a3a5c] text-white px-5 pt-[max(env(safe-area-inset-top),20px)] pb-6 rounded-b-3xl">
         <p className="text-sm text-blue-200 font-medium mb-1">{weekParam || 'Scorecard'}{sc?.year ? ` — ${sc.year}` : ''}</p>
         <h1 className="text-xl font-bold">{firstName}'s Scorecard</h1>
+        {sc && (() => {
+          const r = parseFloat(sc.final_ranking);
+          let msg, color;
+          if (r >= 100) { msg = `Congratulations ${firstName}! 🏆 Perfect score this week — absolutely outstanding!`; color = '#FFD700'; }
+          else if (r >= 95) { msg = `Great work ${firstName}! 🌟 Elite performance this week — keep pushing for perfect!`; color = '#fff'; }
+          else if (r >= 90) { msg = `Nice job ${firstName}! 💪 Above the bar this week — a little more focus and you'll be at the top!`; color = '#fff'; }
+          else { msg = `Keep going ${firstName}! 🚀 New week, new opportunity — let's get those numbers up together!`; color = '#FEF9C3'; }
+          return <p className="text-xs mt-2 leading-relaxed" style={{ color, animation: 'fadeIn 0.5s ease-out' }}>{msg}</p>;
+        })()}
+        <style>{`@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
         <div className="flex items-center justify-between mt-3">
           <button disabled={!prevWeek} onClick={() => setSelectedWeek(prevWeek)} className="p-1.5 rounded-lg bg-white/10 disabled:opacity-30"><ChevronLeft size={18} /></button>
           <span className="font-semibold text-sm">{weekParam || '—'}</span>

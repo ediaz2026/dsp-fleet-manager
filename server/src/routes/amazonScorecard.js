@@ -53,7 +53,8 @@ for (const c of fixCols) {
   const [name, ...type] = c.split(' ');
   pool.query(`ALTER TABLE amazon_scorecards ALTER COLUMN ${name} TYPE ${type.join(' ')} USING ${name}::${type.join(' ')}`).catch(() => {});
 }
-pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_amazon_sc_week_name ON amazon_scorecards (week_label, driver_name) WHERE staff_id IS NULL`).catch(() => {});
+// Drop the problematic partial unique index — we handle dedup via DELETE before INSERT
+pool.query(`DROP INDEX IF EXISTS idx_amazon_sc_week_name`).catch(() => {});
 
 // POST /api/amazon-scorecard/upload — parse Excel with dynamic header detection
 router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
@@ -122,6 +123,9 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
       nameToStaff[`${d.first_name}`.toUpperCase()] = d.staff_id;
     }
 
+    // Delete existing data for this week (allows clean re-upload)
+    await pool.query(`DELETE FROM amazon_scorecards WHERE week_label = $1`, [weekLabel]);
+
     let uploaded = 0, matched = 0;
     const unmatched = [];
     const parseNum = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
@@ -157,18 +161,6 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
           speeding_score, seatbelt_score, distraction_score, sign_signal_score, following_dist_score,
           cdf_revised, dcr_score, dsb_revised, pod_rate)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
-        ON CONFLICT (week_label, staff_id) DO UPDATE SET
-          driver_name=EXCLUDED.driver_name, transporter_id=EXCLUDED.transporter_id,
-          rank_position=EXCLUDED.rank_position, overall_standing=EXCLUDED.overall_standing,
-          final_ranking=EXCLUDED.final_ranking, bonus_hours=EXCLUDED.bonus_hours,
-          safety_pass=EXCLUDED.safety_pass, dsb_pass=EXCLUDED.dsb_pass,
-          packages=EXCLUDED.packages, perfect_incentive=EXCLUDED.perfect_incentive,
-          incentive_per_package=EXCLUDED.incentive_per_package,
-          speeding_score=EXCLUDED.speeding_score, seatbelt_score=EXCLUDED.seatbelt_score,
-          distraction_score=EXCLUDED.distraction_score, sign_signal_score=EXCLUDED.sign_signal_score,
-          following_dist_score=EXCLUDED.following_dist_score,
-          cdf_revised=EXCLUDED.cdf_revised, dcr_score=EXCLUDED.dcr_score,
-          dsb_revised=EXCLUDED.dsb_revised, pod_rate=EXCLUDED.pod_rate
       `, [
         weekLabel, amazonWeek, year, staffId, driverName, tid || null,
         parseNum(getVal(r, COL.rank)),

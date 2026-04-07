@@ -81,30 +81,33 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
       return -1;
     };
 
+    // Find columns dynamically, with hardcoded fallbacks matching known layout
+    const tidCol = col(['TRANSPORTER ID', 'DA TRANSPORTER', 'TID', 'TRANSPORTER']);
     const COL = {
-      rank:         col(['RANK', '#']),
-      name:         col(['DRIVER', 'DELIVERY ASSOCIATE', 'DA NAME', 'NAME']),
-      tid:          col(['TRANSPORTER ID', 'DA TRANSPORTER', 'TID', 'TRANSPORTER']),
-      standing:     col(['OVERALL STANDING', 'STANDING']),
-      ranking:      col(['FINAL RANKING', 'RANKING', 'OVERALL SCORE']),
-      bonus:        col(['BONUS HOURS', 'BONUS']),
-      safety:       col(['SAFETY', 'SAFETY PASS']),
-      dsb:          col(['DSB PASS', 'DSB']),
-      packages:     col(['PACKAGES', 'PKG', 'TOTAL PACKAGES']),
-      perfect:      col(['PERFECT INCENTIVE', 'PERFECT']),
-      perPkg:       col(['INCENTIVE PER PACKAGE', 'PER PACKAGE', 'PER PKG']),
-      speeding:     col(['SPEEDING']),
-      seatbelt:     col(['SEATBELT', 'SEAT BELT']),
-      distraction:  col(['DISTRACTION']),
-      signSignal:   col(['SIGN', 'SIGNAL', 'SIGN/SIGNAL']),
-      followDist:   col(['FOLLOWING', 'FOLLOW']),
-      cdf:          col(['CDF']),
-      dcr:          col(['DCR']),
-      dsbRevised:   col(['DSB REVISED', 'DSB REV']),
-      pod:          col(['POD']),
+      rank:         col(['RANK', '#'])         >= 0 ? col(['RANK', '#'])         : 0,
+      name:         col(['DRIVER', 'DELIVERY ASSOCIATE', 'DA NAME', 'NAME']) >= 0 ? col(['DRIVER', 'DELIVERY ASSOCIATE', 'DA NAME', 'NAME']) : 1,
+      tid:          tidCol >= 0 ? tidCol : 2,  // Fallback: column C
+      standing:     col(['OVERALL STANDING', 'STANDING'])   >= 0 ? col(['OVERALL STANDING', 'STANDING'])   : 3,
+      ranking:      col(['FINAL RANKING', 'RANKING'])       >= 0 ? col(['FINAL RANKING', 'RANKING'])       : 4,
+      bonus:        col(['BONUS HOURS', 'BONUS'])           >= 0 ? col(['BONUS HOURS', 'BONUS'])           : 5,
+      safety:       col(['SAFETY', 'SAFETY PASS', 'SAFETY METRIC']) >= 0 ? col(['SAFETY', 'SAFETY PASS', 'SAFETY METRIC']) : 6,
+      dsb:          col(['DSB PASS', 'DSB METRIC', 'DSB'])  >= 0 ? col(['DSB PASS', 'DSB METRIC', 'DSB'])  : 7,
+      packages:     col(['PACKAGES', 'PKG', 'TOTAL PACKAGES']) >= 0 ? col(['PACKAGES', 'PKG', 'TOTAL PACKAGES']) : 8,
+      perfect:      col(['PERFECT INCENTIVE', 'PERFECT'])   >= 0 ? col(['PERFECT INCENTIVE', 'PERFECT'])   : 9,
+      perPkg:       col(['INCENTIVE PER PACKAGE', 'PER PACKAGE', 'PER PKG']) >= 0 ? col(['INCENTIVE PER PACKAGE', 'PER PACKAGE', 'PER PKG']) : 10,
+      speeding:     col(['SPEEDING'])                       >= 0 ? col(['SPEEDING'])      : 11,
+      seatbelt:     col(['SEATBELT', 'SEAT BELT'])          >= 0 ? col(['SEATBELT', 'SEAT BELT']) : 12,
+      distraction:  col(['DISTRACTION'])                    >= 0 ? col(['DISTRACTION'])   : 13,
+      signSignal:   col(['SIGN', 'SIGNAL', 'SIGN/SIGNAL']) >= 0 ? col(['SIGN', 'SIGNAL', 'SIGN/SIGNAL']) : 14,
+      followDist:   col(['FOLLOWING', 'FOLLOW'])            >= 0 ? col(['FOLLOWING', 'FOLLOW']) : 15,
+      cdf:          col(['CDF'])                            >= 0 ? col(['CDF'])           : 16,
+      dcr:          col(['DCR'])                            >= 0 ? col(['DCR'])           : 17,
+      dsbRevised:   col(['DSB REVISED', 'DSB REV'])         >= 0 ? col(['DSB REVISED', 'DSB REV']) : 18,
+      pod:          col(['POD'])                            >= 0 ? col(['POD'])           : 19,
     };
 
     console.log('[scorecard] Headers found:', headers.join(' | '));
+    console.log('[scorecard] TID column detected at index:', COL.tid, '(dynamic:', tidCol, ', header:', headers[COL.tid] || 'N/A', ')');
     console.log('[scorecard] Column mapping:', JSON.stringify(COL));
 
     // Get all drivers for TID + name matching
@@ -151,8 +154,13 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
         staffId = nameToStaff[`${firstName} ${lastName}`.toUpperCase()] || null;
       }
 
-      if (!staffId) unmatched.push(`${driverName}${tid ? ` (${tid})` : ''}`);
-      else matched++;
+      if (!staffId) {
+        unmatched.push(`${driverName}${tid ? ` (${tid})` : ''}`);
+        if (uploaded < 5) console.log(`[scorecard] UNMATCHED: "${driverName}" tid="${tid}"`);
+      } else {
+        matched++;
+        if (uploaded < 5) console.log(`[scorecard] MATCHED: "${driverName}" tid="${tid}" → staff_id=${staffId}`);
+      }
 
       await pool.query(`
         INSERT INTO amazon_scorecards (week_label, amazon_week, year, staff_id, driver_name, transporter_id,

@@ -1,512 +1,190 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
-} from 'recharts';
-import * as XLSX from 'xlsx';
-import {
-  ChevronLeft, ChevronRight, Download, X, TrendingUp, TrendingDown, Minus,
-  Star, AlertTriangle,
-} from 'lucide-react';
-import { format, addDays, subDays, parseISO, startOfWeek, getWeek } from 'date-fns';
+import { useState, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronLeft, ChevronRight, Upload, Star, Award, CheckCircle, XCircle, X } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
 
-// ── Metric config ─────────────────────────────────────────────────────────────
-const METRICS = [
-  { key: 'dcr',  label: 'DCR',  pct: true,  higherBetter: true,  green: 98,  yellow: 96 },
-  { key: 'pod',  label: 'POD',  pct: true,  higherBetter: true,  green: 98,  yellow: 96 },
-  { key: 'cc',   label: 'CC',   pct: true,  higherBetter: false, green: 1,   yellow: 2  },
-  { key: 'ce',   label: 'CE',   pct: true,  higherBetter: false, green: 0.5, yellow: 1  },
-  { key: 'dnr',  label: 'DNR',  pct: true,  higherBetter: false, green: 0.5, yellow: 1  },
-  { key: 'ssd',  label: 'SSD',  pct: false, higherBetter: true,  green: 800, yellow: 750 },
-];
-
-function metricColor(metric, value) {
-  if (value === null || value === '' || value === undefined) return '';
-  const v = parseFloat(value);
-  if (isNaN(v)) return '';
-  const { higherBetter, green, yellow } = metric;
-  if (higherBetter) {
-    if (v >= green)  return 'bg-emerald-100 text-emerald-800';
-    if (v >= yellow) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-red-100 text-red-800';
-  } else {
-    if (v <= green)  return 'bg-emerald-100 text-emerald-800';
-    if (v <= yellow) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-red-100 text-red-800';
-  }
+function Badge({ pass, label }) {
+  return pass
+    ? <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700"><CheckCircle size={9} />{label || 'Pass'}</span>
+    : <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600"><XCircle size={9} />{label || 'Fail'}</span>;
 }
 
-function scoreColor(score) {
-  if (score === null || score === undefined) return 'text-slate-400';
-  const v = parseFloat(score);
-  if (v >= 85) return 'text-emerald-700 font-bold';
-  if (v >= 70) return 'text-yellow-700 font-bold';
-  return 'text-red-700 font-bold';
-}
+export default function Scorecard() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [selectedWeek, setSelectedWeek] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState(null);
+  const [expandedRow, setExpandedRow] = useState(null);
+  const fileRef = useRef();
 
-function scoreBg(score) {
-  if (score === null || score === undefined) return '';
-  const v = parseFloat(score);
-  if (v >= 85) return 'bg-emerald-100 text-emerald-800';
-  if (v >= 70) return 'bg-yellow-100 text-yellow-800';
-  return 'bg-red-100 text-red-800';
-}
-
-// Weighted score calculation — matches backend expectations
-export function calcWeekScore({ dcr, pod, cc, ce, dnr, ssd }) {
-  const parts = [];
-  const v = (x) => (x !== null && x !== '' && x !== undefined) ? parseFloat(x) : null;
-
-  const vDcr = v(dcr); if (vDcr !== null && !isNaN(vDcr)) parts.push({ w: 0.40, n: Math.min(100, Math.max(0, vDcr)) });
-  const vPod = v(pod); if (vPod !== null && !isNaN(vPod)) parts.push({ w: 0.20, n: Math.min(100, Math.max(0, vPod)) });
-  const vCc  = v(cc);  if (vCc  !== null && !isNaN(vCc))  parts.push({ w: 0.15, n: Math.max(0, 100 - vCc  * 50)  });
-  const vCe  = v(ce);  if (vCe  !== null && !isNaN(vCe))  parts.push({ w: 0.10, n: Math.max(0, 100 - vCe  * 100) });
-  const vDnr = v(dnr); if (vDnr !== null && !isNaN(vDnr)) parts.push({ w: 0.10, n: Math.max(0, 100 - vDnr * 100) });
-  const vSsd = v(ssd); if (vSsd !== null && !isNaN(vSsd)) parts.push({ w: 0.05, n: Math.min(100, vSsd / 10)      });
-
-  if (!parts.length) return null;
-  const totalW = parts.reduce((s, p) => s + p.w, 0);
-  return Math.round((parts.reduce((s, p) => s + p.n * p.w, 0) / totalW) * 10) / 10;
-}
-
-// ── Week navigation helpers ───────────────────────────────────────────────────
-function getWeekStart(date = new Date()) {
-  return format(startOfWeek(date, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-}
-function weekLabel(weekStart) {
-  const d = parseISO(weekStart);
-  const wn = getWeek(d, { weekStartsOn: 1 });
-  const end = addDays(d, 6);
-  return `Week ${wn}  (${format(d, 'MMM d')} – ${format(end, 'MMM d, yyyy')})`;
-}
-
-// ── Editable scorecard cell ───────────────────────────────────────────────────
-function ScoreCell({ value, onChange, onBlur, colorClass, placeholder }) {
-  return (
-    <input
-      type="number"
-      step="0.01"
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      onBlur={onBlur}
-      placeholder={placeholder}
-      className={`w-[68px] text-center text-xs font-semibold px-1 py-1 rounded-lg border border-transparent focus:outline-none focus:border-primary focus:bg-white transition-all ${colorClass || 'bg-slate-50 text-slate-700'}`}
-    />
-  );
-}
-
-// ── Driver history modal ──────────────────────────────────────────────────────
-function HistoryModal({ driver, onClose }) {
-  const { data: history = [], isLoading } = useQuery({
-    queryKey: ['scorecard-history', driver.staff_id],
-    queryFn: () => api.get(`/scorecard/history/${driver.staff_id}?weeks=24`).then(r => r.data),
+  const { data: weeks = [] } = useQuery({
+    queryKey: ['amazon-scorecard-weeks'],
+    queryFn: () => api.get('/amazon-scorecard/weeks').then(r => r.data),
   });
 
-  const chartData = [...history]
-    .reverse()
-    .map(h => ({
-      week: format(parseISO(String(h.week_start).slice(0, 10)), 'MMM d'),
-      score: h.week_score ? parseFloat(h.week_score) : null,
-      dcr:   h.dcr  ? parseFloat(h.dcr)  : null,
-      pod:   h.pod  ? parseFloat(h.pod)  : null,
-    }))
-    .filter(d => d.score !== null);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-card-border">
-          <div>
-            <h2 className="font-bold text-lg text-content">{driver.first_name} {driver.last_name}</h2>
-            <p className="text-sm text-content-muted">Scorecard history — last 24 weeks</p>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition-colors"><X size={18} /></button>
-        </div>
-
-        <div className="p-6 space-y-6">
-          {isLoading && <p className="text-center text-content-muted py-8">Loading history…</p>}
-
-          {!isLoading && chartData.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-content-muted uppercase tracking-wide mb-3">Week Score Over Time</p>
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                  <XAxis dataKey="week" tick={{ fontSize: 10 }} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={v => `${v?.toFixed(1)}`} />
-                  <ReferenceLine y={85} stroke="#10b981" strokeDasharray="4 2" label={{ value: '85 ✓', position: 'right', fontSize: 10, fill: '#10b981' }} />
-                  <ReferenceLine y={70} stroke="#f59e0b" strokeDasharray="4 2" label={{ value: '70', position: 'right', fontSize: 10, fill: '#f59e0b' }} />
-                  <Line type="monotone" dataKey="score" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} name="Week Score" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {!isLoading && history.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 text-[10px] font-semibold text-content-muted uppercase">
-                    <th className="pb-2 text-left">Week</th>
-                    {METRICS.map(m => <th key={m.key} className="pb-2 text-center">{m.label}</th>)}
-                    <th className="pb-2 text-center">Score</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {history.map((h, i) => {
-                    const ws = String(h.week_start).slice(0, 10);
-                    return (
-                      <tr key={ws} className={i % 2 === 1 ? 'bg-slate-50/50' : ''}>
-                        <td className="py-2 pr-3 font-medium">{format(parseISO(ws), 'MMM d')}</td>
-                        {METRICS.map(m => (
-                          <td key={m.key} className="py-2 text-center">
-                            {h[m.key] != null ? (
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${metricColor(m, h[m.key])}`}>
-                                {parseFloat(h[m.key]).toFixed(m.key === 'ssd' ? 0 : 2)}{m.pct && m.key !== 'ssd' ? '%' : ''}
-                              </span>
-                            ) : <span className="text-slate-300">—</span>}
-                          </td>
-                        ))}
-                        <td className="py-2 text-center">
-                          {h.week_score != null ? (
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${scoreBg(h.week_score)}`}>
-                              {parseFloat(h.week_score).toFixed(1)}
-                            </span>
-                          ) : <span className="text-slate-300">—</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {!isLoading && history.length === 0 && (
-            <p className="text-center text-content-muted py-8">No scorecard history yet for this driver.</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Main Scorecard Page ───────────────────────────────────────────────────────
-export default function Scorecard() {
-  const qc = useQueryClient();
-  const [weekStart, setWeekStart] = useState(getWeekStart);
-  const [historyDriver, setHistoryDriver] = useState(null);
-  const [localRows, setLocalRows] = useState({}); // { [staff_id]: { dcr, pod, ... } }
-  const [dirtyIds, setDirtyIds] = useState(new Set());
-
-  const prevWeek = () => setWeekStart(ws => format(subDays(parseISO(ws), 7), 'yyyy-MM-dd'));
-  const nextWeek = () => setWeekStart(ws => format(addDays(parseISO(ws), 7), 'yyyy-MM-dd'));
-  const weekEnd  = format(addDays(parseISO(weekStart), 6), 'yyyy-MM-dd');
-
-  // Previous week start (for trend)
-  const prevWeekStart = format(subDays(parseISO(weekStart), 7), 'yyyy-MM-dd');
+  const weekLabel = selectedWeek || (weeks[0]?.week_label || null);
+  const weekIdx = weeks.findIndex(w => w.week_label === weekLabel);
+  const prevWeek = weekIdx < weeks.length - 1 ? weeks[weekIdx + 1]?.week_label : null;
+  const nextWeek = weekIdx > 0 ? weeks[weekIdx - 1]?.week_label : null;
 
   const { data: drivers = [], isLoading } = useQuery({
-    queryKey: ['scorecard', weekStart],
-    queryFn: () => api.get(`/scorecard?week_start=${weekStart}`).then(r => r.data),
+    queryKey: ['amazon-scorecard-all', weekLabel],
+    queryFn: () => api.get('/amazon-scorecard', { params: { week: weekLabel } }).then(r => r.data),
+    enabled: !!weekLabel,
   });
 
-  const { data: prevDrivers = [] } = useQuery({
-    queryKey: ['scorecard', prevWeekStart],
-    queryFn: () => api.get(`/scorecard?week_start=${prevWeekStart}`).then(r => r.data),
-  });
-
-  // Initialize / reset local rows when server data loads or week changes
-  useEffect(() => {
-    if (!drivers.length) return;
-    const m = {};
-    for (const d of drivers) {
-      m[d.staff_id] = {
-        dcr:   d.dcr   ?? '', pod: d.pod ?? '',
-        cc:    d.cc    ?? '', ce:  d.ce  ?? '',
-        dnr:   d.dnr   ?? '', ssd: d.ssd ?? '',
-        notes: d.notes ?? '',
-      };
-    }
-    setLocalRows(m);
-    setDirtyIds(new Set());
-  }, [drivers, weekStart]);
-
-  // Build prev-week score map for trend
-  const prevScoreMap = useMemo(() => {
-    const m = {};
-    for (const d of prevDrivers) m[d.staff_id] = d.week_score != null ? parseFloat(d.week_score) : null;
-    return m;
-  }, [prevDrivers]);
-
-  const saveScore = useMutation({
-    mutationFn: ({ staffId }) => {
-      const row = localRows[staffId] || {};
-      const score = calcWeekScore(row);
-      return api.put('/scorecard', {
-        staff_id:   staffId,
-        week_start: weekStart,
-        dcr:   row.dcr  !== '' ? parseFloat(row.dcr)  : null,
-        pod:   row.pod  !== '' ? parseFloat(row.pod)  : null,
-        cc:    row.cc   !== '' ? parseFloat(row.cc)   : null,
-        ce:    row.ce   !== '' ? parseFloat(row.ce)   : null,
-        dnr:   row.dnr  !== '' ? parseFloat(row.dnr)  : null,
-        ssd:   row.ssd  !== '' ? parseInt(row.ssd)    : null,
-        week_score: score,
-        notes: row.notes || null,
-      });
-    },
-    onSuccess: (_, { staffId }) => {
-      setDirtyIds(prev => { const n = new Set(prev); n.delete(staffId); return n; });
-      qc.invalidateQueries({ queryKey: ['scorecard', weekStart] });
-    },
-    onError: () => toast.error('Failed to save'),
-  });
-
-  const updateField = useCallback((staffId, field, value) => {
-    setLocalRows(prev => {
-      const row = { ...prev[staffId], [field]: value };
-      return { ...prev, [staffId]: row };
-    });
-    setDirtyIds(prev => new Set([...prev, staffId]));
-  }, []);
-
-  const handleBlur = (staffId) => {
-    if (dirtyIds.has(staffId)) {
-      saveScore.mutate({ staffId });
-    }
+  const handleUpload = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const { data } = await api.post('/amazon-scorecard/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setUploadResult(data);
+      qc.invalidateQueries({ queryKey: ['amazon-scorecard-weeks'] });
+      qc.invalidateQueries({ queryKey: ['amazon-scorecard-all'] });
+      toast.success(`Uploaded ${data.weekLabel} — ${data.matched}/${data.uploaded} matched`);
+      if (data.weekLabel) setSelectedWeek(data.weekLabel);
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Upload failed');
+    } finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
   };
 
-  const handleExport = () => {
-    if (!drivers.length) return;
-    const rows = drivers.map(d => {
-      const local = localRows[d.staff_id] || {};
-      const score = calcWeekScore(local);
-      return {
-        'Driver':     `${d.first_name} ${d.last_name}`,
-        'DCR (%)':    local.dcr !== '' ? local.dcr : '',
-        'POD (%)':    local.pod !== '' ? local.pod : '',
-        'CC (%)':     local.cc  !== '' ? local.cc  : '',
-        'CE (%)':     local.ce  !== '' ? local.ce  : '',
-        'DNR (%)':    local.dnr !== '' ? local.dnr : '',
-        'SSD':        local.ssd !== '' ? local.ssd : '',
-        'Week Score': score != null ? score.toFixed(1) : '',
-        'Notes':      local.notes || '',
-      };
-    });
-    const ws = XLSX.utils.json_to_sheet(rows);
-    ws['!cols'] = [{ wch: 26 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 30 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, `Scorecard ${weekStart}`);
-    XLSX.writeFile(wb, `Scorecard_${weekStart}.xlsx`);
-    toast.success('Exported');
+  const getRowBg = (d, i) => {
+    if (d.packages > 899 && d.rank_position <= 4) return 'bg-green-50';
+    if (d.packages > 899 && d.rank_position <= 8) return 'bg-blue-50';
+    return i % 2 === 1 ? 'bg-slate-50/50' : '';
   };
 
-  // Summary stats for top bar
-  const summary = useMemo(() => {
-    let green = 0, yellow = 0, red = 0, total = 0;
-    for (const d of drivers) {
-      const local = localRows[d.staff_id] || {};
-      const sc = calcWeekScore(local);
-      if (sc === null) continue;
-      total++;
-      if (sc >= 85) green++;
-      else if (sc >= 70) yellow++;
-      else red++;
-    }
-    return { green, yellow, red, total };
-  }, [drivers, localRows]);
-
-  // At-risk drivers
-  const atRisk = useMemo(() => {
-    return drivers
-      .map(d => {
-        const local = localRows[d.staff_id] || {};
-        const sc = calcWeekScore(local);
-        return { ...d, computedScore: sc };
-      })
-      .filter(d => d.computedScore !== null && d.computedScore < 70)
-      .sort((a, b) => a.computedScore - b.computedScore)
-      .slice(0, 3);
-  }, [drivers, localRows]);
+  const isPerfect = (d) => d.final_ranking == 100 && d.packages > 899
+    && d.speeding_score == 100 && d.seatbelt_score == 100 && d.distraction_score == 100
+    && d.sign_signal_score == 100 && d.following_dist_score == 100
+    && d.cdf_revised == 0 && d.dsb_revised == 0;
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 max-w-screen-xl mx-auto space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-content">Scorecard</h1>
-          <p className="text-sm text-content-muted mt-0.5">Weekly Amazon delivery metrics per driver</p>
-        </div>
-        <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-card-border bg-white text-xs font-semibold text-content-muted hover:text-primary hover:border-primary transition-all">
-          <Download size={13} /> Export Week
-        </button>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-slate-900">Scorecard</h1>
+        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border bg-white hover:bg-slate-50 cursor-pointer text-sm font-medium transition-all ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+          <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Scorecard'}
+          <input type="file" accept=".xlsx,.xls" className="hidden" ref={fileRef} disabled={uploading} onChange={e => handleUpload(e.target.files?.[0])} />
+        </label>
       </div>
+
+      {/* Upload result */}
+      {uploadResult && (
+        <div className="bg-white rounded-xl border p-4 text-sm space-y-2">
+          <div className="flex justify-between items-center">
+            <p className="font-semibold">{uploadResult.weekLabel}: {uploadResult.matched}/{uploadResult.uploaded} matched</p>
+            <button onClick={() => setUploadResult(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
+          </div>
+          {uploadResult.unmatched?.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-xs font-bold text-amber-700 mb-1">Unmatched ({uploadResult.unmatched.length}):</p>
+              <p className="text-xs text-amber-600">{uploadResult.unmatched.join(', ')}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Week navigation */}
-      <div className="flex items-center gap-3 bg-white border border-card-border rounded-xl px-4 py-3">
-        <button onClick={prevWeek} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
-          <ChevronLeft size={16} />
-        </button>
-        <span className="font-semibold text-sm text-content flex-1 text-center">{weekLabel(weekStart)}</span>
-        <button onClick={nextWeek} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
-          <ChevronRight size={16} />
-        </button>
-      </div>
-
-      {/* Summary bar */}
-      {summary.total > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: 'Green 🟢', value: summary.green,  cls: 'bg-emerald-50 border-emerald-200 text-emerald-800' },
-            { label: 'Yellow 🟡', value: summary.yellow, cls: 'bg-yellow-50 border-yellow-200 text-yellow-800' },
-            { label: 'Red 🔴',   value: summary.red,    cls: 'bg-red-50 border-red-200 text-red-800' },
-            { label: 'Scored',   value: `${summary.total} / ${drivers.length}`, cls: 'bg-slate-50 border-slate-200 text-slate-700' },
-          ].map(s => (
-            <div key={s.label} className={`rounded-xl border px-4 py-2.5 flex items-center justify-between ${s.cls}`}>
-              <span className="text-xs font-semibold">{s.label}</span>
-              <span className="text-lg font-bold">{s.value}</span>
-            </div>
-          ))}
+      {weeks.length > 0 && (
+        <div className="flex items-center justify-center gap-4">
+          <button onClick={() => setSelectedWeek(prevWeek)} disabled={!prevWeek} className="p-2 rounded-lg border bg-white hover:bg-slate-50 disabled:opacity-30"><ChevronLeft size={16} /></button>
+          <div className="text-center">
+            <p className="font-bold text-lg text-slate-900">{weekLabel || '—'}</p>
+            <p className="text-xs text-slate-400">{weeks[weekIdx]?.year || ''}</p>
+          </div>
+          <button onClick={() => setSelectedWeek(nextWeek)} disabled={!nextWeek} className="p-2 rounded-lg border bg-white hover:bg-slate-50 disabled:opacity-30"><ChevronRight size={16} /></button>
         </div>
       )}
 
-      {/* At-risk callout */}
-      {atRisk.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3">
-          <AlertTriangle size={16} className="text-red-500 mt-0.5 flex-shrink-0" />
-          <div>
-            <p className="text-xs font-bold text-red-700 mb-1">⚠️ At-Risk Drivers This Week</p>
-            <div className="flex flex-wrap gap-2">
-              {atRisk.map(d => (
-                <button key={d.staff_id} onClick={() => setHistoryDriver(d)}
-                  className="px-2 py-1 bg-red-100 text-red-800 rounded-lg text-xs font-semibold hover:bg-red-200 transition-colors">
-                  {d.first_name} {d.last_name} ({d.computedScore?.toFixed(1)})
-                </button>
+      {/* Leaderboard */}
+      {isLoading && <p className="text-center text-slate-400 py-12">Loading…</p>}
+      {!isLoading && drivers.length === 0 && weekLabel && (
+        <div className="bg-white rounded-xl border py-12 text-center">
+          <Award size={36} className="mx-auto text-slate-300 mb-3" />
+          <p className="font-semibold text-slate-500">No scorecard data for {weekLabel}</p>
+          <p className="text-xs text-slate-400 mt-1">Upload a scorecard Excel file to get started</p>
+        </div>
+      )}
+      {drivers.length > 0 && (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-100 text-xs font-semibold text-slate-500 uppercase">
+                <th className="px-3 py-2.5 text-center w-10">#</th>
+                <th className="px-3 py-2.5 text-left">Driver</th>
+                <th className="px-3 py-2.5 text-center">Score</th>
+                <th className="px-3 py-2.5 text-center">Packages</th>
+                <th className="px-3 py-2.5 text-center">Safety</th>
+                <th className="px-3 py-2.5 text-center">DSB</th>
+                <th className="px-3 py-2.5 text-center">Bonus</th>
+                <th className="px-3 py-2.5 text-center">DCR</th>
+                <th className="px-3 py-2.5 text-center">POD</th>
+                <th className="px-3 py-2.5 text-center">Incentive</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {drivers.map((d, i) => (
+                <>
+                  <tr key={d.id} className={`${getRowBg(d, i)} cursor-pointer hover:bg-slate-100 transition-colors`} onClick={() => setExpandedRow(expandedRow === d.id ? null : d.id)}>
+                    <td className="px-3 py-2 text-center font-mono text-xs text-slate-400">{d.rank_position}</td>
+                    <td className="px-3 py-2 font-medium text-slate-800">
+                      {isPerfect(d) && <Star size={12} className="inline text-amber-500 mr-1" fill="#F59E0B" />}
+                      {d.driver_name}
+                      {!d.staff_id && <span className="ml-1 text-[9px] text-red-400">(unmatched)</span>}
+                    </td>
+                    <td className="px-3 py-2 text-center font-bold">{d.final_ranking ?? '—'}</td>
+                    <td className="px-3 py-2 text-center">{d.packages ?? '—'}</td>
+                    <td className="px-3 py-2 text-center"><Badge pass={d.safety_pass} /></td>
+                    <td className="px-3 py-2 text-center"><Badge pass={d.dsb_pass} /></td>
+                    <td className="px-3 py-2 text-center"><Badge pass={d.bonus_hours} label={d.bonus_hours ? 'Yes' : '—'} /></td>
+                    <td className={`px-3 py-2 text-center font-semibold ${d.dcr_score >= 95 ? 'text-green-700' : 'text-red-600'}`}>{d.dcr_score ?? '—'}</td>
+                    <td className="px-3 py-2 text-center">{d.pod_rate ? (d.pod_rate * 100).toFixed(1) + '%' : '—'}</td>
+                    <td className="px-3 py-2 text-center text-xs">{d.incentive_per_package > 0 ? `$${parseFloat(d.incentive_per_package).toFixed(2)}` : '—'}</td>
+                  </tr>
+                  {expandedRow === d.id && (
+                    <tr key={`exp-${d.id}`}>
+                      <td colSpan={10} className="bg-slate-50 px-6 py-4">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                          <div><span className="text-slate-400 block">Speeding</span><span className="font-bold">{d.speeding_score ?? '—'}</span> <Badge pass={d.speeding_score == 100} /></div>
+                          <div><span className="text-slate-400 block">Seatbelt</span><span className="font-bold">{d.seatbelt_score ?? '—'}</span> <Badge pass={d.seatbelt_score == 100} /></div>
+                          <div><span className="text-slate-400 block">Distraction</span><span className="font-bold">{d.distraction_score ?? '—'}</span> <Badge pass={d.distraction_score == 100} /></div>
+                          <div><span className="text-slate-400 block">Sign/Signal</span><span className="font-bold">{d.sign_signal_score ?? '—'}</span> <Badge pass={d.sign_signal_score == 100} /></div>
+                          <div><span className="text-slate-400 block">Following Dist</span><span className="font-bold">{d.following_dist_score ?? '—'}</span> <Badge pass={d.following_dist_score == 100} /></div>
+                          <div><span className="text-slate-400 block">CDF (Revised)</span><span className={`font-bold ${d.cdf_revised == 0 ? 'text-green-700' : 'text-red-600'}`}>{d.cdf_revised}</span></div>
+                          <div><span className="text-slate-400 block">DSB (Revised)</span><span className={`font-bold ${d.dsb_revised == 0 ? 'text-green-700' : 'text-red-600'}`}>{d.dsb_revised}</span></div>
+                          <div><span className="text-slate-400 block">Standing</span><span className="font-bold">{d.overall_standing || '—'}</span></div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
-            </div>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Upload history */}
+      {weeks.length > 1 && (
+        <div className="bg-white rounded-xl border p-4">
+          <p className="font-semibold text-sm text-slate-800 mb-2">Upload History</p>
+          <div className="space-y-1">
+            {weeks.map((w, i) => (
+              <button key={i} onClick={() => setSelectedWeek(w.week_label)}
+                className={`w-full flex justify-between text-sm py-1.5 px-2 rounded transition-colors ${w.week_label === weekLabel ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-slate-50 text-slate-600'}`}>
+                <span>{w.week_label}</span>
+                <span className="text-xs text-slate-400">{w.uploaded_at ? new Date(w.uploaded_at).toLocaleDateString() : ''}</span>
+              </button>
+            ))}
           </div>
         </div>
-      )}
-
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-card-border shadow-sm overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead className="border-b border-slate-100 bg-slate-50">
-            <tr className="text-[10px] font-semibold text-content-muted uppercase tracking-wide">
-              <th className="px-4 py-3 text-left sticky left-0 bg-slate-50 z-10 min-w-[160px]">Driver</th>
-              {METRICS.map(m => (
-                <th key={m.key} className="px-2 py-3 text-center w-20" title={m.key === 'ssd' ? 'Safe & Secure Delivery Score (higher better, ≥800)' : m.higherBetter ? `${m.label} — higher is better, ≥${m.green}%` : `${m.label} — lower is better, <${m.green}%`}>
-                  {m.label}
-                  <span className="block text-[8px] font-normal opacity-60">{m.higherBetter ? `≥${m.green}${m.pct && m.key !== 'ssd' ? '%' : ''}` : `<${m.green}${m.pct && m.key !== 'ssd' ? '%' : ''}`}</span>
-                </th>
-              ))}
-              <th className="px-3 py-3 text-center w-20">Score</th>
-              <th className="px-3 py-3 text-center w-16">Trend</th>
-              <th className="px-4 py-3 text-left min-w-[160px]">Notes</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50">
-            {isLoading ? (
-              Array.from({ length: 8 }).map((_, i) => (
-                <tr key={i} className="animate-pulse">
-                  <td className="px-4 py-3"><div className="h-3 bg-slate-200 rounded w-32" /></td>
-                  {Array.from({ length: 9 }).map((_, j) => (
-                    <td key={j} className="px-2 py-3"><div className="h-3 bg-slate-200 rounded w-12 mx-auto" /></td>
-                  ))}
-                </tr>
-              ))
-            ) : drivers.length === 0 ? (
-              <tr><td colSpan={10} className="px-4 py-12 text-center text-content-muted">No active drivers found</td></tr>
-            ) : drivers.map((d, idx) => {
-              const local = localRows[d.staff_id] || {};
-              const score = calcWeekScore(local);
-              const prevScore = prevScoreMap[d.staff_id];
-              const delta = score != null && prevScore != null ? score - prevScore : null;
-              const dirty = dirtyIds.has(d.staff_id);
-
-              return (
-                <tr key={d.staff_id} className={`transition-colors hover:bg-slate-50 ${idx % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
-                  {/* Driver name (clickable → history) */}
-                  <td className="px-4 py-2 sticky left-0 bg-white z-10">
-                    <button onClick={() => setHistoryDriver(d)}
-                      className="font-semibold text-content hover:text-primary text-left transition-colors">
-                      {d.first_name} {d.last_name}
-                    </button>
-                    {dirty && <span className="ml-1.5 text-[9px] text-amber-500 font-bold">●</span>}
-                  </td>
-
-                  {/* Metric cells */}
-                  {METRICS.map(m => {
-                    const val = local[m.key] ?? '';
-                    const cls = metricColor(m, val);
-                    return (
-                      <td key={m.key} className="px-1 py-1.5 text-center">
-                        <ScoreCell
-                          value={val}
-                          onChange={v => updateField(d.staff_id, m.key, v)}
-                          onBlur={() => handleBlur(d.staff_id)}
-                          colorClass={cls}
-                          placeholder={m.key === 'ssd' ? '0' : '0.00'}
-                        />
-                      </td>
-                    );
-                  })}
-
-                  {/* Week Score */}
-                  <td className="px-2 py-2 text-center">
-                    {score != null ? (
-                      <span className={`px-2 py-1 rounded-full text-[11px] font-bold ${scoreBg(score)}`}>
-                        {score.toFixed(1)}
-                      </span>
-                    ) : <span className="text-slate-300">—</span>}
-                  </td>
-
-                  {/* Trend */}
-                  <td className="px-2 py-2 text-center">
-                    {delta === null ? (
-                      <span className="text-slate-300"><Minus size={13} /></span>
-                    ) : delta >= 2 ? (
-                      <TrendingUp size={14} className="text-emerald-600 inline" title={`+${delta.toFixed(1)} vs prev week`} />
-                    ) : delta <= -2 ? (
-                      <TrendingDown size={14} className="text-red-500 inline" title={`${delta.toFixed(1)} vs prev week`} />
-                    ) : (
-                      <Minus size={13} className="text-slate-400 inline" title="Stable" />
-                    )}
-                  </td>
-
-                  {/* Notes */}
-                  <td className="px-2 py-2">
-                    <input
-                      type="text"
-                      value={local.notes || ''}
-                      onChange={e => updateField(d.staff_id, 'notes', e.target.value)}
-                      onBlur={() => handleBlur(d.staff_id)}
-                      placeholder="Optional notes…"
-                      className="w-full text-xs border border-transparent rounded px-2 py-1 focus:outline-none focus:border-primary focus:bg-white bg-slate-50 text-slate-600 placeholder-slate-300 transition-all"
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Legend */}
-      <div className="flex flex-wrap gap-4 text-[10px] text-content-muted px-1">
-        <span className="font-semibold uppercase tracking-wide">Thresholds:</span>
-        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-200 inline-block"/> Green = meets Amazon standard</span>
-        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-yellow-200 inline-block"/> Yellow = approaching threshold</span>
-        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-200 inline-block"/> Red = below standard</span>
-        <span className="ml-auto text-primary/70">Click a driver name to view full history</span>
-      </div>
-
-      {/* History modal */}
-      {historyDriver && (
-        <HistoryModal driver={historyDriver} onClose={() => setHistoryDriver(null)} />
       )}
     </div>
   );

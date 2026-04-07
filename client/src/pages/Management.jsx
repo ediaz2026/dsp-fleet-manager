@@ -5,7 +5,7 @@ import {
   Save, Plus, Trash2, Shield, Bell, Cpu, DollarSign, Cloud, ToggleLeft, ToggleRight,
   Tag, RepeatIcon, X, ChevronDown, ChevronUp, Search, Users, UserPlus, RefreshCw,
   Settings, Calendar, Upload, CheckCircle, AlertCircle, ChevronRight, GripVertical,
-  Download, FileSpreadsheet, ClipboardList, Mail, Smartphone, MessageCircle, Info, Clock, Star,
+  Download, FileSpreadsheet, ClipboardList, Mail, Smartphone, MessageCircle, Info, Clock,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../api/client';
@@ -73,68 +73,9 @@ const SIDEBAR = [
       { id: 'audit-log',     label: 'Audit Log',        icon: ClipboardList },
       { id: 'notifications', label: 'Notifications',    icon: Bell },
       { id: 'announcements', label: 'Announcements',    icon: Info },
-      { id: 'scorecard-upload', label: 'Scorecard Upload', icon: Star },
     ],
   },
 ];
-
-function ScorecardUploadSection({ CARD, SH }) {
-  const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState(null);
-  const { data: weeks = [] } = useQuery({ queryKey: ['sc-weeks'], queryFn: () => api.get('/amazon-scorecard/weeks').then(r => r.data) });
-  const fileRef = useRef();
-
-  const handleUpload = async (file) => {
-    if (!file) return;
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const { data } = await api.post('/amazon-scorecard/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setResult(data);
-      toast.success(`Scorecard uploaded — ${data.matched} matched, ${data.unmatched.length} unmatched`);
-    } catch (err) {
-      toast.error(err?.response?.data?.error || 'Upload failed');
-    } finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
-  };
-
-  return (
-    <>
-      <h1 className="text-2xl font-bold text-slate-900">Scorecard Upload</h1>
-      <p className="text-sm text-slate-500">Upload weekly Amazon scorecard Excel files.</p>
-      <section className={CARD}>
-        <label className="flex items-center gap-2 px-4 py-2 rounded-lg border border-card-border bg-white hover:bg-slate-50 cursor-pointer text-sm font-medium w-fit">
-          {uploading ? 'Uploading…' : '📊 Upload Scorecard (Excel)'}
-          <input type="file" accept=".xlsx,.xls" className="hidden" ref={fileRef} disabled={uploading} onChange={e => handleUpload(e.target.files?.[0])} />
-        </label>
-        {result && (
-          <div className="mt-3 text-sm space-y-1">
-            <p className="font-semibold text-slate-800">Week: {result.weekLabel} — {result.uploaded} drivers uploaded, {result.matched} matched</p>
-            {result.unmatched?.length > 0 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-2">
-                <p className="text-xs font-bold text-amber-700 mb-1">Unmatched drivers ({result.unmatched.length}):</p>
-                {result.unmatched.map((n, i) => <p key={i} className="text-xs text-amber-600">{n}</p>)}
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-      {weeks.length > 0 && (
-        <section className={CARD}>
-          <p className={SH}>Upload History</p>
-          <div className="space-y-1">
-            {weeks.map((w, i) => (
-              <div key={i} className="flex justify-between text-sm py-1.5 border-b border-slate-50 last:border-0">
-                <span className="font-semibold text-slate-800">{w.week_label}</span>
-                <span className="text-slate-400 text-xs">{w.uploaded_at ? new Date(w.uploaded_at).toLocaleDateString() : ''}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-    </>
-  );
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 function AnnouncementsSection({ CARD, SH, FL }) {
@@ -1959,11 +1900,6 @@ export default function Management() {
         {/* ══ ANNOUNCEMENTS ════════════════════════════════════════════ */}
         {activeSection === 'announcements' && (
           <AnnouncementsSection CARD={CARD} SH={SH} FL={FL} />
-        )}
-
-        {/* ══ SCORECARD UPLOAD ═════════════════════════════════════════ */}
-        {activeSection === 'scorecard-upload' && (
-          <ScorecardUploadSection CARD={CARD} SH={SH} />
         )}
 
         {/* ══ AUDIT LOG ════════════════════════════════════════════════ */}

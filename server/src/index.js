@@ -154,6 +154,7 @@ app.use('/api/ops', require('./routes/pickList'));
 app.use('/api/announcements', require('./routes/announcements'));
 app.use('/api/analytics',   require('./routes/analytics'));
 app.use('/api/scorecard',   require('./routes/scorecard'));
+app.use('/api/amazon-scorecard', require('./routes/amazonScorecard'));
 app.use('/api/cortex-sync', require('./routes/cortexSync'));
 app.use('/api/import-data', require('./routes/importData'));
 app.use('/api/vendors',    require('./routes/vendors'));

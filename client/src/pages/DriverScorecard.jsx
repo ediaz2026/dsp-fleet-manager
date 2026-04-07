@@ -5,8 +5,18 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 
 function titleCase(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : ''; }
+function fmt(v) {
+  if (v === null || v === undefined) return '—';
+  const n = parseFloat(v);
+  if (isNaN(n)) return '—';
+  return Number.isInteger(n) ? n.toString() : parseFloat(n.toFixed(2)).toString();
+}
+function fmtPct(v) {
+  if (v === null || v === undefined) return '—';
+  const n = parseFloat(v) * 100;
+  return (Number.isInteger(n) ? n.toString() : parseFloat(n.toFixed(1)).toString()) + '%';
+}
 function int(v) { return v != null ? Math.round(Number(v)) : '—'; }
-function dec(v, d = 2) { return v != null ? Number(v).toFixed(d) : '—'; }
 
 function Badge({ pass, label }) {
   return pass
@@ -182,7 +192,7 @@ export default function DriverScorecard() {
               <p className="text-[10px] font-semibold text-slate-400 uppercase">Rank</p>
             </div>
             <div className="bg-white rounded-xl p-3 text-center shadow-sm">
-              <p className="text-2xl font-bold text-[#111827]">{dec(sc.final_ranking)}</p>
+              <p className="text-2xl font-bold text-[#111827]">{fmt(sc.final_ranking)}</p>
               <p className="text-[10px] font-semibold text-slate-400 uppercase">Score</p>
             </div>
             <div className="bg-white rounded-xl p-3 text-center shadow-sm">
@@ -218,10 +228,10 @@ export default function DriverScorecard() {
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="bg-[#1a3a5c] px-4 py-2.5"><p className="text-white font-bold text-sm">Quality Metrics</p></div>
             <div className="px-4">
-              <MetricRow label="DCR Score" value={sc.dcr_score} fmt={v => int(v)} passThreshold={95} />
-              <MetricRow label="POD Rate" value={sc.pod_rate ? (sc.pod_rate * 100).toFixed(1) : null} suffix="%" passThreshold={98} />
-              <MetricRow label="CDF (Revised)" value={sc.cdf_revised} fmt={v => int(v)} invert />
-              <MetricRow label="DSB (Revised)" value={sc.dsb_revised} fmt={v => int(v)} invert />
+              <MetricRow label="DCR Score" value={sc.dcr_score} fmt={fmt} passThreshold={95} />
+              <MetricRow label="POD Rate" value={sc.pod_rate != null ? fmtPct(sc.pod_rate).replace('%','') : null} suffix="%" passThreshold={98} />
+              <MetricRow label="CDF (Revised)" value={sc.cdf_revised} fmt={fmt} invert />
+              <MetricRow label="DSB (Revised)" value={sc.dsb_revised} fmt={fmt} invert />
             </div>
           </div>
 
@@ -229,11 +239,11 @@ export default function DriverScorecard() {
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="bg-[#374151] px-4 py-2.5"><p className="text-white font-bold text-sm">Safety Metrics</p></div>
             <div className="px-4">
-              <MetricRow label="Speeding" value={sc.speeding_score} fmt={v => int(v)} />
-              <MetricRow label="Seatbelt" value={sc.seatbelt_score} fmt={v => int(v)} />
-              <MetricRow label="Distraction" value={sc.distraction_score} fmt={v => int(v)} />
-              <MetricRow label="Sign/Signal" value={sc.sign_signal_score} fmt={v => int(v)} />
-              <MetricRow label="Following Distance" value={sc.following_dist_score} fmt={v => int(v)} />
+              <MetricRow label="Speeding" value={sc.speeding_score} fmt={fmt} />
+              <MetricRow label="Seatbelt" value={sc.seatbelt_score} fmt={fmt} />
+              <MetricRow label="Distraction" value={sc.distraction_score} fmt={fmt} />
+              <MetricRow label="Sign/Signal" value={sc.sign_signal_score} fmt={fmt} />
+              <MetricRow label="Following Distance" value={sc.following_dist_score} fmt={fmt} />
             </div>
           </div>
         </div>

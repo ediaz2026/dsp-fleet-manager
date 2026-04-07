@@ -10,10 +10,17 @@ function Badge({ pass, label }) {
     : <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600"><XCircle size={9} />{label || 'Fail'}</span>;
 }
 
+function fmt(v) {
+  if (v === null || v === undefined) return '—';
+  const n = parseFloat(v);
+  if (isNaN(n)) return '—';
+  return Number.isInteger(n) ? n.toString() : parseFloat(n.toFixed(2)).toString();
+}
+
 function MetricCell({ value, good, suffix = '' }) {
   const v = parseFloat(value);
   const isGood = !isNaN(v) && good(v);
-  return <span className={`font-semibold ${isGood ? 'text-green-700' : 'text-red-600'}`}>{value ?? '—'}{suffix}</span>;
+  return <span className={`font-semibold ${isGood ? 'text-green-700' : 'text-red-600'}`}>{fmt(value)}{suffix}</span>;
 }
 
 export default function Scorecard() {
@@ -178,7 +185,7 @@ export default function Scorecard() {
                       {d.driver_name}
                       {!d.staff_id && <span className="ml-1 text-[9px] text-red-400">(unmatched)</span>}
                     </td>
-                    <td className="px-3 py-2 text-center font-bold">{d.final_ranking ?? '—'}</td>
+                    <td className="px-3 py-2 text-center font-bold">{fmt(d.final_ranking)}</td>
                     <td className="px-3 py-2 text-center">{pkgs(d.packages)}</td>
                     <td className="px-3 py-2 text-center"><Badge pass={d.safety_pass} /></td>
                     <td className="px-3 py-2 text-center"><Badge pass={d.dsb_pass} /></td>
@@ -202,7 +209,7 @@ export default function Scorecard() {
                           <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700 mb-2">Quality Metrics</p>
                           <div className="grid grid-cols-4 gap-3 text-xs">
                             <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">DCR Score</span><MetricCell value={d.dcr_score} good={v => v >= 95} /></div>
-                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">POD Rate</span><MetricCell value={d.pod_rate ? (d.pod_rate * 100).toFixed(1) : null} good={v => v >= 98} suffix="%" /></div>
+                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">POD Rate</span><MetricCell value={d.pod_rate != null ? parseFloat((d.pod_rate * 100).toFixed(1)) : null} good={v => v >= 98} suffix="%" /></div>
                             <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">CDF (Revised)</span><MetricCell value={d.cdf_revised} good={v => v === 0} /></div>
                             <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">DSB (Revised)</span><MetricCell value={d.dsb_revised} good={v => v === 0} /></div>
                           </div>
@@ -214,7 +221,7 @@ export default function Scorecard() {
                             {[['Speeding',d.speeding_score],['Seatbelt',d.seatbelt_score],['Distraction',d.distraction_score],['Sign/Signal',d.sign_signal_score],['Following Dist',d.following_dist_score]].map(([label,val]) => (
                               <div key={label} className="bg-white rounded-lg p-2.5 border">
                                 <span className="text-slate-400 block mb-0.5">{label}</span>
-                                <span className="font-bold mr-1">{val ?? '—'}</span><Badge pass={val == 100} />
+                                <span className="font-bold mr-1">{fmt(val)}</span><Badge pass={val == 100} />
                               </div>
                             ))}
                           </div>

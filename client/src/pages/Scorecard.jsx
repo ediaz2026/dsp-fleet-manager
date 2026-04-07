@@ -1,9 +1,8 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Upload, Star, Award, CheckCircle, XCircle, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Upload, Star, Award, CheckCircle, XCircle, X, Search } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
-import { useAuth } from '../context/AuthContext';
 
 function Badge({ pass, label }) {
   return pass
@@ -11,13 +10,20 @@ function Badge({ pass, label }) {
     : <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600"><XCircle size={9} />{label || 'Fail'}</span>;
 }
 
+function MetricCell({ value, good, suffix = '' }) {
+  const v = parseFloat(value);
+  const isGood = !isNaN(v) && good(v);
+  return <span className={`font-semibold ${isGood ? 'text-green-700' : 'text-red-600'}`}>{value ?? '—'}{suffix}</span>;
+}
+
 export default function Scorecard() {
-  const { user } = useAuth();
   const qc = useQueryClient();
   const [selectedWeek, setSelectedWeek] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState(null);
   const [expandedRow, setExpandedRow] = useState(null);
+  const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState('rank');
   const fileRef = useRef();
 
   const { data: weeks = [] } = useQuery({
@@ -30,11 +36,27 @@ export default function Scorecard() {
   const prevWeek = weekIdx < weeks.length - 1 ? weeks[weekIdx + 1]?.week_label : null;
   const nextWeek = weekIdx > 0 ? weeks[weekIdx - 1]?.week_label : null;
 
-  const { data: drivers = [], isLoading } = useQuery({
+  const { data: rawDrivers = [], isLoading } = useQuery({
     queryKey: ['amazon-scorecard-all', weekLabel],
     queryFn: () => api.get('/amazon-scorecard', { params: { week: weekLabel } }).then(r => r.data),
     enabled: !!weekLabel,
   });
+
+  const drivers = useMemo(() => {
+    let list = rawDrivers;
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(d => (d.driver_name || '').toLowerCase().includes(s));
+    }
+    const sorters = {
+      rank: (a, b) => (a.rank_position || 999) - (b.rank_position || 999),
+      score: (a, b) => (b.final_ranking || 0) - (a.final_ranking || 0),
+      packages: (a, b) => (b.packages || 0) - (a.packages || 0),
+      name: (a, b) => (a.driver_name || '').localeCompare(b.driver_name || ''),
+      dcr: (a, b) => (b.dcr_score || 0) - (a.dcr_score || 0),
+    };
+    return [...list].sort(sorters[sortBy] || sorters.rank);
+  }, [rawDrivers, search, sortBy]);
 
   const handleUpload = async (file) => {
     if (!file) return;
@@ -48,15 +70,8 @@ export default function Scorecard() {
       qc.invalidateQueries({ queryKey: ['amazon-scorecard-all'] });
       toast.success(`Uploaded ${data.weekLabel} — ${data.matched}/${data.uploaded} matched`);
       if (data.weekLabel) setSelectedWeek(data.weekLabel);
-    } catch (err) {
-      toast.error(err?.response?.data?.error || 'Upload failed');
-    } finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
-  };
-
-  const getRowBg = (d, i) => {
-    if (d.packages > 899 && d.rank_position <= 4) return 'bg-green-50';
-    if (d.packages > 899 && d.rank_position <= 8) return 'bg-blue-50';
-    return i % 2 === 1 ? 'bg-slate-50/50' : '';
+    } catch (err) { toast.error(err?.response?.data?.error || 'Upload failed'); }
+    finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
   };
 
   const isPerfect = (d) => d.final_ranking == 100 && d.packages > 899
@@ -64,12 +79,20 @@ export default function Scorecard() {
     && d.sign_signal_score == 100 && d.following_dist_score == 100
     && d.cdf_revised == 0 && d.dsb_revised == 0;
 
+  const getRowBg = (d, i) => {
+    if (d.packages > 899 && d.rank_position <= 4) return 'bg-green-50';
+    if (d.packages > 899 && d.rank_position <= 8) return 'bg-blue-50';
+    return i % 2 === 1 ? 'bg-slate-50/50' : '';
+  };
+
+  const pkgs = (v) => v != null ? Math.round(v) : '—';
+
   return (
     <div className="p-6 max-w-screen-xl mx-auto space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-slate-900">Scorecard</h1>
-        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border bg-white hover:bg-slate-50 cursor-pointer text-sm font-medium transition-all ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border bg-white hover:bg-slate-50 cursor-pointer text-sm font-medium ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
           <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Scorecard'}
           <input type="file" accept=".xlsx,.xls" className="hidden" ref={fileRef} disabled={uploading} onChange={e => handleUpload(e.target.files?.[0])} />
         </label>
@@ -91,7 +114,7 @@ export default function Scorecard() {
         </div>
       )}
 
-      {/* Week navigation */}
+      {/* Week nav */}
       {weeks.length > 0 && (
         <div className="flex items-center justify-center gap-4">
           <button onClick={() => setSelectedWeek(prevWeek)} disabled={!prevWeek} className="p-2 rounded-lg border bg-white hover:bg-slate-50 disabled:opacity-30"><ChevronLeft size={16} /></button>
@@ -103,68 +126,103 @@ export default function Scorecard() {
         </div>
       )}
 
-      {/* Leaderboard */}
+      {/* Search + sort */}
+      {drivers.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg bg-white" placeholder="Search driver..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-slate-400 font-medium">Sort:</span>
+            {[['rank','Rank'],['score','Score'],['packages','Pkgs'],['name','Name'],['dcr','DCR']].map(([k,l]) => (
+              <button key={k} onClick={() => setSortBy(k)} className={`px-2 py-1 rounded ${sortBy === k ? 'bg-blue-600 text-white' : 'bg-white border text-slate-600 hover:bg-slate-50'}`}>{l}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Empty / loading */}
       {isLoading && <p className="text-center text-slate-400 py-12">Loading…</p>}
-      {!isLoading && drivers.length === 0 && weekLabel && (
+      {!isLoading && rawDrivers.length === 0 && weekLabel && (
         <div className="bg-white rounded-xl border py-12 text-center">
           <Award size={36} className="mx-auto text-slate-300 mb-3" />
           <p className="font-semibold text-slate-500">No scorecard data for {weekLabel}</p>
           <p className="text-xs text-slate-400 mt-1">Upload a scorecard Excel file to get started</p>
         </div>
       )}
+
+      {/* Leaderboard */}
       {drivers.length > 0 && (
         <div className="bg-white rounded-xl border overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-slate-100 text-xs font-semibold text-slate-500 uppercase">
-                <th className="px-3 py-2.5 text-center w-10">#</th>
+              <tr className="bg-slate-100 text-[10px] font-semibold text-slate-500 uppercase">
+                <th className="px-3 py-2.5 text-center w-8">#</th>
                 <th className="px-3 py-2.5 text-left">Driver</th>
                 <th className="px-3 py-2.5 text-center">Score</th>
-                <th className="px-3 py-2.5 text-center">Packages</th>
+                <th className="px-3 py-2.5 text-center">Pkgs</th>
                 <th className="px-3 py-2.5 text-center">Safety</th>
                 <th className="px-3 py-2.5 text-center">DSB</th>
                 <th className="px-3 py-2.5 text-center">Bonus</th>
-                <th className="px-3 py-2.5 text-center">DCR</th>
-                <th className="px-3 py-2.5 text-center">POD</th>
                 <th className="px-3 py-2.5 text-center">Incentive</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {drivers.map((d, i) => (
-                <>
-                  <tr key={d.id} className={`${getRowBg(d, i)} cursor-pointer hover:bg-slate-100 transition-colors`} onClick={() => setExpandedRow(expandedRow === d.id ? null : d.id)}>
-                    <td className="px-3 py-2 text-center font-mono text-xs text-slate-400">{d.rank_position}</td>
+                <React.Fragment key={d.id || i}>
+                  <tr className={`${getRowBg(d, i)} cursor-pointer hover:bg-slate-100/70 transition-colors`} onClick={() => setExpandedRow(expandedRow === d.id ? null : d.id)}>
+                    <td className="px-3 py-2 text-center font-mono text-xs text-slate-400">{d.rank_position ?? i + 1}</td>
                     <td className="px-3 py-2 font-medium text-slate-800">
                       {isPerfect(d) && <Star size={12} className="inline text-amber-500 mr-1" fill="#F59E0B" />}
                       {d.driver_name}
                       {!d.staff_id && <span className="ml-1 text-[9px] text-red-400">(unmatched)</span>}
                     </td>
                     <td className="px-3 py-2 text-center font-bold">{d.final_ranking ?? '—'}</td>
-                    <td className="px-3 py-2 text-center">{d.packages ?? '—'}</td>
+                    <td className="px-3 py-2 text-center">{pkgs(d.packages)}</td>
                     <td className="px-3 py-2 text-center"><Badge pass={d.safety_pass} /></td>
                     <td className="px-3 py-2 text-center"><Badge pass={d.dsb_pass} /></td>
                     <td className="px-3 py-2 text-center"><Badge pass={d.bonus_hours} label={d.bonus_hours ? 'Yes' : '—'} /></td>
-                    <td className={`px-3 py-2 text-center font-semibold ${d.dcr_score >= 95 ? 'text-green-700' : 'text-red-600'}`}>{d.dcr_score ?? '—'}</td>
-                    <td className="px-3 py-2 text-center">{d.pod_rate ? (d.pod_rate * 100).toFixed(1) + '%' : '—'}</td>
                     <td className="px-3 py-2 text-center text-xs">{d.incentive_per_package > 0 ? `$${parseFloat(d.incentive_per_package).toFixed(2)}` : '—'}</td>
                   </tr>
                   {expandedRow === d.id && (
-                    <tr key={`exp-${d.id}`}>
-                      <td colSpan={10} className="bg-slate-50 px-6 py-4">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                          <div><span className="text-slate-400 block">Speeding</span><span className="font-bold">{d.speeding_score ?? '—'}</span> <Badge pass={d.speeding_score == 100} /></div>
-                          <div><span className="text-slate-400 block">Seatbelt</span><span className="font-bold">{d.seatbelt_score ?? '—'}</span> <Badge pass={d.seatbelt_score == 100} /></div>
-                          <div><span className="text-slate-400 block">Distraction</span><span className="font-bold">{d.distraction_score ?? '—'}</span> <Badge pass={d.distraction_score == 100} /></div>
-                          <div><span className="text-slate-400 block">Sign/Signal</span><span className="font-bold">{d.sign_signal_score ?? '—'}</span> <Badge pass={d.sign_signal_score == 100} /></div>
-                          <div><span className="text-slate-400 block">Following Dist</span><span className="font-bold">{d.following_dist_score ?? '—'}</span> <Badge pass={d.following_dist_score == 100} /></div>
-                          <div><span className="text-slate-400 block">CDF (Revised)</span><span className={`font-bold ${d.cdf_revised == 0 ? 'text-green-700' : 'text-red-600'}`}>{d.cdf_revised}</span></div>
-                          <div><span className="text-slate-400 block">DSB (Revised)</span><span className={`font-bold ${d.dsb_revised == 0 ? 'text-green-700' : 'text-red-600'}`}>{d.dsb_revised}</span></div>
-                          <div><span className="text-slate-400 block">Standing</span><span className="font-bold">{d.overall_standing || '—'}</span></div>
+                    <tr><td colSpan={8} className="bg-slate-50 p-0">
+                      <div className="px-6 py-4 space-y-4">
+                        {/* Incentives */}
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-green-700 mb-2">Incentives & Bonus</p>
+                          <div className="grid grid-cols-3 gap-3 text-xs">
+                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">Bonus Hours</span><Badge pass={d.bonus_hours} label={d.bonus_hours ? 'Earned' : 'Not eligible'} /></div>
+                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">Perfect Incentive</span>{isPerfect(d) ? <span className="font-bold text-green-700">${parseFloat(d.perfect_incentive||0).toFixed(2)}</span> : <span className="text-slate-400">—</span>}</div>
+                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">Per Package</span><span className="font-bold">{d.incentive_per_package > 0 ? `$${parseFloat(d.incentive_per_package).toFixed(2)}` : '—'}</span></div>
+                          </div>
                         </div>
-                      </td>
-                    </tr>
+                        {/* Quality */}
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700 mb-2">Quality Metrics</p>
+                          <div className="grid grid-cols-4 gap-3 text-xs">
+                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">DCR Score</span><MetricCell value={d.dcr_score} good={v => v >= 95} /></div>
+                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">POD Rate</span><MetricCell value={d.pod_rate ? (d.pod_rate * 100).toFixed(1) : null} good={v => v >= 98} suffix="%" /></div>
+                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">CDF (Revised)</span><MetricCell value={d.cdf_revised} good={v => v === 0} /></div>
+                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">DSB (Revised)</span><MetricCell value={d.dsb_revised} good={v => v === 0} /></div>
+                          </div>
+                        </div>
+                        {/* Safety */}
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-600 mb-2">Safety Metrics</p>
+                          <div className="grid grid-cols-5 gap-3 text-xs">
+                            {[['Speeding',d.speeding_score],['Seatbelt',d.seatbelt_score],['Distraction',d.distraction_score],['Sign/Signal',d.sign_signal_score],['Following Dist',d.following_dist_score]].map(([label,val]) => (
+                              <div key={label} className="bg-white rounded-lg p-2.5 border">
+                                <span className="text-slate-400 block mb-0.5">{label}</span>
+                                <span className="font-bold mr-1">{val ?? '—'}</span><Badge pass={val == 100} />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </td></tr>
                   )}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -178,7 +236,7 @@ export default function Scorecard() {
           <div className="space-y-1">
             {weeks.map((w, i) => (
               <button key={i} onClick={() => setSelectedWeek(w.week_label)}
-                className={`w-full flex justify-between text-sm py-1.5 px-2 rounded transition-colors ${w.week_label === weekLabel ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-slate-50 text-slate-600'}`}>
+                className={`w-full flex justify-between text-sm py-1.5 px-2 rounded ${w.week_label === weekLabel ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-slate-50 text-slate-600'}`}>
                 <span>{w.week_label}</span>
                 <span className="text-xs text-slate-400">{w.uploaded_at ? new Date(w.uploaded_at).toLocaleDateString() : ''}</span>
               </button>

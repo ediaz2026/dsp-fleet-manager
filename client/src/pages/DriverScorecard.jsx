@@ -39,67 +39,75 @@ function MetricRow({ label, value, suffix = '', passThreshold, invert, fmt }) {
   );
 }
 
-// Confetti CSS animation for perfect score
-function PerfectAnimation({ onDone }) {
-  useEffect(() => { const t = setTimeout(onDone, 3500); return () => clearTimeout(t); }, [onDone]);
+const ANIM_CSS = `
+@keyframes trophyDrop { 0%{transform:translateY(-200px) scale(0);opacity:0} 30%{transform:translateY(20px) scale(1.2);opacity:1} 50%{transform:translateY(-15px) scale(0.95)} 70%{transform:translateY(5px) scale(1.05)} 100%{transform:translateY(0) scale(1)} }
+@keyframes fadeUp { 0%{opacity:0;transform:translateY(30px)} 100%{opacity:1;transform:translateY(0)} }
+@keyframes confettiFall { 0%{transform:translateY(-10vh) rotate(0) scale(1);opacity:1} 80%{opacity:1} 100%{transform:translateY(110vh) rotate(720deg) scale(0.5);opacity:0} }
+@keyframes burst { 0%{transform:scale(0);opacity:1} 40%{opacity:0.9} 100%{transform:scale(3);opacity:0} }
+@keyframes popIn { 0%{transform:scale(0);opacity:0} 60%{transform:scale(1.2);opacity:1} 100%{transform:scale(1);opacity:1} }
+@keyframes rocketUp { 0%{transform:translateY(100vh)} 35%{transform:translateY(0)} 100%{transform:translateY(-120vh)} }
+@keyframes starTrail { 0%{opacity:1;transform:scale(1)} 100%{opacity:0;transform:translateY(80px) scale(0.3)} }
+@keyframes overlayFade { 0%{opacity:1} 80%{opacity:1} 100%{opacity:0} }
+`;
+
+function CelebrationOverlay({ type, onDone }) {
+  useEffect(() => { const dur = type === 'rocket' ? 2500 : 3000; const t = setTimeout(onDone, dur); return () => clearTimeout(t); }, [type, onDone]);
+  const isPerfect = type === 'perfect' || type === 'combo';
+  const isTop4 = type === 'top4' || type === 'combo';
+  const isRocket = type === 'rocket';
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={onDone}>
-      <style>{`
-        @keyframes dropIn { 0% { transform: translateY(-200px) scale(0); opacity: 0; } 40% { transform: translateY(20px) scale(1.2); opacity: 1; } 60% { transform: translateY(-10px) scale(1); } 100% { transform: translateY(0) scale(1); } }
-        @keyframes fadeUp { 0% { opacity: 0; transform: translateY(30px); } 100% { opacity: 1; transform: translateY(0); } }
-        @keyframes confetti { 0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; } 100% { transform: translateY(110vh) rotate(720deg); opacity: 0; } }
-        .confetti-piece { position: absolute; width: 8px; height: 8px; top: -10px; animation: confetti 3s ease-out forwards; }
-      `}</style>
-      {Array.from({ length: 30 }, (_, i) => (
-        <div key={i} className="confetti-piece" style={{
-          left: `${Math.random() * 100}%`,
-          background: ['#FFD700','#fff','#FFA500','#87CEEB','#FF69B4','#90EE90'][i % 6],
-          animationDelay: `${Math.random() * 1.5}s`,
-          borderRadius: i % 3 === 0 ? '50%' : '0',
+    <div className="fixed inset-0 z-[1000]" onClick={onDone} style={{ animation: `overlayFade ${isRocket ? 2.5 : 3}s forwards` }}>
+      <div className="absolute inset-0 bg-black/60" />
+      <style>{ANIM_CSS}</style>
+      {/* Confetti — 50 pieces */}
+      {isPerfect && Array.from({ length: 50 }, (_, i) => (
+        <div key={`c${i}`} className="absolute" style={{
+          left: `${Math.random()*100}%`, top: -10,
+          width: 5 + Math.random()*6, height: 5 + Math.random()*6,
+          background: ['#FFD700','#fff','#1a3a5c','#FF6B35','#87CEEB','#90EE90','#FF69B4'][i%7],
+          borderRadius: i%3===0 ? '50%' : i%3===1 ? '2px' : '0',
+          animation: `confettiFall ${2+Math.random()*1.5}s ease-out ${Math.random()*1.2}s forwards`,
         }} />
       ))}
-      <div className="text-center z-10">
-        <div style={{ animation: 'dropIn 0.8s ease-out forwards', fontSize: 80 }}>🏆</div>
-        <p style={{ animation: 'fadeUp 0.5s ease-out 0.6s forwards', opacity: 0 }} className="text-3xl font-black text-[#FFD700] mt-2">PERFECT SCORE</p>
-        <p style={{ animation: 'fadeUp 0.5s ease-out 0.9s forwards', opacity: 0 }} className="text-white text-sm mt-2">Tap to dismiss</p>
-      </div>
-    </div>
-  );
-}
-
-// Fireworks animation for top 4 tier
-function Top4Animation({ onDone }) {
-  useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, [onDone]);
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={onDone}>
-      <style>{`
-        @keyframes burst { 0% { transform: scale(0); opacity: 1; } 50% { transform: scale(1.5); opacity: 0.8; } 100% { transform: scale(2.5); opacity: 0; } }
-        @keyframes popIn { 0% { transform: scale(0); } 50% { transform: scale(1.3); } 100% { transform: scale(1); } }
-      `}</style>
-      {Array.from({ length: 8 }, (_, i) => (
-        <div key={i} className="absolute rounded-full" style={{
-          width: 60 + Math.random() * 40, height: 60 + Math.random() * 40,
-          left: `${20 + Math.random() * 60}%`, top: `${20 + Math.random() * 60}%`,
-          background: ['#FFD700','#1a3a5c','#FF6B35','#2563EB'][i % 4],
-          animation: `burst 1.5s ease-out ${i * 0.15}s forwards`, opacity: 0,
+      {/* Trophy */}
+      {isPerfect && (
+        <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+          <div className="text-center">
+            <div style={{ animation: 'trophyDrop 1s cubic-bezier(0.34,1.56,0.64,1) forwards', fontSize: 90 }}>🏆</div>
+            <p style={{ animation: 'fadeUp 0.5s ease-out 0.7s forwards', opacity: 0 }} className="text-3xl font-black text-[#FFD700] mt-2 drop-shadow-lg">PERFECT SCORE</p>
+          </div>
+        </div>
+      )}
+      {/* Fireworks bursts */}
+      {isTop4 && Array.from({ length: 8 }, (_, i) => (
+        <div key={`b${i}`} className="absolute rounded-full" style={{
+          width: 50+Math.random()*50, height: 50+Math.random()*50,
+          left: `${15+Math.random()*70}%`, top: `${15+Math.random()*60}%`,
+          background: ['#FFD700','#1a3a5c','#10B981','#2563EB','#FF6B35'][i%5],
+          animation: `burst 1.5s ease-out ${i*0.2}s forwards`, opacity: 0,
         }} />
       ))}
-      <div className="text-center z-10">
-        <div style={{ animation: 'popIn 0.6s ease-out forwards', fontSize: 60 }}>🎆</div>
-        <p style={{ animation: 'popIn 0.4s ease-out 0.3s forwards', transform: 'scale(0)' }} className="text-2xl font-black text-[#FFD700] mt-2">Top Performer!</p>
-      </div>
-    </div>
-  );
-}
-
-// Rocket animation for 5% tier
-function RocketAnimation({ onDone }) {
-  useEffect(() => { const t = setTimeout(onDone, 2500); return () => clearTimeout(t); }, [onDone]);
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={onDone}>
-      <style>{`@keyframes rocketUp { 0% { transform: translateY(100vh); } 40% { transform: translateY(0); } 100% { transform: translateY(-120vh); } }`}</style>
-      <div style={{ animation: 'rocketUp 2s ease-in forwards', fontSize: 60 }}>🚀</div>
-      <p className="absolute text-xl font-bold text-blue-300 mt-24" style={{ animation: 'fadeUp 0.5s ease-out 0.5s forwards', opacity: 0 }}>Nice work! Keep climbing!</p>
+      {isTop4 && !isPerfect && (
+        <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+          <div className="text-center">
+            <div style={{ animation: 'popIn 0.6s ease-out forwards', fontSize: 70 }}>🎆</div>
+            <p style={{ animation: 'popIn 0.5s ease-out 0.4s forwards', opacity: 0 }} className="text-2xl font-black text-[#FFD700] mt-2 drop-shadow-lg">Top Performer!</p>
+          </div>
+        </div>
+      )}
+      {/* Rocket + star trail */}
+      {isRocket && (
+        <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+          <div style={{ animation: 'rocketUp 2.2s ease-in forwards', fontSize: 60 }}>🚀</div>
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={`s${i}`} className="absolute" style={{
+              left: '48%', bottom: `${10+i*8}%`, fontSize: 16,
+              animation: `starTrail 1s ease-out ${0.3+i*0.15}s forwards`, opacity: 0,
+            }}>⭐</div>
+          ))}
+          <p className="absolute mt-32 text-xl font-bold text-blue-300 drop-shadow" style={{ animation: 'fadeUp 0.5s ease-out 0.5s forwards', opacity: 0 }}>Keep Climbing!</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -131,24 +139,22 @@ export default function DriverScorecard() {
   const isTop4 = sc && sc.rank_position && sc.rank_position <= 4 && sc.packages > 899 && sc.incentive_per_package > 0;
   const isNext4 = sc && sc.rank_position && sc.rank_position > 4 && sc.rank_position <= 8 && sc.packages > 899 && sc.incentive_per_package > 0;
 
-  // Animation on first load per week
+  // Animation plays every time scorecard loads or week changes
   useEffect(() => {
-    if (!sc || !weekParam) return;
-    const key = `scorecard_anim_seen_${weekParam}`;
-    if (localStorage.getItem(key)) return;
-    if (sc.final_ranking == 100) setShowAnim('perfect');
+    if (!sc) return;
+    const isPerfectScore = sc.final_ranking == 100;
+    if (isPerfectScore && isTop4) setShowAnim('combo');
+    else if (isPerfectScore) setShowAnim('perfect');
     else if (isTop4) setShowAnim('top4');
     else if (isNext4) setShowAnim('rocket');
-    localStorage.setItem(key, '1');
+    else setShowAnim(null);
   }, [sc, weekParam]);
 
   const dismissAnim = () => setShowAnim(null);
 
   return (
     <div className="bg-[#F1F5F9]">
-      {showAnim === 'perfect' && <PerfectAnimation onDone={dismissAnim} />}
-      {showAnim === 'top4' && <Top4Animation onDone={dismissAnim} />}
-      {showAnim === 'rocket' && <RocketAnimation onDone={dismissAnim} />}
+      {showAnim && <CelebrationOverlay type={showAnim} onDone={dismissAnim} />}
 
       {/* Header */}
       <div className="bg-[#1a3a5c] text-white px-5 pt-[max(env(safe-area-inset-top),20px)] pb-6 rounded-b-3xl">

@@ -964,13 +964,22 @@ router.get('/sign-out-data', async (req, res) => {
     // Sort by station then route
     rows.sort((a, b) => (a.station || 'ZZZ').localeCompare(b.station || 'ZZZ', undefined, { numeric: true }) || a.route.localeCompare(b.route, undefined, { numeric: true }));
 
+    // Deduplicate by route code — keep first occurrence (most recently added via seen Set)
+    const seenRoutes = new Set();
+    const dedupedRows = rows.filter(r => {
+      if (!r.route || r.route === 'HELPER' || r.route === 'EXTRA') return true; // non-route rows pass through
+      if (seenRoutes.has(r.route)) return false;
+      seenRoutes.add(r.route);
+      return true;
+    });
+
     // Remove EXTRA drivers from main list — they go in EXTRAS column only
-    const filteredRows = rows.filter(r => r.route !== 'EXTRA');
+    const filteredRows = dedupedRows.filter(r => r.route !== 'EXTRA');
 
     // Extras by category — from attendance table + main rows, with route codes
     // Build name+route lookup from rows
     const rowByStaff = {};
-    for (const r of rows) { const key = r.name; if (key) rowByStaff[key] = r; }
+    for (const r of dedupedRows) { const key = r.name; if (key) rowByStaff[key] = r; }
 
     const fmtAtt = (staffId) => {
       const st = staffList.find(x => x.id === staffId);
@@ -987,7 +996,7 @@ router.get('/sign-out-data', async (req, res) => {
 
     // Fallback: also check rows for attendance from shift data not in attendance table
     const attStaffIds = new Set(attRows.map(a => a.staff_id));
-    for (const r of rows) {
+    for (const r of dedupedRows) {
       if (r.attStatus === 'called_out' && !attCallOuts.some(x => x.startsWith(r.name))) attCallOuts.push(r.route ? `${r.name} — ${r.route}` : r.name);
       if (r.attStatus === 'ncns' && !attNcns.some(x => x.startsWith(r.name))) attNcns.push(r.route ? `${r.name} — ${r.route}` : r.name);
       if (r.attStatus === 'late' && !attLates.some(x => x.startsWith(r.name))) attLates.push(r.route ? `${r.name} — ${r.route}` : r.name);

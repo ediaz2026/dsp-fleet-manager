@@ -232,6 +232,14 @@ router.post('/assignments', authMiddleware, async (req, res) => {
     }
   } catch (e) { /* non-fatal — allow assignment if check fails */ }
 
+  // Clear this route from any other driver first (prevents duplicates on reassign)
+  if (route_code) {
+    await pool.query(
+      `UPDATE ops_assignments SET route_code = NULL, updated_at = NOW() WHERE route_code = $1 AND plan_date = $2 AND staff_id != $3`,
+      [route_code, plan_date, staff_id]
+    ).catch(() => {});
+  }
+
   const { rows } = await pool.query(
     `INSERT INTO ops_assignments (plan_date, staff_id, vehicle_id, device_id, notes, shift_type, route_code, name_override, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())

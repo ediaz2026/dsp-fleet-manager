@@ -896,7 +896,7 @@ router.get('/sign-out-data', async (req, res) => {
       const shift = shiftByStaff[staffId];
       const type = (shift?.shift_type || asgn?.shift_type || '').toUpperCase();
       if (OPS_EX.has(type)) return;
-      if ((routeCode || '').toUpperCase().startsWith('AT')) return;
+      // No route code format filtering — all route codes are valid
       seen.add(staffId);
 
       // If no route, try TID matching fallback

@@ -41,13 +41,14 @@ pool.query(`
   )
 `).catch(e => console.error('[amazon-scorecard] Table error:', e.message));
 pool.query(`ALTER TABLE amazon_scorecards ADD COLUMN IF NOT EXISTS transporter_id VARCHAR(50)`).catch(() => {});
+pool.query(`ALTER TABLE amazon_scorecards ALTER COLUMN packages TYPE INTEGER USING packages::INTEGER`).catch(() => {});
 // Fix column types if table was created with wrong types
 const fixCols = [
   'final_ranking DECIMAL(6,2)', 'speeding_score DECIMAL(6,2)', 'seatbelt_score DECIMAL(6,2)',
   'distraction_score DECIMAL(6,2)', 'sign_signal_score DECIMAL(6,2)', 'following_dist_score DECIMAL(6,2)',
   'dcr_score DECIMAL(6,2)', 'pod_rate DECIMAL(5,4)', 'perfect_incentive DECIMAL(10,2)',
   'incentive_per_package DECIMAL(10,2)', 'cdf_revised DECIMAL(6,2)', 'dsb_revised DECIMAL(6,2)',
-  'rank_position DECIMAL(6,2)', 'packages DECIMAL(10,2)',
+  'rank_position DECIMAL(6,2)',
 ];
 for (const c of fixCols) {
   const [name, ...type] = c.split(' ');
@@ -177,7 +178,7 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
         parseBool(getVal(r, COL.bonus)),
         parseBool(getVal(r, COL.safety)),
         parseBool(getVal(r, COL.dsb)),
-        parseNum(getVal(r, COL.packages)),
+        parseInt(getVal(r, COL.packages)) || null,
         parseNum(getVal(r, COL.perfect)) || 0,
         parseNum(getVal(r, COL.perPkg)) || 0,
         parseNum(getVal(r, COL.speeding)),

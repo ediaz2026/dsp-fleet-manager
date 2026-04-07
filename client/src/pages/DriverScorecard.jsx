@@ -94,7 +94,7 @@ export default function DriverScorecard() {
               <p className="text-[10px] font-semibold text-slate-400 uppercase">Score</p>
             </div>
             <div className="bg-white rounded-xl p-3 text-center shadow-sm">
-              <p className="text-2xl font-bold text-[#111827]">{sc.packages ?? '—'}</p>
+              <p className="text-2xl font-bold text-[#111827]">{sc.packages != null ? Math.round(sc.packages) : '—'}</p>
               <p className="text-[10px] font-semibold text-slate-400 uppercase">Packages</p>
             </div>
           </div>

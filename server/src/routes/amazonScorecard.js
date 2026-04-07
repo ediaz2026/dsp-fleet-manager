@@ -8,7 +8,7 @@ router.use(authMiddleware);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-// Create table
+// Create table + add transporter_id column
 pool.query(`
   CREATE TABLE IF NOT EXISTS amazon_scorecards (
     id SERIAL PRIMARY KEY,
@@ -17,6 +17,7 @@ pool.query(`
     year INT,
     staff_id INT REFERENCES staff(id),
     driver_name VARCHAR(200),
+    transporter_id VARCHAR(50),
     rank_position INT,
     overall_standing VARCHAR(50),
     final_ranking DECIMAL(6,2),
@@ -39,10 +40,10 @@ pool.query(`
     UNIQUE(week_label, staff_id)
   )
 `).catch(e => console.error('[amazon-scorecard] Table error:', e.message));
-// Also allow week_label + driver_name unique for unmatched drivers
+pool.query(`ALTER TABLE amazon_scorecards ADD COLUMN IF NOT EXISTS transporter_id VARCHAR(50)`).catch(() => {});
 pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_amazon_sc_week_name ON amazon_scorecards (week_label, driver_name) WHERE staff_id IS NULL`).catch(() => {});
 
-// POST /api/amazon-scorecard/upload — parse Excel and upsert
+// POST /api/amazon-scorecard/upload — parse Excel with dynamic header detection
 router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -57,42 +58,98 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
     const amazonWeek = weekMatch ? parseInt(weekMatch[1]) : null;
     const year = new Date().getFullYear();
 
-    // Get all staff for name matching
-    const { rows: staffList } = await pool.query(`SELECT id, first_name, last_name FROM staff WHERE role='driver'`);
-    const staffByName = {};
-    for (const s of staffList) {
-      staffByName[`${s.first_name} ${s.last_name}`.toUpperCase()] = s.id;
-      staffByName[`${s.last_name}, ${s.first_name}`.toUpperCase()] = s.id;
+    // Row 2 = headers — find columns dynamically
+    const headers = (raw[1] || []).map(h => String(h).trim().toUpperCase());
+    const col = (patterns) => {
+      for (const p of patterns) {
+        const idx = headers.findIndex(h => h.includes(p));
+        if (idx >= 0) return idx;
+      }
+      return -1;
+    };
+
+    const COL = {
+      rank:         col(['RANK', '#']),
+      name:         col(['DRIVER', 'DELIVERY ASSOCIATE', 'DA NAME', 'NAME']),
+      tid:          col(['TRANSPORTER ID', 'DA TRANSPORTER', 'TID', 'TRANSPORTER']),
+      standing:     col(['OVERALL STANDING', 'STANDING']),
+      ranking:      col(['FINAL RANKING', 'RANKING', 'OVERALL SCORE']),
+      bonus:        col(['BONUS HOURS', 'BONUS']),
+      safety:       col(['SAFETY', 'SAFETY PASS']),
+      dsb:          col(['DSB PASS', 'DSB']),
+      packages:     col(['PACKAGES', 'PKG', 'TOTAL PACKAGES']),
+      perfect:      col(['PERFECT INCENTIVE', 'PERFECT']),
+      perPkg:       col(['INCENTIVE PER PACKAGE', 'PER PACKAGE', 'PER PKG']),
+      speeding:     col(['SPEEDING']),
+      seatbelt:     col(['SEATBELT', 'SEAT BELT']),
+      distraction:  col(['DISTRACTION']),
+      signSignal:   col(['SIGN', 'SIGNAL', 'SIGN/SIGNAL']),
+      followDist:   col(['FOLLOWING', 'FOLLOW']),
+      cdf:          col(['CDF']),
+      dcr:          col(['DCR']),
+      dsbRevised:   col(['DSB REVISED', 'DSB REV']),
+      pod:          col(['POD']),
+    };
+
+    console.log('[scorecard] Headers found:', headers.join(' | '));
+    console.log('[scorecard] Column mapping:', JSON.stringify(COL));
+
+    // Get all drivers for TID + name matching
+    const { rows: driverList } = await pool.query(`
+      SELECT d.staff_id, d.transponder_id, s.first_name, s.last_name, s.employee_id
+      FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE s.role='driver'
+    `);
+    const tidToStaff = {};
+    const nameToStaff = {};
+    for (const d of driverList) {
+      if (d.transponder_id) tidToStaff[d.transponder_id.trim().toUpperCase()] = d.staff_id;
+      if (d.employee_id) tidToStaff[d.employee_id.trim().toUpperCase()] = d.staff_id;
+      nameToStaff[`${d.first_name} ${d.last_name}`.toUpperCase()] = d.staff_id;
+      nameToStaff[`${d.last_name}, ${d.first_name}`.toUpperCase()] = d.staff_id;
+      // First name only match as last resort
+      nameToStaff[`${d.first_name}`.toUpperCase()] = d.staff_id;
     }
 
     let uploaded = 0, matched = 0;
     const unmatched = [];
+    const parseNum = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+    const parseBool = (v) => /yes|pass|true|1/i.test(String(v));
+    const getVal = (r, c) => c >= 0 ? r[c] : null;
 
-    // Rows 3+ = data (index 2+)
     for (let i = 2; i < raw.length; i++) {
       const r = raw[i];
-      if (!r[1]) continue; // skip empty name rows
-      const driverName = String(r[1]).trim();
-      if (!driverName || /^(rank|#|driver)/i.test(driverName)) continue;
+      const nameIdx = COL.name >= 0 ? COL.name : 1;
+      const driverName = String(r[nameIdx] || '').trim();
+      if (!driverName || /^(rank|#|driver|delivery)/i.test(driverName)) continue;
 
-      const staffId = staffByName[driverName.toUpperCase()] || null;
-      if (!staffId) unmatched.push(driverName);
+      const tid = COL.tid >= 0 ? String(r[COL.tid] || '').trim().toUpperCase() : '';
+
+      // Match: TID first, then name
+      let staffId = null;
+      if (tid) staffId = tidToStaff[tid] || null;
+      if (!staffId) staffId = nameToStaff[driverName.toUpperCase()] || null;
+      // Try partial: first word of name
+      if (!staffId) {
+        const firstName = driverName.split(/\s+/)[0].toUpperCase();
+        const lastName = driverName.split(/\s+/).slice(-1)[0].toUpperCase();
+        staffId = nameToStaff[`${firstName} ${lastName}`.toUpperCase()] || null;
+      }
+
+      if (!staffId) unmatched.push(`${driverName}${tid ? ` (${tid})` : ''}`);
       else matched++;
 
-      const parseNum = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
-      const parseBool = (v) => /yes|pass|true|1/i.test(String(v));
-
       await pool.query(`
-        INSERT INTO amazon_scorecards (week_label, amazon_week, year, staff_id, driver_name,
+        INSERT INTO amazon_scorecards (week_label, amazon_week, year, staff_id, driver_name, transporter_id,
           rank_position, overall_standing, final_ranking, bonus_hours, safety_pass, dsb_pass,
           packages, perfect_incentive, incentive_per_package,
           speeding_score, seatbelt_score, distraction_score, sign_signal_score, following_dist_score,
           cdf_revised, dcr_score, dsb_revised, pod_rate)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
         ON CONFLICT (week_label, staff_id) DO UPDATE SET
-          driver_name=EXCLUDED.driver_name, rank_position=EXCLUDED.rank_position,
-          overall_standing=EXCLUDED.overall_standing, final_ranking=EXCLUDED.final_ranking,
-          bonus_hours=EXCLUDED.bonus_hours, safety_pass=EXCLUDED.safety_pass, dsb_pass=EXCLUDED.dsb_pass,
+          driver_name=EXCLUDED.driver_name, transporter_id=EXCLUDED.transporter_id,
+          rank_position=EXCLUDED.rank_position, overall_standing=EXCLUDED.overall_standing,
+          final_ranking=EXCLUDED.final_ranking, bonus_hours=EXCLUDED.bonus_hours,
+          safety_pass=EXCLUDED.safety_pass, dsb_pass=EXCLUDED.dsb_pass,
           packages=EXCLUDED.packages, perfect_incentive=EXCLUDED.perfect_incentive,
           incentive_per_package=EXCLUDED.incentive_per_package,
           speeding_score=EXCLUDED.speeding_score, seatbelt_score=EXCLUDED.seatbelt_score,
@@ -101,17 +158,30 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
           cdf_revised=EXCLUDED.cdf_revised, dcr_score=EXCLUDED.dcr_score,
           dsb_revised=EXCLUDED.dsb_revised, pod_rate=EXCLUDED.pod_rate
       `, [
-        weekLabel, amazonWeek, year, staffId, driverName,
-        parseNum(r[0]), String(r[2] || '').trim() || null, parseNum(r[3]),
-        parseBool(r[4]), parseBool(r[5]), parseBool(r[6]),
-        parseNum(r[7]), parseNum(r[8]) || 0, parseNum(r[9]) || 0,
-        parseNum(r[10]), parseNum(r[11]), parseNum(r[12]), parseNum(r[13]), parseNum(r[14]),
-        parseInt(r[15]) || 0, parseNum(r[16]), parseInt(r[17]) || 0, parseNum(r[18]),
+        weekLabel, amazonWeek, year, staffId, driverName, tid || null,
+        parseNum(getVal(r, COL.rank)),
+        COL.standing >= 0 ? String(r[COL.standing] || '').trim() || null : null,
+        parseNum(getVal(r, COL.ranking)),
+        parseBool(getVal(r, COL.bonus)),
+        parseBool(getVal(r, COL.safety)),
+        parseBool(getVal(r, COL.dsb)),
+        parseNum(getVal(r, COL.packages)),
+        parseNum(getVal(r, COL.perfect)) || 0,
+        parseNum(getVal(r, COL.perPkg)) || 0,
+        parseNum(getVal(r, COL.speeding)),
+        parseNum(getVal(r, COL.seatbelt)),
+        parseNum(getVal(r, COL.distraction)),
+        parseNum(getVal(r, COL.signSignal)),
+        parseNum(getVal(r, COL.followDist)),
+        parseInt(getVal(r, COL.cdf)) || 0,
+        parseNum(getVal(r, COL.dcr)),
+        parseInt(getVal(r, COL.dsbRevised)) || 0,
+        parseNum(getVal(r, COL.pod)),
       ]);
       uploaded++;
     }
 
-    res.json({ uploaded, matched, unmatched, weekLabel });
+    res.json({ uploaded, matched, unmatched, weekLabel, columns: COL });
   } catch (err) {
     console.error('[amazon-scorecard/upload]', err);
     res.status(500).json({ error: err.message });

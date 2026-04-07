@@ -85,7 +85,7 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
     // Find columns dynamically, with hardcoded fallbacks matching known layout
     const tidCol = col(['TRANSPORTER ID', 'DA TRANSPORTER', 'TID', 'TRANSPORTER']);
     const COL = {
-      rank:         col(['RANK', '#'])         >= 0 ? col(['RANK', '#'])         : 0,
+      rank:         0,  // Always column A (row number = rank position)
       name:         col(['DRIVER', 'DELIVERY ASSOCIATE', 'DA NAME', 'NAME']) >= 0 ? col(['DRIVER', 'DELIVERY ASSOCIATE', 'DA NAME', 'NAME']) : 1,
       tid:          tidCol >= 0 ? tidCol : 2,  // Fallback: column C
       standing:     col(['OVERALL STANDING', 'STANDING'])   >= 0 ? col(['OVERALL STANDING', 'STANDING'])   : 3,
@@ -155,12 +155,13 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
         staffId = nameToStaff[`${firstName} ${lastName}`.toUpperCase()] || null;
       }
 
+      const rankVal = parseInt(r[0]) || null;
       if (!staffId) {
         unmatched.push(`${driverName}${tid ? ` (${tid})` : ''}`);
-        if (uploaded < 5) console.log(`[scorecard] UNMATCHED: "${driverName}" tid="${tid}"`);
+        if (uploaded < 5) console.log(`[scorecard] UNMATCHED: "${driverName}" tid="${tid}" rank=${rankVal}`);
       } else {
         matched++;
-        if (uploaded < 5) console.log(`[scorecard] MATCHED: "${driverName}" tid="${tid}" → staff_id=${staffId}`);
+        if (uploaded < 5) console.log(`[scorecard] MATCHED: "${driverName}" tid="${tid}" → staff_id=${staffId} rank=${rankVal}`);
       }
 
       await pool.query(`

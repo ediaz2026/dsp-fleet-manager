@@ -5,6 +5,10 @@ const { checkAndApplyConsequences } = require('../services/consequences');
 
 router.use(authMiddleware);
 
+function getEasternDate() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })).toISOString().split('T')[0];
+}
+
 // GET /api/attendance?date=YYYY-MM-DD&start=&end=&staff_id=
 router.get('/', async (req, res) => {
   const { date, start, end, staff_id } = req.query;
@@ -167,7 +171,7 @@ router.get('/export', managerOnly, async (req, res) => {
      WHERE st.role = 'driver'
      GROUP BY st.id, st.employee_id, st.first_name, st.last_name
      ORDER BY st.last_name`,
-    [start || '2024-01-01', end || new Date().toISOString().split('T')[0]]
+    [start || '2024-01-01', end || getEasternDate()]
   );
   res.json(rows);
 });

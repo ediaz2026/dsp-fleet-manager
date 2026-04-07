@@ -94,6 +94,7 @@ async function migrateScheduleTables() {
     { name: 'UTO',        start: '00:00', end: '00:00', color: 'orange', order: 6 },
     { name: 'PTO',        start: '00:00', end: '00:00', color: 'teal',   order: 7 },
     { name: 'TRAINING',   start: '08:00', end: '16:00', color: 'indigo', order: 8 },
+    { name: 'TRAINER',    start: '08:00', end: '16:00', color: 'purple', order: 9 },
   ];
   for (const t of shiftTypes) {
     await pool.query(

@@ -37,10 +37,14 @@ function buildChangeDesc(oldShift, newVals) {
   return `${newType} ${newStart}–${newEnd} (time changed)`;
 }
 
+function getEasternDate() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })).toISOString().split('T')[0];
+}
+
 // ── GET /api/shifts?start=YYYY-MM-DD&end=YYYY-MM-DD ──────────────────────────
 router.get('/', async (req, res) => {
   const { start, end, staff_id } = req.query;
-  const today = new Date().toISOString().split('T')[0];
+  const today = getEasternDate();
   const startDate = start || today;
   let endDate = end || today;
 

@@ -4,6 +4,10 @@ const { authMiddleware, managerOnly } = require('../middleware/auth');
 
 router.use(authMiddleware, managerOnly);
 
+function getEasternDate() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })).toISOString().split('T')[0];
+}
+
 // GET /api/payroll/records
 router.get('/records', async (req, res) => {
   const { pay_period_start, pay_period_end } = req.query;
@@ -37,8 +41,8 @@ router.get('/summary', async (req, res) => {
      WHERE s.role = 'driver' AND s.status = 'active'
      GROUP BY s.id, s.employee_id, s.first_name, s.last_name
      ORDER BY s.last_name`,
-    [start || new Date(Date.now() - 14 * 86400000).toISOString().split('T')[0],
-     end || new Date().toISOString().split('T')[0]]
+    [start || (() => { const d = new Date(); d.setDate(d.getDate() - 14); return d.toISOString().split('T')[0]; })(),
+     end || getEasternDate()]
   );
   res.json(rows);
 });

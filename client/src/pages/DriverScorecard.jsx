@@ -142,18 +142,25 @@ export default function DriverScorecard() {
   const isTop4 = sc && sc.rank_position && sc.rank_position <= 4 && sc.packages > 899 && sc.incentive_per_package > 0;
   const isNext4 = sc && sc.rank_position && sc.rank_position > 4 && sc.rank_position <= 8 && sc.packages > 899 && sc.incentive_per_package > 0;
 
-  // Reset animation every time tab is selected or week changes
+  // Effect 1: Reset animation key on tab navigation only
   useEffect(() => {
     setAnimKey(Date.now());
-    if (sc) {
-      const isPerfectScore = sc.final_ranking == 100;
-      if (isPerfectScore && isTop4) setShowAnim('combo');
-      else if (isPerfectScore) setShowAnim('perfect');
-      else if (isTop4) setShowAnim('top4');
-      else if (isNext4) setShowAnim('rocket');
-      else setShowAnim(null);
-    }
-  }, [location.pathname, sc, weekParam]);
+  }, [location.pathname]);
+
+  // Effect 2: Determine animation type when scorecard data loads (stable deps)
+  const scId = sc?.id;
+  const scWeek = sc?.week_label;
+  useEffect(() => {
+    if (!sc) { setShowAnim(null); return; }
+    const isPerfectScore = sc.final_ranking == 100;
+    const top4 = sc.rank_position && sc.rank_position <= 4 && sc.packages > 899 && sc.incentive_per_package > 0;
+    const next4 = sc.rank_position && sc.rank_position > 4 && sc.rank_position <= 8 && sc.packages > 899 && sc.incentive_per_package > 0;
+    if (isPerfectScore && top4) setShowAnim('combo');
+    else if (isPerfectScore) setShowAnim('perfect');
+    else if (top4) setShowAnim('top4');
+    else if (next4) setShowAnim('rocket');
+    else setShowAnim(null);
+  }, [scId, scWeek]);
 
   const dismissAnim = () => setShowAnim(null);
 

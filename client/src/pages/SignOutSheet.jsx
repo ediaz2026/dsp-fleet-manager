@@ -19,8 +19,10 @@ function buildExtrasColumn(extras) {
   const sections = [
     { label: 'CALL OUTS:', min: 5, items: extras.callOuts || [] },
     { label: 'NO CALL NO SHOW:', min: 5, items: extras.ncns || [] },
-    { label: 'LATE:', min: 8, items: extras.lates || [] },
+    { label: 'LATE:', min: 5, items: extras.lates || [] },
+    { label: 'SENT HOME:', min: 5, items: extras.sentHome || [] },
     { label: 'TRAINING:', min: 5, items: extras.training || [] },
+    { label: 'TRAINER:', min: 5, items: extras.trainer || [] },
   ];
   for (const sec of sections) {
     cells.push({ text: sec.label, isHeader: true });
@@ -63,6 +65,7 @@ export default function SignOutSheet() {
     if (s === 'ncns') return { background: '#FEE2E2', color: '#B91C1C' };
     if (s === 'called_out') return { background: '#FFF7ED', color: '#C2410C' };
     if (s === 'late') return { background: '#FEF9C3', color: '#A16207' };
+    if (s === 'sent_home') return { background: '#FEF3C7', color: '#92400E' };
     return {};
   };
 

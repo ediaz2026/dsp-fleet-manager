@@ -2606,8 +2606,10 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       const secs = [
         { label: 'CALL OUTS:', min: 5, items: ex.callOuts || [] },
         { label: 'NO CALL NO SHOW:', min: 5, items: ex.ncns || [] },
-        { label: 'LATE:', min: 8, items: ex.lates || [] },
+        { label: 'LATE:', min: 5, items: ex.lates || [] },
+        { label: 'SENT HOME:', min: 5, items: ex.sentHome || [] },
         { label: 'TRAINING:', min: 5, items: ex.training || [] },
+        { label: 'TRAINER:', min: 5, items: ex.trainer || [] },
       ];
       for (const sec of secs) {
         extrasCells.push(sec.label);
@@ -2746,7 +2748,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       const displayTid  = resolvedDA?.transponderId || row.transponderId;
       const isRescued   = displayName && rescueCountByName[displayName] > 0;
       const attSt = staffId ? shiftByStaffId[staffId]?.attendance_status : null;
-      const attBorder = attSt === 'ncns' ? 'border-l-4 border-red-500' : attSt === 'called_out' ? 'border-l-4 border-orange-400' : attSt === 'late' ? 'border-l-4 border-yellow-400' : '';
+      const attBorder = attSt === 'ncns' ? 'border-l-4 border-red-500' : attSt === 'called_out' ? 'border-l-4 border-orange-400' : attSt === 'late' ? 'border-l-4 border-yellow-400' : attSt === 'sent_home' ? 'border-l-4 border-amber-400' : '';
       const rowBg = isRescued
         ? 'bg-orange-50 hover:bg-orange-100'
         : (ROW_BG[row.status] || 'hover:bg-slate-50');
@@ -3010,7 +3012,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
               {rowActionMenu === key && (
                 <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1 text-left" onClick={e => e.stopPropagation()}>
                   <p className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase">Attendance</p>
-                  {[{s:'late',l:'Late',ic:'🟡'},{s:'called_out',l:'Call Out',ic:'🟠'},{s:'ncns',l:'NCNS',ic:'🔴'}].map(({s,l,ic}) => {
+                  {[{s:'late',l:'Late',ic:'🟡'},{s:'called_out',l:'Call Out',ic:'🟠'},{s:'ncns',l:'NCNS',ic:'🔴'},{s:'sent_home',l:'Sent Home',ic:'🏠'}].map(({s,l,ic}) => {
                     const shift = staffId ? shiftByStaffId[staffId] : null;
                     const isActive = shift?.attendance_status === s;
                     return (

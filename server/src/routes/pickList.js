@@ -835,7 +835,7 @@ router.post('/lock-briefing', managerOnly, async (req, res) => {
 router.get('/sign-out-data', async (req, res) => {
   const date = req.query.date || getEasternDate();
   const OPS_EX = new Set(['ON CALL','UTO','PTO','SUSPENSION','TRAINING','TRAINER','DISPATCH AM','DISPATCH PM']);
-  const ATT_LABELS = { ncns: 'NCNS', late: 'LATE', called_out: 'CALL OUT' };
+  const ATT_LABELS = { ncns: 'NCNS', late: 'LATE', called_out: 'CALL OUT', sent_home: 'SENT HOME' };
 
   try {
     // Fetch all data sources in parallel
@@ -847,7 +847,7 @@ router.get('/sign-out-data', async (req, res) => {
       pool.query(`SELECT id, vehicle_name, license_plate FROM vehicles`),
       pool.query(`SELECT d.staff_id, d.transponder_id, s.employee_id, s.first_name, s.last_name FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE s.status NOT IN ('terminated','deleted')`),
       pool.query(`SELECT id, first_name, last_name FROM staff WHERE status NOT IN ('terminated','deleted')`),
-      pool.query(`SELECT a.staff_id, a.status, s.first_name, s.last_name FROM attendance a JOIN staff s ON s.id = a.staff_id WHERE a.attendance_date = $1 AND a.status IN ('ncns','called_out','late')`, [date]),
+      pool.query(`SELECT a.staff_id, a.status, s.first_name, s.last_name FROM attendance a JOIN staff s ON s.id = a.staff_id WHERE a.attendance_date = $1 AND a.status IN ('ncns','called_out','late','sent_home')`, [date]),
     ]);
 
     const shifts = shiftsRes.rows;
@@ -995,11 +995,12 @@ router.get('/sign-out-data', async (req, res) => {
     const attLates = attRows.filter(a => a.status === 'late').map(a => fmtAtt(a.staff_id));
 
     // Fallback: also check rows for attendance from shift data not in attendance table
-    const attStaffIds = new Set(attRows.map(a => a.staff_id));
+    const attSentHome = attRows.filter(a => a.status === 'sent_home').map(a => fmtAtt(a.staff_id));
     for (const r of dedupedRows) {
       if (r.attStatus === 'called_out' && !attCallOuts.some(x => x.startsWith(r.name))) attCallOuts.push(r.route ? `${r.name} — ${r.route}` : r.name);
       if (r.attStatus === 'ncns' && !attNcns.some(x => x.startsWith(r.name))) attNcns.push(r.route ? `${r.name} — ${r.route}` : r.name);
       if (r.attStatus === 'late' && !attLates.some(x => x.startsWith(r.name))) attLates.push(r.route ? `${r.name} — ${r.route}` : r.name);
+      if (r.attStatus === 'sent_home' && !attSentHome.some(x => x.startsWith(r.name))) attSentHome.push(r.route ? `${r.name} — ${r.route}` : r.name);
     }
 
     // Extra shift type drivers
@@ -1010,7 +1011,9 @@ router.get('/sign-out-data', async (req, res) => {
       callOuts: attCallOuts,
       ncns: attNcns,
       lates: attLates,
-      training: shifts.filter(s => ['TRAINING','TRAINER'].includes((s.shift_type || '').toUpperCase())).map(s => `${s.first_name} ${s.last_name}`.toUpperCase()),
+      sentHome: attSentHome,
+      training: shifts.filter(s => (s.shift_type || '').toUpperCase() === 'TRAINING').map(s => `${s.first_name} ${s.last_name}`.toUpperCase()),
+      trainer: shifts.filter(s => (s.shift_type || '').toUpperCase() === 'TRAINER').map(s => `${s.first_name} ${s.last_name}`.toUpperCase()),
     };
 
     res.json({ date, dispAM, dispPM, rows: filteredRows, extras });

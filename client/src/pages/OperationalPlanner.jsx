@@ -1583,18 +1583,14 @@ function DriverSearchDropdown({ currentName, allDrivers = [], excludeStaffIds = 
   const dropdownContent = (() => {
     if (filtered.length > 0) {
       return (
-        <div
-          data-dsd-portal
-          style={inModal ? { position: 'fixed', top: dropPos.top, left: dropPos.left, minWidth: dropPos.width, zIndex: 9999 } : {}}
-          className={`${inModal ? '' : 'absolute top-full left-0 mt-0.5 z-30'} bg-white border border-slate-200 rounded-lg shadow-xl max-h-52 overflow-y-auto min-w-[240px]`}
-        >
+        <div className="absolute top-full left-0 right-0 mt-1 z-[9999] bg-white border border-slate-200 rounded-lg shadow-xl max-h-52 overflow-y-auto">
           {filtered.slice(0, 25).map(d => (
             <button
               key={d.id}
               onMouseDown={() => { onSelect(d); setOpen(false); setSearch(''); }}
-              className="w-full text-left px-3 py-1.5 hover:bg-blue-50 flex items-center justify-between gap-3"
+              className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center justify-between gap-3"
             >
-              <span className="text-[11px] font-medium text-content">{d.name}</span>
+              <span className={`${inModal ? 'text-sm' : 'text-[11px]'} font-medium text-content`}>{d.name}</span>
               {d.transponderId && (
                 <span className="text-[10px] text-slate-400 font-mono flex-shrink-0">{d.transponderId}</span>
               )}
@@ -1605,11 +1601,7 @@ function DriverSearchDropdown({ currentName, allDrivers = [], excludeStaffIds = 
     }
     if (search.trim()) {
       return (
-        <div
-          data-dsd-portal
-          style={inModal ? { position: 'fixed', top: dropPos.top, left: dropPos.left, minWidth: dropPos.width, zIndex: 9999 } : {}}
-          className={`${inModal ? '' : 'absolute top-full left-0 mt-0.5 z-30'} bg-white border border-slate-200 rounded-lg shadow-xl px-3 py-2 text-[11px] text-slate-400 min-w-[200px]`}
-        >
+        <div className="absolute top-full left-0 right-0 mt-1 z-[9999] bg-white border border-slate-200 rounded-lg shadow-xl px-3 py-2 text-sm text-slate-400">
           No drivers found
         </div>
       );
@@ -1650,7 +1642,7 @@ function DriverSearchDropdown({ currentName, allDrivers = [], excludeStaffIds = 
           <X size={inModal ? 14 : 10} />
         </button>
       </div>
-      {inModal ? createPortal(dropdownContent, document.body) : dropdownContent}
+      {dropdownContent}
     </div>
   );
 }
@@ -3778,7 +3770,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       {/* ── Rescue Modal ─────────────────────────────────────────────────── */}
       {rescueModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-3">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-3" style={{ overflow: 'visible' }}>
             <h2 className="font-bold text-content text-base flex items-center gap-2">🚨 Log Rescue</h2>
 
             {/* Rescued driver info */}

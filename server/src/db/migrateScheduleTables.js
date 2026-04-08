@@ -87,7 +87,7 @@ async function migrateScheduleTables() {
   // Seed default shift types (idempotent)
   const shiftTypes = [
     { name: 'EDV',        start: '07:00', end: '17:00', color: 'blue',   order: 1 },
-    { name: 'STEP VAN',   start: '07:00', end: '17:00', color: 'purple', order: 2 },
+    { name: 'STEP VAN',   start: '07:00', end: '17:00', color: '#ea580c', order: 2 },
     { name: 'ON CALL',    start: '06:00', end: '18:00', color: 'yellow', order: 3 },
     { name: 'EXTRA',      start: '07:00', end: '17:00', color: 'green',  order: 4 },
     { name: 'SUSPENSION', start: '00:00', end: '00:00', color: 'red',    order: 5 },
@@ -96,6 +96,9 @@ async function migrateScheduleTables() {
     { name: 'TRAINING',   start: '08:00', end: '16:00', color: 'indigo', order: 8 },
     { name: 'TRAINER',    start: '08:00', end: '16:00', color: 'purple', order: 9 },
   ];
+  // Update Step Van color on existing DBs
+  await pool.query(`UPDATE shift_types SET color = '#ea580c' WHERE name = 'STEP VAN'`).catch(() => {});
+
   for (const t of shiftTypes) {
     await pool.query(
       `INSERT INTO shift_types (name, default_start_time, default_end_time, color, sort_order)

@@ -43,7 +43,7 @@ const DAYS_ABBR = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 
 const SHIFT_TYPES = ['EDV','STEP VAN','HELPER','ON CALL','EXTRA','DISPATCH AM','DISPATCH PM','SUSPENSION','UTO','PTO','TRAINING'];
 const SHIFT_COLORS = {
-  'EDV':         'bg-blue-500',  'STEP VAN':    'bg-indigo-700',
+  'EDV':         'bg-blue-500',  'STEP VAN':    'bg-orange-600',
   'HELPER':      'bg-amber-500', 'ON CALL':     'bg-yellow-500',
   'EXTRA':       'bg-green-500', 'DISPATCH AM': 'bg-cyan-500',
   'DISPATCH PM': 'bg-sky-600',   'SUSPENSION':  'bg-red-500',

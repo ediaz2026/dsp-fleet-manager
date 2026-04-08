@@ -934,6 +934,7 @@ router.get('/sign-out-data', async (req, res) => {
         van: v,
         device: asgn?.device_id || '',
         staging: lo.staging || asgn?.staging_override || '',
+        waveTime: lo.waveTime || '',
         station,
         att,
         attStatus,
@@ -961,8 +962,20 @@ router.get('/sign-out-data', async (req, res) => {
       addRow(s.staff_id, rc, asgn || {});
     }
 
-    // Sort by station then route
-    rows.sort((a, b) => (a.station || 'ZZZ').localeCompare(b.station || 'ZZZ', undefined, { numeric: true }) || a.route.localeCompare(b.route, undefined, { numeric: true }));
+    // Sort: primary by wave time, secondary by staging letter then number
+    const parseStaging = (stg) => {
+      if (!stg) return { letter: 'ZZZ', num: 999 };
+      const match = stg.match(/STG\.([A-Z]+)(\d+)/i);
+      if (!match) return { letter: 'ZZZ', num: 999 };
+      return { letter: match[1].toUpperCase(), num: parseInt(match[2]) };
+    };
+    rows.sort((a, b) => {
+      const wA = a.waveTime || '99:99', wB = b.waveTime || '99:99';
+      if (wA !== wB) return wA.localeCompare(wB);
+      const sA = parseStaging(a.staging), sB = parseStaging(b.staging);
+      if (sA.letter !== sB.letter) return sA.letter.localeCompare(sB.letter);
+      return sA.num - sB.num;
+    });
 
     // Deduplicate by route code — keep first occurrence (most recently added via seen Set)
     const seenRoutes = new Set();

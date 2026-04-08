@@ -2872,18 +2872,58 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
 
       return (
         <tr key={key} className={`transition-colors text-xs group/row ${rowBg} ${attBorder}`}>
-          <td className="px-2 py-2 text-center font-mono text-[10px] text-content-muted select-none">
-            {staffId ? (
-              <>
-                <span className="group-hover/row:hidden">{rowNum}</span>
-                <button
-                  className="hidden group-hover/row:inline text-slate-300 hover:text-red-500 transition-colors text-sm leading-none"
-                  onClick={() => setRemoveConfirm({ staffId, displayName })}
-                  title={`Remove ${displayName} from today's Ops Planner`}
-                >×</button>
-              </>
-            ) : rowNum}
+          {/* ▼ Dropdown — far left */}
+          <td className="px-0.5 py-1 text-center w-7">
+            <div className="relative inline-block">
+              <button
+                onClick={(e) => { e.stopPropagation(); setRowActionMenu(prev => prev === key ? null : key); }}
+                className={`w-6 h-6 rounded text-[10px] font-bold transition-colors ${
+                  attSt === 'ncns' ? 'bg-red-100 text-red-600' :
+                  attSt === 'called_out' ? 'bg-orange-100 text-orange-600' :
+                  attSt === 'late' ? 'bg-yellow-100 text-yellow-700' :
+                  attSt === 'sent_home' ? 'bg-amber-100 text-amber-700' :
+                  'text-slate-400 hover:bg-slate-100'
+                }`}
+              >▼</button>
+              {rowActionMenu === key && (
+                <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1 text-left" onClick={e => e.stopPropagation()}>
+                  <p className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase">Attendance</p>
+                  {[{s:'late',l:'Late',ic:'🟡'},{s:'called_out',l:'Call Out',ic:'🟠'},{s:'ncns',l:'NCNS',ic:'🔴'},{s:'sent_home',l:'Sent Home',ic:'🏠'}].map(({s,l,ic}) => {
+                    const shift = staffId ? shiftByStaffId[staffId] : null;
+                    const isActive = shift?.attendance_status === s;
+                    return (
+                      <button key={s} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 transition-colors"
+                        onClick={async () => {
+                          setRowActionMenu(null);
+                          if (staffId && shift) {
+                            const newStatus = isActive ? 'present' : s;
+                            await api.post('/attendance', { staff_id: staffId, shift_id: shift.id, attendance_date: planDate, status: newStatus });
+                            qc.invalidateQueries({ queryKey: ['shifts-daily', planDate] });
+                            toast.success(isActive ? `Unmarked ${displayName}` : `Marked ${displayName} as ${l}`);
+                          }
+                        }}>
+                        <span>{ic}</span><span>{l}</span>{isActive && <span className="ml-auto text-green-600">✓</span>}
+                      </button>
+                    );
+                  })}
+                  <div className="border-t border-slate-100 my-1" />
+                  <button className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-500 hover:bg-red-50 transition-colors"
+                    onClick={() => { setRowActionMenu(null); if (staffId) setRemoveConfirm({ staffId, displayName }); }}>
+                    <span>🗑️</span><span>Remove Driver</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </td>
+          {/* 🚨 Rescue */}
+          <td className="px-0.5 py-1 text-center w-7">
+            <button onClick={() => { setRescueModal({ staffId, displayName, effectiveRoute }); setRescueForm({ rescuerId: null, rescuerName: '', rescueTime: '', packages: '', reason: '', notes: '' }); }}
+              className="w-6 h-6 rounded text-sm hover:bg-orange-100 transition-colors" title="Log rescue">
+              🚨{rescueCountByName[displayName] > 0 && <sup className="text-[8px] font-bold text-orange-600">{rescueCountByName[displayName]}</sup>}
+            </button>
+          </td>
+          {/* # */}
+          <td className="px-2 py-2 text-center font-mono text-[10px] text-content-muted select-none">{rowNum}</td>
           <td className="px-3 py-2 min-w-[150px]">
             {isMultiFlag && (
               <div className="text-[9px] font-bold text-red-600 bg-red-100 border border-red-200 px-1.5 py-0.5 rounded mb-1 truncate max-w-[200px]" title={`Multiple DAs: ${row.allTids.join(' | ')}`}>
@@ -2999,52 +3039,6 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             );
           })()}
 
-          {/* Actions dropdown */}
-          <td className="px-1 py-2 text-center whitespace-nowrap">
-            <div className="relative inline-block">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setRowActionMenu(prev => prev === key ? null : key);
-                }}
-                className="px-1.5 py-0.5 rounded text-xs hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-700"
-              >▼</button>
-              {rowActionMenu === key && (
-                <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1 text-left" onClick={e => e.stopPropagation()}>
-                  <p className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase">Attendance</p>
-                  {[{s:'late',l:'Late',ic:'🟡'},{s:'called_out',l:'Call Out',ic:'🟠'},{s:'ncns',l:'NCNS',ic:'🔴'},{s:'sent_home',l:'Sent Home',ic:'🏠'}].map(({s,l,ic}) => {
-                    const shift = staffId ? shiftByStaffId[staffId] : null;
-                    const isActive = shift?.attendance_status === s;
-                    return (
-                      <button key={s} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 transition-colors"
-                        onClick={async () => {
-                          setRowActionMenu(null);
-                          if (staffId && shift) {
-                            const newStatus = isActive ? 'present' : s;
-                            await api.post('/attendance', { staff_id: staffId, shift_id: shift.id, attendance_date: planDate, status: newStatus });
-                            qc.invalidateQueries({ queryKey: ['shifts-daily', planDate] });
-                            toast.success(isActive ? `Unmarked ${displayName}` : `Marked ${displayName} as ${l}`);
-                          }
-                        }}>
-                        <span>{ic}</span><span>{l}</span>{isActive && <span className="ml-auto text-green-600">✓</span>}
-                      </button>
-                    );
-                  })}
-                  <div className="border-t border-slate-100 my-1" />
-                  <button className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
-                    onClick={() => { setRowActionMenu(null); setRescueModal({ staffId, displayName, effectiveRoute }); setRescueForm({ rescuerId: null, rescuerName: '', rescueTime: '', packages: '', reason: '', notes: '' }); }}>
-                    <span>🚨</span><span>Log Rescue</span>
-                    {rescueCountByName[displayName] > 0 && <span className="ml-auto text-[9px] font-bold text-orange-600">×{rescueCountByName[displayName]}</span>}
-                  </button>
-                  <div className="border-t border-slate-100 my-1" />
-                  <button className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-500 hover:bg-red-50 transition-colors"
-                    onClick={() => { setRowActionMenu(null); if (staffId) setRemoveConfirm({ staffId, displayName }); }}>
-                    <span>🗑️</span><span>Remove Driver</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          </td>
         </tr>
       );
     };
@@ -3168,6 +3162,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
           <table className="w-full text-xs">
             <thead className="border-b border-slate-100 bg-slate-50 text-[10px] font-semibold text-content-muted uppercase tracking-wide">
               <tr>
+                <th className="px-1 py-2.5 text-center w-7"></th>
+                <th className="px-1 py-2.5 text-center w-7">🚨</th>
                 <th className="px-2 py-2.5 text-center w-8 cursor-pointer hover:bg-slate-100 select-none group" onClick={() => handleSort('num')} title="Row #">
                   <span className="flex items-center justify-center gap-0.5">#
                     {(() => { const idx = sortKeys.findIndex(k => k.col === 'num'); return idx >= 0
@@ -3212,13 +3208,12 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
                 })()}
                 <SortHeader col="rts" label="RTS" className="text-center" />
                 {pickListData.length > 0 && <SortHeader col="pickList" label="Pick List" />}
-                <th className="px-2 py-2.5 text-center w-10">▼</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {rows.length > 0
                 ? rows.map((row, i) => renderRow(row, row.profile?.staff_id ? `staff-${row.profile.staff_id}` : `${row.section}-${row.routeCode || i}`, i + 1))
-                : <tr><td colSpan={pickListData.length > 0 ? 16 : 15} className="px-3 py-8 text-center text-content-muted">
+                : <tr><td colSpan={pickListData.length > 0 ? 17 : 16} className="px-3 py-8 text-center text-content-muted">
                     {hasActiveFilters ? 'No rows match the current filters.' : 'Upload files to see data.'}
                   </td></tr>
               }

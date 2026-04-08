@@ -112,16 +112,16 @@ function ShiftCell({ shift, isManager, onShiftDragStart, isDragging, shiftTypeMa
           e.dataTransfer.setData('text/plain', String(shift.id));
           onShiftDragStart();
         } : undefined}
-        className={`w-full rounded-lg border px-2 py-1.5 text-left ${isManager ? 'cursor-grab active:cursor-grabbing hover:shadow-sm' : 'cursor-default'} transition-shadow ${isDragging ? 'opacity-40 scale-95' : ''} ${isNewUnpublished ? 'ring-2 ring-red-500' : (isChangedUnpublished || hasPending) ? 'ring-2 ring-amber-400' : ''}`}
-        style={{ ...cellStyle, ...(isNewUnpublished ? { opacity: 0.78 } : {}) }}
+        className={`w-full rounded-lg px-2 py-1.5 text-left ${isManager ? 'cursor-grab active:cursor-grabbing hover:shadow-sm' : 'cursor-default'} transition-shadow ${isDragging ? 'opacity-40 scale-95' : ''} ${isNewUnpublished ? 'ring-2 ring-red-500' : (isChangedUnpublished || hasPending) ? 'ring-2 ring-amber-400' : ''}`}
+        style={{ backgroundColor: (cellStyle.backgroundColor || '#f8fafc'), borderLeft: `3px solid ${cellStyle.color || '#94a3b8'}`, ...(isNewUnpublished ? { opacity: 0.78 } : {}) }}
       >
         <div className="flex items-center justify-between gap-1">
-          <span className={`text-xs font-bold truncate ${isNewUnpublished ? 'italic' : ''}`}>{displayType}</span>
+          <span className={`text-xs font-bold truncate ${isNewUnpublished ? 'italic' : ''}`} style={{ color: cellStyle.color }}>{displayType}</span>
           <div className="flex items-center gap-1 flex-shrink-0">
             {attDot && <span className={`w-2 h-2 rounded-full ${attDot}`} />}
           </div>
         </div>
-        <p className="text-[10px] opacity-70 mt-0.5">
+        <p className="text-[10px] text-slate-400 mt-0.5">
           {displayStart?.slice(0,5)}–{displayEnd?.slice(0,5)}
         </p>
         {shift.attendance_status && shift.attendance_status !== 'present' && (
@@ -1583,17 +1583,18 @@ export default function WeeklySchedule() {
                     </button>
                   </div>
                 </th>
-                <th className="text-left px-3 py-3 text-content-muted font-semibold w-16 text-xs uppercase tracking-wide">Hrs</th>
+                <th className="text-center px-1 py-3 text-content-subtle font-semibold w-10 text-[10px] uppercase tracking-wide">Hrs</th>
                 {weekDays.map((d, i) => {
                   const today = isToday(d);
                   const ds = format(d, 'yyyy-MM-dd');
                   const isFiltered = dayColFilter?.dateStr === ds && dayColFilter?.mode !== 'all';
                   return (
-                    <th key={i} ref={el => { dayColRefs.current[i] = el; }} className={`text-center px-2 py-3 font-medium w-24 ${today ? 'bg-primary-50' : ''}`}>
-                      <div className="flex items-center justify-center gap-0.5">
-                        <p className={`text-xs font-semibold ${today ? 'text-primary' : 'text-content-muted'}`}>
+                    <th key={i} ref={el => { dayColRefs.current[i] = el; }} className={`text-center px-2 py-3 font-medium w-24 ${today ? 'bg-blue-50' : ''}`}>
+                      <div className="flex flex-col items-center gap-0.5">
+                        <p className={`text-xs font-semibold ${today ? 'text-blue-700' : 'text-content-muted'}`}>
                           {DAYS[i]} {format(d, 'd')}
                         </p>
+                        {today && <span className="text-[8px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded-full uppercase">Today</span>}
                         <div className="relative">
                           <button
                             onClick={e => { e.stopPropagation(); setDayFilterDropOpen(prev => prev === ds ? null : ds); }}
@@ -1651,10 +1652,10 @@ export default function WeeklySchedule() {
                         </span>
                       )}
                     </p>
-                    <p className="text-[11px] text-content-subtle">{s.employee_id}</p>
+                    {/* transponder hidden — cleaner layout */}
                   </td>
-                  <td className="px-3 py-2">
-                    <span className="text-xs font-semibold text-content-muted">{hoursMap[s.id] ? `${hoursMap[s.id]}h` : '—'}</span>
+                  <td className="px-1 py-2 text-center">
+                    <span className="text-[10px] text-content-subtle">{hoursMap[s.id] ? `${hoursMap[s.id]}h` : '—'}</span>
                   </td>
                   {weekDays.map((d, di) => {
                     const dateStr = format(d, 'yyyy-MM-dd');
@@ -1668,7 +1669,7 @@ export default function WeeklySchedule() {
                       <td
                         key={di}
                         data-cell-key={ck}
-                        className={`px-1.5 py-1.5 select-none transition-colors ${isToday(d) ? 'bg-primary-50/50' : ''}`}
+                        className={`px-1.5 py-1.5 select-none transition-colors ${isToday(d) ? 'bg-blue-50/70' : ''}`}
                         style={
                           isDrop  ? { boxShadow: 'inset 0 0 0 2px #16a34a', background: 'rgba(22,163,74,0.10)' } :
                           isSel   ? { boxShadow: 'inset 0 0 0 2px #2563EB', background: 'rgba(37,99,235,0.07)' } :

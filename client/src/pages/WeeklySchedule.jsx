@@ -192,7 +192,8 @@ export default function WeeklySchedule() {
   }, [location.key]); // eslint-disable-line
 
   // Driver sort
-  const [driverSort, setDriverSort] = useState('last-asc');
+  const [driverSort, setDriverSort] = useState('first-asc');
+  const [sortOpen, setSortOpen] = useState(false);
 
   // ── Multi-select state ─────────────────────────────────────────────────────
   const [selectedCells, setSelectedCells]         = useState(new Set());
@@ -458,10 +459,27 @@ export default function WeeklySchedule() {
       const fa = (a.first_name || '').toLowerCase();
       const lb = (b.last_name  || '').toLowerCase();
       const fb = (b.first_name || '').toLowerCase();
-      if (driverSort === 'last-asc')  return la.localeCompare(lb);
-      if (driverSort === 'last-desc') return lb.localeCompare(la);
-      if (driverSort === 'first-asc') return fa.localeCompare(fb);
-      return fb.localeCompare(fa);
+      if (driverSort === 'last-asc')  return la.localeCompare(lb) || fa.localeCompare(fb);
+      if (driverSort === 'last-desc') return lb.localeCompare(la) || fb.localeCompare(fa);
+      if (driverSort === 'first-desc') return fb.localeCompare(fa) || lb.localeCompare(la);
+      if (driverSort === 'shift-type') {
+        // Sort by most common shift type this week
+        const getType = (s) => {
+          for (const d of weekDays) {
+            const sh = shiftMap[`${s.id}-${format(d, 'yyyy-MM-dd')}`]?.[0];
+            if (sh?.shift_type) return sh.shift_type;
+          }
+          return 'ZZZ';
+        };
+        const ia = SHIFT_ORDER.indexOf(getType(a)); const ib = SHIFT_ORDER.indexOf(getType(b));
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || fa.localeCompare(fb);
+      }
+      if (driverSort === 'hours-desc') {
+        const ha = parseFloat(hoursMap[a.id]) || 0; const hb = parseFloat(hoursMap[b.id]) || 0;
+        return hb - ha || fa.localeCompare(fb);
+      }
+      // default: first-asc
+      return fa.localeCompare(fb) || la.localeCompare(lb);
     });
     if (dayColFilter?.mode && dayColFilter.mode !== 'all') {
       const ds = dayColFilter.dateStr;
@@ -491,11 +509,11 @@ export default function WeeklySchedule() {
       }
     }
     return list;
-  }, [filteredStaff, driverSort, dayColFilter, shiftMap, dayFilterRouteMap]);
+  }, [filteredStaff, driverSort, dayColFilter, shiftMap, dayFilterRouteMap, hoursMap, weekDays]);
 
-  const cycleDriverSort = () => {
-    setDriverSort(s => s === 'last-asc' ? 'last-desc' : s === 'last-desc' ? 'first-asc' : s === 'first-asc' ? 'first-desc' : 'last-asc');
-  };
+  // Reset sort to default on week change
+  useEffect(() => { setDriverSort('first-asc'); setSortOpen(false); }, [weekStartStr]);
+  useEffect(() => { if (!sortOpen) return; const h = () => setSortOpen(false); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, [sortOpen]);
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const invalidateShifts = () => {
@@ -1576,11 +1594,32 @@ export default function WeeklySchedule() {
             <thead className="sticky top-0 bg-white z-10 shadow-sm">
               <tr className="border-b border-[#CBD5E1]">
                 <th className="text-left px-4 py-3 text-content-muted font-semibold w-44 text-xs uppercase tracking-wide">
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 relative">
                     Driver
-                    <button onClick={cycleDriverSort} className="text-[10px] text-slate-400 hover:text-primary transition-colors px-1 py-0.5 rounded">
-                      {driverSort === 'last-asc' ? '↑Z' : driverSort === 'last-desc' ? '↓Z' : driverSort === 'first-asc' ? '↑A' : '↓A'}
+                    <button onClick={() => setSortOpen(o => !o)} className="text-[10px] text-slate-400 hover:text-primary transition-colors px-1.5 py-0.5 rounded bg-slate-50 border border-slate-200">
+                      {driverSort === 'first-asc' ? '↑A' : driverSort === 'first-desc' ? '↓A' : driverSort === 'last-asc' ? '↑Z' : driverSort === 'last-desc' ? '↓Z' : driverSort === 'shift-type' ? '⬡' : '⏱'} ▾
                     </button>
+                    {sortOpen && (
+                      <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1 text-left normal-case tracking-normal font-normal" onClick={e => e.stopPropagation()}>
+                        {[
+                          { key: 'first-asc',   label: 'First Name A→Z',  toggle: 'first-desc' },
+                          { key: 'first-desc',  label: 'First Name Z→A',  toggle: 'first-asc' },
+                          { key: 'last-asc',    label: 'Last Name A→Z',   toggle: 'last-desc' },
+                          { key: 'last-desc',   label: 'Last Name Z→A',   toggle: 'last-asc' },
+                          { key: 'shift-type',  label: 'Shift Type' },
+                          { key: 'hours-desc',  label: 'Hours (High→Low)' },
+                        ].map(opt => (
+                          <button key={opt.key} onClick={() => {
+                            if (driverSort === opt.key && opt.toggle) setDriverSort(opt.toggle);
+                            else setDriverSort(opt.key);
+                            setSortOpen(false);
+                          }} className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center gap-2 ${driverSort === opt.key ? 'text-blue-600 font-semibold' : 'text-slate-600'}`}>
+                            {driverSort === opt.key && <span className="text-blue-600">✓</span>}
+                            <span>{opt.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </th>
                 <th className="text-center px-1 py-3 text-content-subtle font-semibold w-10 text-[10px] uppercase tracking-wide">Hrs</th>

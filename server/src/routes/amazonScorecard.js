@@ -155,13 +155,14 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
         staffId = nameToStaff[`${firstName} ${lastName}`.toUpperCase()] || null;
       }
 
-      const rankVal = parseInt(r[0]) || null;
+      const rankVal = parseInt(r[0]);
+      const rankToStore = !isNaN(rankVal) ? rankVal : (uploaded + 1);
       if (!staffId) {
         unmatched.push(`${driverName}${tid ? ` (${tid})` : ''}`);
-        if (uploaded < 5) console.log(`[scorecard] UNMATCHED: "${driverName}" tid="${tid}" rank=${rankVal}`);
+        if (uploaded < 5) console.log(`[scorecard] UNMATCHED: "${driverName}" tid="${tid}" colA="${r[0]}" rank=${rankToStore}`);
       } else {
         matched++;
-        if (uploaded < 5) console.log(`[scorecard] MATCHED: "${driverName}" tid="${tid}" → staff_id=${staffId} rank=${rankVal}`);
+        if (uploaded < 5) console.log(`[scorecard] MATCHED: "${driverName}" tid="${tid}" → staff_id=${staffId} colA="${r[0]}" rank=${rankToStore}`);
       }
 
       await pool.query(`
@@ -173,7 +174,7 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
       `, [
         weekLabel, amazonWeek, year, staffId, driverName, tid || null,
-        parseInt(getVal(r, COL.rank)) || null,
+        rankToStore,
         COL.standing >= 0 ? String(r[COL.standing] || '').trim() || null : null,
         parseNum(getVal(r, COL.ranking)),
         parseBool(getVal(r, COL.bonus)),
@@ -218,6 +219,9 @@ router.get('/mine', async (req, res) => {
   } else {
     const { rows } = await pool.query(`SELECT * FROM amazon_scorecards WHERE staff_id=$1 ORDER BY year DESC, amazon_week DESC LIMIT 1`, [req.user.id]);
     row = rows[0];
+  }
+  if (row) {
+    console.log(`[scorecard/mine] staff_id=${req.user.id} rank_position=${row.rank_position} final_ranking=${row.final_ranking}`);
   }
   res.json(row || null);
 });

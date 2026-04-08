@@ -1536,8 +1536,8 @@ function InlineTimeCell({ value, onSave }) {
 
 // ══ DRIVER SEARCH DROPDOWN ════════════════════════════════════════════════════
 
-function DriverSearchDropdown({ currentName, allDrivers = [], excludeStaffIds = new Set(), onSelect, placeholder = 'Search driver…', inModal = false }) {
-  const [open, setOpen]       = useState(false);
+function DriverSearchDropdown({ currentName, allDrivers = [], excludeStaffIds = new Set(), onSelect, placeholder = 'Search driver…', inModal = false, autoOpen = false }) {
+  const [open, setOpen]       = useState(autoOpen);
   const [search, setSearch]   = useState('');
   const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 240 });
   const wrapRef               = useRef(null);
@@ -1631,7 +1631,7 @@ function DriverSearchDropdown({ currentName, allDrivers = [], excludeStaffIds = 
 
   return (
     <div ref={wrapRef} className="relative">
-      <div ref={btnRef} className="flex items-center gap-0.5 border border-blue-400 rounded bg-white">
+      <div ref={btnRef} className={`flex items-center gap-0.5 border border-blue-400 rounded bg-white ${inModal ? 'border-slate-200 rounded-lg' : ''}`}>
         <input
           ref={inputRef}
           autoFocus
@@ -1641,11 +1641,13 @@ function DriverSearchDropdown({ currentName, allDrivers = [], excludeStaffIds = 
             if (inModal && btnRef.current) calcPos(btnRef.current);
           }}
           placeholder={placeholder}
-          className="text-[11px] px-1.5 py-0.5 bg-transparent focus:outline-none w-28"
+          className={inModal
+            ? 'text-sm px-3 py-2.5 bg-transparent focus:outline-none w-full min-h-[44px]'
+            : 'text-[11px] px-1.5 py-0.5 bg-transparent focus:outline-none w-28'}
           onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setSearch(''); } e.stopPropagation(); }}
         />
-        <button onClick={() => { setOpen(false); setSearch(''); }} className="px-1 text-slate-300 hover:text-slate-500">
-          <X size={10} />
+        <button onClick={() => { setOpen(false); setSearch(''); }} className={`text-slate-300 hover:text-slate-500 ${inModal ? 'px-3' : 'px-1'}`}>
+          <X size={inModal ? 14 : 10} />
         </button>
       </div>
       {inModal ? createPortal(dropdownContent, document.body) : dropdownContent}
@@ -3792,12 +3794,13 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
                 currentName={rescueForm.rescuerName}
                 allDrivers={allDrivers}
                 onSelect={d => setRescueForm(f => ({ ...f, rescuerId: d.id, rescuerName: d.name }))}
-                placeholder="Search rescuer…"
+                placeholder="Search driver name..."
                 inModal={true}
+                autoOpen={true}
               />
             </div>
 
-            {/* Time + Packages row */}
+            {/* Time + Stops row */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-content-muted mb-1">Rescue Time</label>
@@ -3809,7 +3812,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-content-muted mb-1">Packages Rescued</label>
+                <label className="block text-xs font-semibold text-content-muted mb-1">Stops Rescued</label>
                 <input
                   type="number" min="0"
                   value={rescueForm.packages}

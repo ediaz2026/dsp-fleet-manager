@@ -3796,12 +3796,31 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-content-muted mb-1">Rescue Time</label>
-                <input
-                  type="time"
-                  value={rescueForm.rescueTime}
-                  onChange={e => setRescueForm(f => ({ ...f, rescueTime: e.target.value }))}
-                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:border-primary"
-                />
+                {rescueForm.rescueTime && rescueForm._timeLocked ? (
+                  <div
+                    onClick={() => setRescueForm(f => ({ ...f, _timeLocked: false }))}
+                    className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-full flex items-center justify-between cursor-pointer hover:border-blue-400"
+                  >
+                    <span className="font-semibold">{rescueForm.rescueTime}</span>
+                    <span className="text-slate-400 text-xs">✏️</span>
+                  </div>
+                ) : (
+                  <input
+                    type="time"
+                    value={rescueForm.rescueTime}
+                    onChange={e => setRescueForm(f => ({ ...f, rescueTime: e.target.value }))}
+                    onFocus={() => {
+                      if (!rescueForm.rescueTime) {
+                        const now = new Date();
+                        const h = now.toLocaleString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+                        setRescueForm(f => ({ ...f, rescueTime: h }));
+                      }
+                    }}
+                    onBlur={() => setRescueForm(f => ({ ...f, _timeLocked: true }))}
+                    onKeyDown={e => { if (e.key === 'Enter') { setRescueForm(f => ({ ...f, _timeLocked: true })); e.target.blur(); } }}
+                    className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:border-primary"
+                  />
+                )}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-content-muted mb-1">Stops Rescued</label>

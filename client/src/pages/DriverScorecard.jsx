@@ -1,5 +1,6 @@
-import { useState, Component } from 'react';
+import { useState, useEffect, Component } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useLocation } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Award, CheckCircle, XCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
@@ -63,9 +64,38 @@ class ScorecardErrorBoundary extends Component {
   }
 }
 
+const ANIM_STYLE = `
+@keyframes scTrophyDrop{0%{transform:translateX(-50%) translateY(-200px);opacity:0}100%{transform:translateX(-50%) translateY(0);opacity:1}}
+@keyframes scConfetti{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(100vh) rotate(720deg);opacity:0}}
+@keyframes scBurst{0%{transform:scale(0);opacity:1}100%{transform:scale(4);opacity:0}}
+@keyframes scFadeUp{0%{opacity:0;transform:translateX(-50%) translateY(20px)}100%{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes scRocket{0%{transform:translateX(-50%) translateY(0);opacity:1}100%{transform:translateX(-50%) translateY(-100vh);opacity:0}}
+`;
+
+function TrophyAnim() {
+  return <>
+    <div style={{position:'absolute',top:'30%',left:'50%',fontSize:80,animation:'scTrophyDrop 0.8s cubic-bezier(0.34,1.56,0.64,1) forwards'}}>🏆</div>
+    {Array.from({length:30},(_,i)=><div key={i} style={{position:'absolute',left:`${Math.random()*100}%`,top:-10,width:6+Math.random()*6,height:6+Math.random()*6,borderRadius:'50%',background:['#FFD700','#1a3a5c','#fff','#4ade80'][i%4],animation:`scConfetti ${1.5+Math.random()}s ${Math.random()*0.5}s linear forwards`}}/>)}
+  </>;
+}
+function FireworksAnim() {
+  return <>
+    {Array.from({length:6},(_,i)=><div key={i} style={{position:'absolute',left:`${15+Math.random()*70}%`,top:`${15+Math.random()*50}%`,width:50+Math.random()*40,height:50+Math.random()*40,borderRadius:'50%',background:['#FFD700','#ff6b6b','#4ade80','#60a5fa','#1a3a5c'][i%5],animation:`scBurst 1.2s ${i*0.15}s ease-out forwards`,opacity:0}}/>)}
+    <div style={{position:'absolute',top:'20%',left:'50%',color:'#FFD700',fontSize:22,fontWeight:700,animation:'scFadeUp 0.5s 0.3s forwards',opacity:0}}>🎆 Top Performer!</div>
+  </>;
+}
+function RocketAnim() {
+  return <>
+    <div style={{position:'absolute',bottom:'10%',left:'50%',fontSize:60,animation:'scRocket 2s ease-in forwards'}}>🚀</div>
+    <div style={{position:'absolute',bottom:'30%',left:'50%',color:'#93c5fd',fontSize:18,fontWeight:600,animation:'scFadeUp 0.5s 0.3s forwards',opacity:0}}>Keep Climbing!</div>
+  </>;
+}
+
 function DriverScorecardInner() {
   const { user } = useAuth();
+  const location = useLocation();
   const [selectedWeek, setSelectedWeek] = useState(null);
+  const [animType, setAnimType] = useState(null);
 
   const { data: weeks = [] } = useQuery({
     queryKey: ['amazon-scorecard-weeks'],
@@ -96,6 +126,30 @@ function DriverScorecardInner() {
     else { greeting = `Keep going ${firstName}! 🚀 New week, new opportunity — let's get those numbers up together!`; greetColor = '#FEF9C3'; }
   }
 
+  // Animation: reset on tab change
+  useEffect(() => { setAnimType(null); }, [location.pathname]);
+
+  // Animation: trigger after data loads (stable deps only)
+  const scId = sc?.id;
+  const scWeek = sc?.week_label;
+  useEffect(() => {
+    if (!sc) return;
+    const r = parseFloat(sc.final_ranking) || 0;
+    const ipp = parseFloat(sc.incentive_per_package) || 0;
+    const pkgs = parseFloat(sc.packages) || 0;
+    if (r >= 100) setAnimType('perfect');
+    else if (ipp > 0 && pkgs > 0 && ipp >= pkgs * 0.09) setAnimType('fireworks');
+    else if (ipp > 0) setAnimType('rocket');
+    else setAnimType(null);
+  }, [scId, scWeek]);
+
+  // Auto-dismiss animation
+  useEffect(() => {
+    if (!animType) return;
+    const t = setTimeout(() => setAnimType(null), 3000);
+    return () => clearTimeout(t);
+  }, [animType]);
+
   const podDisplay = sc?.pod_rate != null ? (() => {
     const p = parseFloat(sc.pod_rate) * 100;
     return (Number.isInteger(p) ? p.toString() : parseFloat(p.toFixed(1)).toString());
@@ -103,6 +157,15 @@ function DriverScorecardInner() {
 
   return (
     <div className="bg-[#F1F5F9]">
+      {/* Animation overlay — never blocks content */}
+      {animType && (
+        <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:999,overflow:'hidden'}}>
+          <style>{ANIM_STYLE}</style>
+          {animType === 'perfect' && <TrophyAnim />}
+          {animType === 'fireworks' && <FireworksAnim />}
+          {animType === 'rocket' && <RocketAnim />}
+        </div>
+      )}
       {/* Header */}
       <div className="bg-[#1a3a5c] text-white px-5 pt-[max(env(safe-area-inset-top),20px)] pb-6 rounded-b-3xl">
         <p className="text-sm text-blue-200 font-medium mb-1">{weekParam || 'Scorecard'}{sc?.year ? ` — ${sc.year}` : ''}</p>

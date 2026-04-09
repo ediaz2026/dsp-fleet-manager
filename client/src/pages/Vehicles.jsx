@@ -958,10 +958,10 @@ export default function Vehicles() {
                           <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap text-xs">
                             {format(new Date(r.created_at), 'MM/dd/yy')}
                           </td>
-                          <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
-                            <div className="flex items-center gap-1">
-                              <button onClick={() => completeMutation.mutate(r)} className="p-1.5 rounded hover:bg-emerald-50 text-emerald-600 transition-colors" title="Mark complete"><Check size={13} /></button>
-                              <button onClick={() => setConfirmDeleteRepairId(r.id)} className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors" title="Delete"><Trash2 size={13} /></button>
+                          <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center gap-1.5">
+                              <button onClick={() => completeMutation.mutate(r)} title="Mark complete" className="flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 transition-colors"><Check size={16} /></button>
+                              <button onClick={() => setConfirmDeleteRepairId(r.id)} title="Delete" className="flex items-center justify-center w-9 h-9 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 transition-colors"><Trash2 size={16} /></button>
                             </div>
                           </td>
                         </tr>

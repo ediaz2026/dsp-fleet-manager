@@ -162,6 +162,25 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary diagnostic (remove after use)
+app.get('/api/diag-staff-lookup', async (req, res) => {
+  const pool = require('./db/pool');
+  const { rows: q1 } = await pool.query(`
+    SELECT id, first_name, last_name FROM staff
+    WHERE last_name ILIKE '%garcia%' AND first_name ILIKE '%rodolfo%'
+  `);
+  const { rows: q2 } = await pool.query(`
+    SELECT id, first_name, last_name FROM staff
+    WHERE (first_name ILIKE '%gabriela%')
+    OR (last_name ILIKE '%taylorhorta%' OR last_name ILIKE '%taylor%')
+    OR (first_name ILIKE '%jacson%')
+    OR (first_name ILIKE '%bryan%' AND last_name ILIKE '%caballero%')
+    OR (first_name ILIKE '%devin%')
+    ORDER BY first_name
+  `);
+  res.json({ query1_rodolfo_garcia: q1, query2_mixed: q2 });
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

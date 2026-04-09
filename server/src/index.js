@@ -160,6 +160,7 @@ app.use('/api/import-data', require('./routes/importData'));
 app.use('/api/vendors',    require('./routes/vendors'));
 app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
 // Health check
 app.get('/api/health', (req, res) => res.json({

@@ -165,7 +165,7 @@ function RepairModal({ isOpen, onClose, vehicles, editing, prefill, onSuccess, v
         {/* 2. Statuses */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="modal-label">Van Status</label>
+            <label className="modal-label">DSP Status</label>
             {viewOnly ? (
               <StatusPill value={form.van_status} activeLabel="Active" inactiveLabel="Inactive (Out of Service)" />
             ) : (
@@ -459,7 +459,7 @@ export default function Vehicles() {
       qc.invalidateQueries({ queryKey: ['fleet-alerts'] });
       qc.invalidateQueries({ queryKey: ['inactive-vehicles'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
-      if (van_status    !== undefined) toast.success('Van status updated');
+      if (van_status    !== undefined) toast.success('DSP status updated');
       if (amazon_status !== undefined) toast.success('Amazon status updated');
     },
     onError: err => toast.error(err.response?.data?.error || 'Failed to update status'),
@@ -751,7 +751,7 @@ export default function Vehicles() {
                     <VSortableHeader label="Insurance Exp" col="insurance_expiration"  sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
                     <VSortableHeader label="Reg. Exp"      col="registration_expiration" sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
                     <VSortableHeader label="Next Insp."    col="next_inspection_date"  sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
-                    <VSortableHeader label="Van Status"    col="van_status"            sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
+                    <VSortableHeader label="DSP Status"    col="van_status"            sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
                     <VSortableHeader label="Amazon Status" col="amazon_status"         sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
                     {isManager && <th className="px-3 py-2.5 w-20" />}
                   </tr>
@@ -858,7 +858,7 @@ export default function Vehicles() {
               <option value="low">Low</option>
             </select>
             <select className="select w-auto" value={filterVanStatus} onChange={e => setFilterVanStatus(e.target.value)}>
-              <option value="">All Van Statuses</option>
+              <option value="">All DSP Statuses</option>
               <option value="active">Van Active</option>
               <option value="inactive">Van Inactive</option>
             </select>
@@ -893,7 +893,7 @@ export default function Vehicles() {
                       <tr>
                         <SortableHeader label="Vehicle"        sortKey="vehicle_name"   currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
                         <SortableHeader label="VIN (last 6)"   sortKey="vin"            currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
-                        <SortableHeader label="Van Status"     sortKey="van_status"     currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
+                        <SortableHeader label="DSP Status"     sortKey="van_status"     currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
                         <SortableHeader label="Amazon Status"  sortKey="amazon_status"  currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
                         <SortableHeader label="Priority"       sortKey="priority"       currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
                         <SortableHeader label="Repair Needed"  sortKey="description"    currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
@@ -1268,7 +1268,7 @@ export default function Vehicles() {
           {editingVehicle && (
             <div className="grid grid-cols-2 gap-4 pb-1">
               <div>
-                <label className="modal-label">Van Status</label>
+                <label className="modal-label">DSP Status</label>
                 <select
                   className="select"
                   value={vehicleForm.van_status || 'Active'}
@@ -1316,7 +1316,7 @@ export default function Vehicles() {
           {!editingVehicle && (
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="modal-label">Van Status</label>
+                <label className="modal-label">DSP Status</label>
                 <select className="select" value={vehicleForm.van_status || 'Active'} onChange={e => setVehicleForm(f => ({ ...f, van_status: e.target.value }))}>
                   <option value="Active">Active</option>
                   <option value="Out of Service">Out of Service</option>

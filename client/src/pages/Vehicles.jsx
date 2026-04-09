@@ -337,7 +337,54 @@ const FLEET_SIDEBAR = [
   { id: 'driver-reports', label: 'Driver Reports',   icon: MessageSquareWarning },
   { id: 'fleet-alerts',   label: 'Fleet Alerts',     icon: Bell },
   { id: 'vendors',        label: 'Vendors',          icon: Building2 },
+  { id: 'van-affinity',   label: 'Van Affinity',     icon: Car },
 ];
+
+function VanAffinityRow({ row, staff, onSave, isSaving }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    primary_driver_1_id: row.primary_driver_1_id || '',
+    primary_driver_2_id: row.primary_driver_2_id || '',
+    secondary_driver_1_id: row.secondary_driver_1_id || '',
+    secondary_driver_2_id: row.secondary_driver_2_id || '',
+  });
+  const driverName = (id) => { const s = staff.find(x => String(x.id) === String(id)); return s ? `${s.first_name} ${s.last_name}` : '—'; };
+  const drivers = staff.filter(s => s.role === 'driver' && s.status === 'active');
+
+  if (!editing) {
+    return (
+      <tr className="hover:bg-blue-50/30 transition-colors">
+        <td className="px-3 py-2.5 font-medium text-slate-900">{row.vehicle_name}</td>
+        <td className="px-3 py-2.5"><span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{row.service_type || '—'}</span></td>
+        <td className="px-3 py-2.5 text-slate-700">{driverName(row.primary_driver_1_id)}</td>
+        <td className="px-3 py-2.5 text-slate-700">{driverName(row.primary_driver_2_id)}</td>
+        <td className="px-3 py-2.5 text-slate-500">{driverName(row.secondary_driver_1_id)}</td>
+        <td className="px-3 py-2.5 text-slate-500">{driverName(row.secondary_driver_2_id)}</td>
+        <td className="px-3 py-2.5"><button onClick={() => setEditing(true)} className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 text-blue-600 hover:bg-blue-50">Edit</button></td>
+      </tr>
+    );
+  }
+  return (
+    <tr className="bg-blue-50/40">
+      <td className="px-3 py-2 font-medium text-slate-900">{row.vehicle_name}</td>
+      <td className="px-3 py-2"><span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{row.service_type || '—'}</span></td>
+      {['primary_driver_1_id','primary_driver_2_id','secondary_driver_1_id','secondary_driver_2_id'].map(field => (
+        <td key={field} className="px-3 py-2">
+          <select className="select text-xs w-full" value={form[field]} onChange={e => setForm(f => ({ ...f, [field]: e.target.value || null }))}>
+            <option value="">— None</option>
+            {drivers.map(d => <option key={d.id} value={d.id}>{d.first_name} {d.last_name}</option>)}
+          </select>
+        </td>
+      ))}
+      <td className="px-3 py-2">
+        <div className="flex gap-1">
+          <button onClick={() => { onSave(form); setEditing(false); }} disabled={isSaving} className="text-xs px-2.5 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Save</button>
+          <button onClick={() => setEditing(false)} className="text-xs px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50">✕</button>
+        </div>
+      </td>
+    </tr>
+  );
+}
 
 export default function Vehicles() {
   const { user } = useAuth();
@@ -435,6 +482,23 @@ export default function Vehicles() {
   const { data: vendors = [], isLoading: vendorsLoading } = useQuery({
     queryKey: ['vendors'],
     queryFn: () => api.get('/vendors').then(r => r.data),
+  });
+
+  const { data: staff = [] } = useQuery({
+    queryKey: ['staff'],
+    queryFn: () => api.get('/staff').then(r => r.data),
+  });
+
+  const { data: vanAffinity = [], isLoading: affinityLoading } = useQuery({
+    queryKey: ['van-affinity'],
+    queryFn: () => api.get('/van-affinity').then(r => r.data),
+    enabled: activeSection === 'van-affinity',
+  });
+
+  const saveAffinityMutation = useMutation({
+    mutationFn: ({ vehicle_id, ...data }) => api.put(`/van-affinity/vehicle/${vehicle_id}`, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['van-affinity'] }); toast.success('Van affinity saved'); },
+    onError: err => toast.error(err.response?.data?.error || 'Failed to save'),
   });
 
   const pendingCount = driverReports.filter(r => r.status === 'pending').length;
@@ -1290,6 +1354,45 @@ export default function Vehicles() {
                         </td>
                       )}
                     </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ═══ VAN AFFINITY ═══════════════════════════════════════════ */}
+      {activeSection === 'van-affinity' && (
+        <>
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-bold text-slate-900">Van Affinity</h1>
+            <p className="text-sm text-slate-500">Assign primary & secondary drivers to each vehicle</p>
+          </div>
+          {affinityLoading ? (
+            <div className="card h-40 animate-pulse bg-slate-100" />
+          ) : vanAffinity.length === 0 ? (
+            <div className="card py-12 text-center">
+              <Car size={32} className="text-slate-300 mx-auto mb-2" />
+              <p className="text-slate-500 text-sm">No van affinity records yet. Edit a vehicle row to set driver preferences.</p>
+            </div>
+          ) : (
+            <div className="card p-0 overflow-hidden overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Vehicle</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Type</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Primary 1</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Primary 2</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Secondary 1</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">Secondary 2</th>
+                    <th className="px-3 py-2.5 w-16"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {vanAffinity.map(row => (
+                    <VanAffinityRow key={row.vehicle_id} row={row} staff={staff} onSave={data => saveAffinityMutation.mutate({ vehicle_id: row.vehicle_id, ...data })} isSaving={saveAffinityMutation.isPending} />
                   ))}
                 </tbody>
               </table>

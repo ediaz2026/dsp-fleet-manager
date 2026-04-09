@@ -16,11 +16,11 @@ const navGroups = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', exact: true, mgmtOnly: true },
   { to: '/schedule', icon: Calendar, label: 'Schedule', mgmtOnly: true },
   { to: '/drivers', icon: Users, label: 'Drivers', mgmtOnly: true },
-  { to: '/attendance', icon: ClipboardCheck, label: 'Attendance', adminOnly: true },
-  { to: '/payroll', icon: DollarSign, label: 'Payroll', adminOnly: true },
   { to: '/vehicles', icon: Car, label: 'Fleet', mgmtOnly: true },
   { to: '/scorecard', icon: Star, label: 'Scorecard' },
+  { to: '/attendance', icon: ClipboardCheck, label: 'Attendance', adminOnly: true },
   { to: '/analytics', icon: BarChart2, label: 'Analytics', mgmtOnly: true },
+  { to: '/payroll', icon: DollarSign, label: 'Payroll', adminOnly: true },
   { to: '/management', icon: Settings, label: 'Management', adminOnly: true },
 ];
 

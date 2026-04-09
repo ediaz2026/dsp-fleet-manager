@@ -628,11 +628,11 @@ export default function Vehicles() {
     <div className="flex -mt-6 -mx-6 -mb-6" style={{ minHeight: 'calc(100vh - 3.5rem)' }}>
 
       {/* ── Left Sidebar ── */}
-      <div className="w-52 bg-slate-900 flex-shrink-0 flex flex-col">
-        <div className="px-4 pt-5 pb-3">
+      <div className="group w-14 hover:w-52 bg-slate-900 flex-shrink-0 flex flex-col transition-all duration-200 overflow-hidden">
+        <div className="px-4 pt-5 pb-3 hidden group-hover:block">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Fleet</p>
         </div>
-        <nav className="flex-1 px-2 space-y-0.5">
+        <nav className="flex-1 px-2 space-y-0.5 pt-3 group-hover:pt-0">
           {FLEET_SIDEBAR.map(item => {
             const badge =
               item.id === 'vehicles'       ? vehicles.length :
@@ -644,16 +644,16 @@ export default function Vehicles() {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all justify-center group-hover:justify-start ${
                   activeSection === item.id
                     ? 'bg-blue-600 text-white'
                     : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
                 }`}
               >
                 <item.icon size={15} className="flex-shrink-0" />
-                <span className="flex-1 text-left leading-snug">{item.label}</span>
+                <span className="flex-1 text-left leading-snug hidden group-hover:block">{item.label}</span>
                 {badge > 0 && (
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none hidden group-hover:inline-flex ${
                     badgeDanger ? 'bg-red-500 text-white' :
                     activeSection === item.id ? 'bg-white/20 text-white' : 'bg-slate-700 text-slate-300'
                   }`}>{badge}</span>

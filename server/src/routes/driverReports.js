@@ -1,8 +1,12 @@
 const router = require('express').Router();
 const pool = require('../db/pool');
 const { authMiddleware, managerOnly } = require('../middleware/auth');
+const cloudinary = require('../config/cloudinary');
 
 router.use(authMiddleware);
+
+// Ensure photo_urls column exists
+pool.query(`ALTER TABLE driver_reports ADD COLUMN IF NOT EXISTS photo_urls TEXT[] DEFAULT '{}'`).catch(() => {});
 
 const SELECT_FULL = `
   SELECT
@@ -49,18 +53,33 @@ router.get('/count', async (req, res) => {
 // Any authenticated user (driver or manager) can submit a report
 router.post('/', async (req, res) => {
   try {
-    const { vehicle_id, description } = req.body;
+    const { vehicle_id, description, photo_urls } = req.body;
     if (!vehicle_id || !description) {
       return res.status(400).json({ error: 'vehicle_id and description are required' });
     }
     const { rows } = await pool.query(
-      `INSERT INTO driver_reports (vehicle_id, driver_id, description)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [vehicle_id, req.user.id, description]
+      `INSERT INTO driver_reports (vehicle_id, driver_id, description, photo_urls)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [vehicle_id, req.user.id, description, photo_urls || []]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/driver-reports/upload-photo ────────────────────────────────────
+router.post('/upload-photo', async (req, res) => {
+  try {
+    const { image } = req.body;
+    if (!image) return res.status(400).json({ error: 'image required' });
+    const result = await cloudinary.uploader.upload(image, {
+      folder: 'dsp_repairs',
+    });
+    res.json({ url: result.secure_url });
+  } catch (err) {
+    console.error('Cloudinary upload error:', err);
+    res.status(500).json({ error: 'Photo upload failed' });
   }
 });
 

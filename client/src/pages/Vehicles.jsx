@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus, QrCode, AlertTriangle, CheckCircle, Wrench, Edit2, RefreshCw,
   Trash2, Check, X, ChevronDown, Car, ClipboardList, MessageSquareWarning,
@@ -404,7 +404,8 @@ export default function Vehicles() {
   const [dismissId, setDismissId] = useState(null);
   const [dismissNote, setDismissNote] = useState('');
   const [convertId, setConvertId] = useState(null);
-  const [convertForm, setConvertForm] = useState({ priority: 'low', scheduled_date: '', vendor: '', van_status: 'Active' });
+  const [convertForm, setConvertForm] = useState({ priority: 'low', scheduled_date: '', vendor: '', van_status: 'active', amazon_status: 'active', case_number: '' });
+  const [viewingPhotos, setViewingPhotos] = useState(null);
   const [convertVehicleId, setConvertVehicleId] = useState(null);
   const [convertDescription, setConvertDescription] = useState('');
 
@@ -1047,17 +1048,17 @@ export default function Vehicles() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {sortedDR.map(r => (
-                        <tr key={r.id} className={`hover:bg-blue-50/30 transition-colors ${r.status === 'pending' ? 'bg-amber-50/40' : 'opacity-60'}`}>
+                      {sortedDR.map(r => (<React.Fragment key={r.id}>
+                        <tr className={`hover:bg-blue-50/30 transition-colors ${r.status === 'pending' ? 'bg-amber-50/40' : 'opacity-60'}`}>
                           <td className="px-3 py-3 font-medium text-slate-900">{r.vehicle_name}</td>
                           <td className="px-3 py-3 text-slate-700">{r.driver_name}</td>
                           <td className="px-3 py-3 text-slate-500 text-xs whitespace-nowrap">{format(new Date(r.created_at), 'MM/dd/yy h:mm a')}</td>
                           <td className="px-3 py-3 text-slate-600 max-w-xs">
                             <p className="truncate">{r.description}</p>
                             {r.photo_urls?.length > 0 && (
-                              <div className="flex gap-1 mt-1">{r.photo_urls.map((url, pi) => (
-                                <a key={pi} href={url} target="_blank" rel="noopener noreferrer"><img src={url} className="w-10 h-10 rounded object-cover border" alt="" /></a>
-                              ))}</div>
+                              <button onClick={e => { e.stopPropagation(); setViewingPhotos(r.photo_urls); }} className="mt-1 text-xs text-blue-600 hover:underline flex items-center gap-1">
+                                📷 View {r.photo_urls.length} photo{r.photo_urls.length > 1 ? 's' : ''}
+                              </button>
                             )}
                             {r.status === 'dismissed' && r.dismiss_note && (
                               <p className="text-xs text-slate-400 mt-0.5 italic">Dismissed: {r.dismiss_note}</p>
@@ -1075,23 +1076,8 @@ export default function Vehicles() {
                           <td className="px-3 py-3">
                             {r.status === 'pending' && isManager && (
                               <div className="flex gap-2">
-                                {convertId === r.id ? (
-                                  <div className="space-y-2 min-w-[220px]">
-                                    <select className="input text-xs py-1" value={convertForm.priority} onChange={e => setConvertForm(f => ({...f, priority: e.target.value}))}>
-                                      <option value="low">Low Priority</option><option value="severe">Severe</option>
-                                    </select>
-                                    <input type="date" className="input text-xs py-1" value={convertForm.scheduled_date} onChange={e => setConvertForm(f => ({...f, scheduled_date: e.target.value}))} placeholder="Sched. date" />
-                                    <input className="input text-xs py-1" value={convertForm.vendor} onChange={e => setConvertForm(f => ({...f, vendor: e.target.value}))} placeholder="Vendor" />
-                                    <select className="input text-xs py-1" value={convertForm.van_status} onChange={e => setConvertForm(f => ({...f, van_status: e.target.value}))}>
-                                      <option value="Active">DSP Active</option><option value="Out of Service">DSP Inactive</option>
-                                    </select>
-                                    <div className="flex gap-1">
-                                      <button onClick={() => convertMutation.mutate({ id: r.id, ...convertForm })} disabled={convertMutation.isPending} className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 flex-1">Create Repair</button>
-                                      <button onClick={() => setConvertId(null)} className="text-xs text-slate-400 hover:text-slate-600 px-2">✕</button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <button onClick={() => { setConvertId(r.id); setConvertForm({ priority: 'low', scheduled_date: '', vendor: '', van_status: 'Active' }); }} className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-100 font-medium">
+                                {convertId !== r.id && (
+                                  <button onClick={() => { setConvertId(r.id); setConvertForm({ priority: 'low', scheduled_date: '', vendor: '', van_status: 'active', amazon_status: 'active', case_number: '' }); }} className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-100 font-medium">
                                     Convert to Repair
                                   </button>
                                 )}
@@ -1121,7 +1107,26 @@ export default function Vehicles() {
                             )}
                           </td>
                         </tr>
-                      ))}
+                        {convertId === r.id && (
+                          <tr><td colSpan={6} className="px-3 py-0 bg-blue-50/50">
+                            <div className="p-3 border border-blue-200 rounded-xl space-y-3 my-2 bg-blue-50" onClick={e => e.stopPropagation()}>
+                              <p className="text-xs font-semibold text-blue-700">Create Repair Record</p>
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                <div><label className="text-[10px] font-semibold text-slate-500 uppercase">Priority</label><select className="select text-sm w-full" value={convertForm.priority} onChange={e => setConvertForm(f => ({...f, priority: e.target.value}))}><option value="low">Low</option><option value="severe">Severe</option></select></div>
+                                <div><label className="text-[10px] font-semibold text-slate-500 uppercase">Scheduled Date</label><input type="date" className="input text-sm w-full" value={convertForm.scheduled_date} onChange={e => setConvertForm(f => ({...f, scheduled_date: e.target.value}))} /></div>
+                                <div><label className="text-[10px] font-semibold text-slate-500 uppercase">Vendor</label><select className="select text-sm w-full" value={convertForm.vendor} onChange={e => setConvertForm(f => ({...f, vendor: e.target.value}))}><option value="">No vendor</option>{vendors.filter(v => v.status === 'active').map(v => <option key={v.id} value={v.name}>{v.name}</option>)}</select></div>
+                                <div><label className="text-[10px] font-semibold text-slate-500 uppercase">DSP Status</label><select className="select text-sm w-full" value={convertForm.van_status} onChange={e => setConvertForm(f => ({...f, van_status: e.target.value}))}><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+                                <div><label className="text-[10px] font-semibold text-slate-500 uppercase">Amazon Status</label><select className="select text-sm w-full" value={convertForm.amazon_status || 'active'} onChange={e => setConvertForm(f => ({...f, amazon_status: e.target.value}))}><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+                                <div><label className="text-[10px] font-semibold text-slate-500 uppercase">Case Number</label><input className="input text-sm w-full" placeholder="e.g. AMZ-2026-00412" value={convertForm.case_number || ''} onChange={e => setConvertForm(f => ({...f, case_number: e.target.value}))} /></div>
+                              </div>
+                              <div className="flex gap-2">
+                                <button onClick={() => convertMutation.mutate({ id: r.id, ...convertForm })} disabled={convertMutation.isPending} className="flex-1 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{convertMutation.isPending ? 'Creating…' : 'Confirm & Create Repair'}</button>
+                                <button onClick={() => setConvertId(null)} className="px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>
+                              </div>
+                            </div>
+                          </td></tr>
+                        )}
+                      </React.Fragment>))}
                     </tbody>
                   </table>
                 </div>
@@ -1513,6 +1518,25 @@ export default function Vehicles() {
       </Modal>
 
       </div>
+
+      {/* Photo lightbox */}
+      {viewingPhotos && (
+        <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4" onClick={() => setViewingPhotos(null)}>
+          <div className="bg-white rounded-2xl p-4 max-w-2xl w-full space-y-3" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center">
+              <h3 className="font-semibold text-slate-800">Driver Photos</h3>
+              <button onClick={() => setViewingPhotos(null)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {viewingPhotos.map((url, i) => (
+                <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                  <img src={url} className="w-full rounded-lg object-cover border border-slate-200 hover:opacity-90 transition-opacity" alt={`Photo ${i + 1}`} />
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

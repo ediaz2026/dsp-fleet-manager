@@ -23,18 +23,22 @@ pool.query(`
 router.get('/', async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT va.*,
-        v.vehicle_name, v.service_type,
-        p1.first_name AS p1_first, p1.last_name AS p1_last, p1.hire_date AS p1_hire,
-        p2.first_name AS p2_first, p2.last_name AS p2_last, p2.hire_date AS p2_hire,
-        s1.first_name AS s1_first, s1.last_name AS s1_last, s1.hire_date AS s1_hire,
-        s2.first_name AS s2_first, s2.last_name AS s2_last, s2.hire_date AS s2_hire
-      FROM van_affinity va
-      JOIN vehicles v ON v.id = va.vehicle_id
+      SELECT
+        v.id AS vehicle_id, v.vehicle_name, v.service_type,
+        va.id AS affinity_id,
+        va.primary_driver_1_id, va.primary_driver_2_id,
+        va.secondary_driver_1_id, va.secondary_driver_2_id,
+        p1.first_name || ' ' || p1.last_name AS primary_driver_1_name,
+        p2.first_name || ' ' || p2.last_name AS primary_driver_2_name,
+        s1.first_name || ' ' || s1.last_name AS secondary_driver_1_name,
+        s2.first_name || ' ' || s2.last_name AS secondary_driver_2_name
+      FROM vehicles v
+      LEFT JOIN van_affinity va ON va.vehicle_id = v.id
       LEFT JOIN staff p1 ON p1.id = va.primary_driver_1_id
       LEFT JOIN staff p2 ON p2.id = va.primary_driver_2_id
       LEFT JOIN staff s1 ON s1.id = va.secondary_driver_1_id
       LEFT JOIN staff s2 ON s2.id = va.secondary_driver_2_id
+      WHERE v.status = 'active'
       ORDER BY v.vehicle_name
     `);
     res.json(rows);

@@ -162,22 +162,6 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
-// Temporary diagnostic endpoint (remove after use)
-app.get('/api/diag-van-affinity', async (req, res) => {
-  const pool = require('./db/pool');
-  const { rows: vehicles } = await pool.query(`
-    SELECT id, vehicle_name, service_type FROM vehicles
-    WHERE vehicle_name IN ('36','37','38','39','40','41','42','43','44','45','46','SV36','SV37','SV38','SV39','SV40','SV41','SV42','SV43','SV44','SV45','SV46')
-    ORDER BY vehicle_name
-  `);
-  const { rows: staff } = await pool.query(`
-    SELECT id, first_name, last_name FROM staff
-    WHERE first_name ILIKE ANY(ARRAY['%FERNANDO%','%KAREN%','%DANIEL%','%IYANA%','%ANGEL%','%MARLON%','%JACKY%','%MIREN%','%DEVIN%','%MAIKE%','%FRANK%','%RENE%','%RAY%','%KIONDAE%','%LAWRENCE%','%DAYRON%','%ROGER%','%BRYAN%','%JULIAN%','%LAZARO%','%EDUARDO%','%MELYSSE%','%DAVID%','%HECTOR%'])
-    ORDER BY first_name
-  `);
-  res.json({ vehicles, staff });
-});
-
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

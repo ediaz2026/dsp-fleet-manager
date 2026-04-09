@@ -2559,6 +2559,18 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   const [showUnassignedPopup, setShowUnassignedPopup] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showAutoAssignConfirm, setShowAutoAssignConfirm] = useState(false);
+  const [autoAssignResult, setAutoAssignResult] = useState(null);
+  const autoAssignMutation = useMutation({
+    mutationFn: (date) => api.post('/van-affinity/auto-assign', { date }).then(r => r.data),
+    onSuccess: (result) => {
+      setAutoAssignResult(result);
+      setShowAutoAssignConfirm(false);
+      qc.invalidateQueries({ queryKey: ['ops-assignments', planDate] });
+      toast.success(`Auto-assigned ${result.assigned} vehicles`);
+    },
+    onError: (err) => toast.error(err.response?.data?.error || 'Auto-assign failed'),
+  });
   const [removeConfirm, setRemoveConfirm] = useState(null); // { staffId, displayName }
   const [rowActionMenu, setRowActionMenu] = useState(null); // key of open row menu
   useEffect(() => {
@@ -3316,6 +3328,12 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-red-200 bg-white hover:border-red-400 hover:bg-red-50 text-red-500 hover:text-red-700 font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             🗑 Clear Day
+          </button>
+          <button
+            onClick={() => setShowAutoAssignConfirm(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
+          >
+            🚐 Auto-Assign Vehicles
           </button>
           <button
             onClick={handlePrintSignOut}
@@ -4232,6 +4250,61 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
           document.body
         );
       })()}
+
+      {/* ── Auto-Assign Confirm Modal ──────────────────────────────────── */}
+      {showAutoAssignConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={() => setShowAutoAssignConfirm(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-slate-800 mb-2">🚐 Auto-Assign Vehicles</h3>
+            <p className="text-sm text-slate-600 mb-2">Assign vehicles to all drivers for <strong>{planDate}</strong> based on:</p>
+            <ul className="text-sm text-slate-600 mb-4 space-y-1 list-disc list-inside">
+              <li>Step Van drivers → Step Van vehicles only</li>
+              <li>EDV drivers → EDV vehicles only</li>
+              <li>Van Affinity preferences (primary first)</li>
+              <li>Seniority (hire date) breaks ties</li>
+            </ul>
+            <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mb-4">⚠️ This will overwrite any vehicles already assigned today.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowAutoAssignConfirm(false)} className="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">Cancel</button>
+              <button onClick={() => autoAssignMutation.mutate(planDate)} disabled={autoAssignMutation.isPending} className="flex-1 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
+                {autoAssignMutation.isPending ? 'Assigning…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Auto-Assign Result Modal ─────────────────────────────────────── */}
+      {autoAssignResult && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={() => setAutoAssignResult(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-slate-800 mb-3">✅ Auto-Assign Complete</h3>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="bg-emerald-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-emerald-700">{autoAssignResult.assigned}</p>
+                <p className="text-xs text-emerald-600">Assigned</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-slate-700">{autoAssignResult.skipped}</p>
+                <p className="text-xs text-slate-500">Skipped</p>
+              </div>
+            </div>
+            {autoAssignResult.details?.length > 0 && (
+              <div className="max-h-48 overflow-y-auto space-y-1 mb-4">
+                {autoAssignResult.details.map((d, i) => (
+                  <div key={i} className="flex justify-between text-xs py-1 border-b border-slate-100">
+                    <span className="text-slate-700 font-medium">{d.name}</span>
+                    <span className={d.vehicle ? `text-emerald-600 ${d.method === 'primary' ? 'font-bold' : ''}` : 'text-slate-400'}>
+                      {d.vehicle ? `${d.vehicle}${d.method === 'primary' ? ' ★' : d.method === 'secondary' ? ' ◆' : ''}` : (d.reason || 'No vehicle')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={() => setAutoAssignResult(null)} className="w-full py-2 rounded-lg bg-slate-800 text-white text-sm font-semibold hover:bg-slate-900">Done</button>
+          </div>
+        </div>
+      )}
 
       {/* ── WhatsApp Briefing Confirmation Modal ──────────────────────────── */}
       {whatsappConfirm && createPortal(

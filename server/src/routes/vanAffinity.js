@@ -38,7 +38,6 @@ router.get('/', async (req, res) => {
       LEFT JOIN staff p2 ON p2.id = va.primary_driver_2_id
       LEFT JOIN staff s1 ON s1.id = va.secondary_driver_1_id
       LEFT JOIN staff s2 ON s2.id = va.secondary_driver_2_id
-      WHERE v.status = 'active'
       ORDER BY v.vehicle_name
     `);
     res.json(rows);

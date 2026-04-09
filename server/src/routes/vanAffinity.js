@@ -98,115 +98,113 @@ router.post('/auto-assign', managerOnly, async (req, res) => {
   console.log(`[auto-assign] Starting for date: ${date}`);
 
   try {
-    // Get ALL scheduled drivers from shifts + LEFT JOIN ops_assignments
+    // STEP 1 — Get all scheduled drivers for the date
     const { rows: drivers } = await pool.query(`
-      SELECT DISTINCT ON (s.id)
-        s.id AS staff_id, sh.shift_type,
-        oa.vehicle_id AS current_vehicle_id, oa.id AS ops_assignment_id,
-        s.first_name, s.last_name, s.hire_date
+      SELECT DISTINCT s.id AS staff_id, s.first_name, s.last_name, s.hire_date,
+        sh.shift_type,
+        oa.id AS ops_id,
+        oa.vehicle_id AS current_vehicle_id
       FROM shifts sh
       JOIN staff s ON s.id = sh.staff_id
-      LEFT JOIN ops_assignments oa ON oa.staff_id = s.id AND oa.plan_date = $1 AND oa.removed_from_ops IS NOT TRUE
+      LEFT JOIN ops_assignments oa ON oa.staff_id = s.id
+        AND oa.plan_date = $1
+        AND oa.removed_from_ops IS NOT TRUE
       WHERE sh.shift_date = $1
-        AND UPPER(sh.shift_type) NOT IN ('ON CALL','UTO','PTO','SUSPENSION','TRAINING','TRAINER','DISPATCH AM','DISPATCH PM')
-      ORDER BY s.id, s.hire_date ASC NULLS LAST
+        AND sh.shift_type NOT IN ('ON CALL','UTO','PTO','SUSPENSION','TRAINING','TRAINER','DISPATCH AM','DISPATCH PM')
+      ORDER BY s.hire_date ASC NULLS LAST
     `, [date]);
     console.log(`[auto-assign] Found ${drivers.length} scheduled drivers`);
 
-    // Get active vehicles
-    const { rows: allVehicles } = await pool.query(`
-      SELECT id, vehicle_name, service_type, van_status, amazon_status
-      FROM vehicles
-      WHERE status = 'active'
-        AND (van_status IS NULL OR UPPER(van_status) NOT IN ('OUT OF SERVICE','INACTIVE'))
-        AND (amazon_status IS NULL OR UPPER(amazon_status) != 'GROUNDED')
+    // STEP 2 — Get all active vehicles
+    const { rows: vehicles } = await pool.query(`
+      SELECT id, vehicle_name, service_type FROM vehicles
+      WHERE (van_status = 'Active' OR van_status IS NULL)
+        AND (amazon_status != 'Grounded' OR amazon_status IS NULL)
     `);
-    console.log(`[auto-assign] Found ${allVehicles.length} active vehicles`);
+    console.log(`[auto-assign] Found ${vehicles.length} active vehicles`);
 
-    // Get all affinity records
-    const { rows: affinities } = await pool.query(`SELECT * FROM van_affinity`);
-    console.log(`[auto-assign] Affinity records: ${affinities.length}`);
+    // STEP 3 — Get all van affinity records
+    const { rows: affinityRecords } = await pool.query(`SELECT * FROM van_affinity`);
+    console.log(`[auto-assign] Affinity records: ${affinityRecords.length}`);
 
-    // Build driver → affinity lookups
-    const primaryVehicleForDriver = {};
-    const secondaryVehicleForDriver = {};
-    for (const a of affinities) {
-      for (const did of [a.primary_driver_1_id, a.primary_driver_2_id]) {
-        if (did) { if (!primaryVehicleForDriver[did]) primaryVehicleForDriver[did] = []; primaryVehicleForDriver[did].push(a.vehicle_id); }
-      }
-      for (const did of [a.secondary_driver_1_id, a.secondary_driver_2_id]) {
-        if (did) { if (!secondaryVehicleForDriver[did]) secondaryVehicleForDriver[did] = []; secondaryVehicleForDriver[did].push(a.vehicle_id); }
-      }
-    }
+    // STEP 4 — Run assignment algorithm
+    const assignedVehicleIds = new Set();
+    const results = [];
 
-    const isStepVan = (v) => /step/i.test(v.service_type || '') || /^SV/i.test(v.vehicle_name || '') || /^HZA/i.test(v.vehicle_name || '');
-    const isEdv = (v) => /electric/i.test(v.service_type || '') || /^EV/i.test(v.vehicle_name || '');
+    for (const driver of drivers) {
+      const isStepVan = driver.shift_type === 'STEP VAN';
 
-    const takenVehicleIds = new Set();
-    const details = [];
-    let assigned = 0, skipped = 0;
-
-    // Sort by hire_date ASC (senior first)
-    const sortedDrivers = [...drivers].sort((a, b) => {
-      if (!a.hire_date && !b.hire_date) return 0;
-      if (!a.hire_date) return 1;
-      if (!b.hire_date) return -1;
-      return new Date(a.hire_date) - new Date(b.hire_date);
-    });
-
-    for (const driver of sortedDrivers) {
-      const shiftType = (driver.shift_type || '').toUpperCase();
-      const needsStepVan = shiftType === 'STEP VAN';
-      const eligible = allVehicles.filter(v => {
-        if (takenVehicleIds.has(v.id)) return false;
-        return needsStepVan ? isStepVan(v) : isEdv(v);
+      // Filter vehicles by type
+      const rightTypeVehicles = vehicles.filter(v => {
+        if (isStepVan) {
+          return v.service_type?.toLowerCase().includes('step') ||
+                 v.vehicle_name?.toUpperCase().startsWith('SV');
+        } else {
+          return v.service_type?.toLowerCase().includes('electric') ||
+                 v.vehicle_name?.toUpperCase().startsWith('EV');
+        }
       });
 
-      let chosen = null;
+      // Find this driver's affinity record
+      const affinity = affinityRecords.find(a =>
+        a.primary_driver_1_id === driver.staff_id ||
+        a.primary_driver_2_id === driver.staff_id
+      );
 
-      // 1. Try primary affinity
-      const primaryIds = primaryVehicleForDriver[driver.staff_id] || [];
-      for (const vid of primaryIds) {
-        const v = eligible.find(e => e.id === vid);
-        if (v) { chosen = v; break; }
-      }
+      let assignedVehicle = null;
+      let method = 'any';
 
-      // 2. Try secondary affinity
-      if (!chosen) {
-        const secondaryIds = secondaryVehicleForDriver[driver.staff_id] || [];
-        for (const vid of secondaryIds) {
-          const v = eligible.find(e => e.id === vid);
-          if (v) { chosen = v; break; }
+      if (affinity) {
+        // Try primary vehicle first
+        const primaryVehicle = rightTypeVehicles.find(v =>
+          v.id === affinity.vehicle_id && !assignedVehicleIds.has(v.id)
+        );
+        if (primaryVehicle) {
+          assignedVehicle = primaryVehicle;
+          method = affinity.primary_driver_1_id === driver.staff_id ? 'primary_1' : 'primary_2';
         }
       }
 
-      // 3. Any available vehicle of the right type
-      if (!chosen && eligible.length > 0) {
-        chosen = eligible[0];
+      // If no affinity vehicle available, take any available vehicle of right type
+      if (!assignedVehicle) {
+        assignedVehicle = rightTypeVehicles.find(v => !assignedVehicleIds.has(v.id));
+        method = affinity ? 'fallback' : 'any';
       }
 
-      if (chosen) {
-        takenVehicleIds.add(chosen.id);
-        // Upsert ops_assignments — handles both existing and new rows
+      if (assignedVehicle) {
+        assignedVehicleIds.add(assignedVehicle.id);
+
+        // Upsert into ops_assignments
         await pool.query(`
-          INSERT INTO ops_assignments (staff_id, plan_date, shift_type, vehicle_id, updated_at)
-          VALUES ($1, $2, $3, $4, NOW())
-          ON CONFLICT (plan_date, staff_id) DO UPDATE SET vehicle_id = EXCLUDED.vehicle_id, updated_at = NOW()
-        `, [driver.staff_id, date, driver.shift_type, chosen.id]);
-        assigned++;
-        const method = primaryIds.includes(chosen.id) ? 'primary' : secondaryVehicleForDriver[driver.staff_id]?.includes(chosen.id) ? 'secondary' : 'available';
-        console.log(`[auto-assign] Assigned ${driver.first_name} ${driver.last_name} → ${chosen.vehicle_name} (${method})`);
-        details.push({ name: `${driver.first_name} ${driver.last_name}`, vehicle: chosen.vehicle_name, method });
+          INSERT INTO ops_assignments (staff_id, plan_date, shift_type, vehicle_id)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (plan_date, staff_id)
+          DO UPDATE SET vehicle_id = EXCLUDED.vehicle_id
+        `, [driver.staff_id, date, driver.shift_type, assignedVehicle.id]);
+
+        console.log(`[auto-assign] ${driver.first_name} ${driver.last_name} → ${assignedVehicle.vehicle_name} (${method})`);
+        results.push({
+          driver_name: `${driver.first_name} ${driver.last_name}`,
+          vehicle: assignedVehicle.vehicle_name,
+          method,
+          hire_date: driver.hire_date
+        });
       } else {
-        skipped++;
-        const reason = `No ${needsStepVan ? 'Step Van' : 'EDV'} available`;
-        console.log(`[auto-assign] Skipped ${driver.first_name} ${driver.last_name}: ${reason}`);
-        details.push({ name: `${driver.first_name} ${driver.last_name}`, reason });
+        const reason = isStepVan ? 'No Step Van available' : 'No EDV available';
+        console.log(`[auto-assign] ${driver.first_name} ${driver.last_name} — ${reason}`);
+        results.push({
+          driver_name: `${driver.first_name} ${driver.last_name}`,
+          vehicle: null,
+          method: 'unassigned',
+          reason
+        });
       }
     }
 
-    console.log(`[auto-assign] Done: ${assigned} assigned, ${skipped} skipped out of ${sortedDrivers.length}`);
-    res.json({ assigned, skipped, total: sortedDrivers.length, details });
+    const assigned = results.filter(r => r.vehicle).length;
+    const skipped = results.filter(r => !r.vehicle).length;
+    console.log(`[auto-assign] Done: ${assigned} assigned, ${skipped} skipped out of ${drivers.length}`);
+    res.json({ assigned, skipped, details: results });
   } catch (err) {
     console.error('[van-affinity/auto-assign]', err);
     res.status(500).json({ error: err.message });

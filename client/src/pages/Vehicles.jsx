@@ -66,16 +66,18 @@ function PriorityBadge({ priority }) {
 
 // ─── Van / Amazon Status badge ───────────────────────────────────────────────
 function StatusPill({ value }) {
-  if (value === 'Active')          return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700">Active</span>;
-  if (value === 'Out of Service')  return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700">Out of Service</span>;
-  if (value === 'Grounded')        return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-100 text-orange-700">Grounded</span>;
-  return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-500">{value || '—'}</span>;
+  const v = (value || '').toLowerCase();
+  if (v === 'active') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">Active</span>;
+  if (v === 'out of service') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 border border-red-200">Out of Service</span>;
+  if (v === 'grounded') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-100 text-orange-700 border border-orange-200">Grounded</span>;
+  if (v === 'inactive') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 border border-red-200">Inactive</span>;
+  return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">{value || '—'}</span>;
 }
 
 // ─── Repair Form Modal ────────────────────────────────────────────────────────
 const emptyRepair = {
   vehicle_id: '', van_status: 'active', amazon_status: 'active',
-  priority: 'low', description: '', scheduled_date: '', vendor: '',
+  priority: 'low', description: '', scheduled_date: '', vendor: '', case_number: '',
 };
 
 function RepairModal({ isOpen, onClose, vehicles, editing, prefill, onSuccess, vendors = [], viewOnly = false }) {
@@ -95,6 +97,7 @@ function RepairModal({ isOpen, onClose, vehicles, editing, prefill, onSuccess, v
           description:    editing.description,
           scheduled_date: editing.scheduled_date?.split('T')[0] || '',
           vendor:         editing.vendor || '',
+          case_number:    editing.case_number || '',
         });
       } else if (prefill) {
         setForm({ ...emptyRepair, ...prefill });
@@ -226,6 +229,16 @@ function RepairModal({ isOpen, onClose, vehicles, editing, prefill, onSuccess, v
             <p className="input bg-slate-50 text-slate-700 min-h-16 whitespace-pre-wrap">{form.description || '—'}</p>
           ) : (
             <textarea className="input min-h-20 resize-none" required value={form.description} onChange={f('description')} placeholder="Describe the repair needed…" />
+          )}
+        </div>
+
+        {/* 4b. Case Number */}
+        <div>
+          <label className="modal-label">Case / Ticket Number <span className="text-slate-400 text-xs font-normal">(optional)</span></label>
+          {viewOnly ? (
+            <p className="input bg-slate-50 text-slate-700">{form.case_number || '—'}</p>
+          ) : (
+            <input className="input" value={form.case_number || ''} onChange={f('case_number')} placeholder="e.g. AMZ-2026-00412" />
           )}
         </div>
 
@@ -459,6 +472,7 @@ export default function Vehicles() {
       qc.invalidateQueries({ queryKey: ['fleet-alerts'] });
       qc.invalidateQueries({ queryKey: ['inactive-vehicles'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
+      qc.invalidateQueries({ queryKey: ['repairs'] });
       if (van_status    !== undefined) toast.success('DSP status updated');
       if (amazon_status !== undefined) toast.success('Amazon status updated');
     },
@@ -923,9 +937,10 @@ export default function Vehicles() {
                         <tr
                           key={r.id}
                           onClick={() => { setEditingRepair(r); setRepairPrefill(null); setShowRepairModal(true); }}
-                          className={`cursor-pointer hover:bg-blue-50/40 transition-colors border-l-4 ${
-                            r.priority === 'severe' ? 'border-l-red-400 bg-red-50/40' : 'border-l-slate-200'
-                          }`}
+                          className={r.priority === 'severe'
+                            ? 'cursor-pointer hover:bg-blue-50/40 transition-colors border-l-4 border-l-red-400 bg-red-50/40'
+                            : 'cursor-pointer hover:bg-blue-50/40 transition-colors border-l-4 border-l-slate-200'
+                          }
                         >
                           <td className="px-3 py-2.5 font-medium text-slate-900 whitespace-nowrap">{r.vehicle_name}</td>
                           <td className="px-3 py-2.5"><StatusPill value={r.van_status} /></td>

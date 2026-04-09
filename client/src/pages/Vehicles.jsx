@@ -404,6 +404,7 @@ export default function Vehicles() {
   const [dismissId, setDismissId] = useState(null);
   const [dismissNote, setDismissNote] = useState('');
   const [convertId, setConvertId] = useState(null);
+  const [convertForm, setConvertForm] = useState({ priority: 'low', scheduled_date: '', vendor: '', van_status: 'Active' });
   const [convertVehicleId, setConvertVehicleId] = useState(null);
   const [convertDescription, setConvertDescription] = useState('');
 
@@ -1053,6 +1054,11 @@ export default function Vehicles() {
                           <td className="px-3 py-3 text-slate-500 text-xs whitespace-nowrap">{format(new Date(r.created_at), 'MM/dd/yy h:mm a')}</td>
                           <td className="px-3 py-3 text-slate-600 max-w-xs">
                             <p className="truncate">{r.description}</p>
+                            {r.photo_urls?.length > 0 && (
+                              <div className="flex gap-1 mt-1">{r.photo_urls.map((url, pi) => (
+                                <a key={pi} href={url} target="_blank" rel="noopener noreferrer"><img src={url} className="w-10 h-10 rounded object-cover border" alt="" /></a>
+                              ))}</div>
+                            )}
                             {r.status === 'dismissed' && r.dismiss_note && (
                               <p className="text-xs text-slate-400 mt-0.5 italic">Dismissed: {r.dismiss_note}</p>
                             )}
@@ -1069,24 +1075,23 @@ export default function Vehicles() {
                           <td className="px-3 py-3">
                             {r.status === 'pending' && isManager && (
                               <div className="flex gap-2">
-                                {/* Convert */}
                                 {convertId === r.id ? (
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs text-slate-500">Creating repair…</span>
-                                    <button
-                                      onClick={() => convertMutation.mutate({ id: r.id, vehicle_id: r.vehicle_id })}
-                                      disabled={convertMutation.isPending}
-                                      className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
-                                    >
-                                      Confirm Convert
-                                    </button>
-                                    <button onClick={() => setConvertId(null)} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                                  <div className="space-y-2 min-w-[220px]">
+                                    <select className="input text-xs py-1" value={convertForm.priority} onChange={e => setConvertForm(f => ({...f, priority: e.target.value}))}>
+                                      <option value="low">Low Priority</option><option value="severe">Severe</option>
+                                    </select>
+                                    <input type="date" className="input text-xs py-1" value={convertForm.scheduled_date} onChange={e => setConvertForm(f => ({...f, scheduled_date: e.target.value}))} placeholder="Sched. date" />
+                                    <input className="input text-xs py-1" value={convertForm.vendor} onChange={e => setConvertForm(f => ({...f, vendor: e.target.value}))} placeholder="Vendor" />
+                                    <select className="input text-xs py-1" value={convertForm.van_status} onChange={e => setConvertForm(f => ({...f, van_status: e.target.value}))}>
+                                      <option value="Active">DSP Active</option><option value="Out of Service">DSP Inactive</option>
+                                    </select>
+                                    <div className="flex gap-1">
+                                      <button onClick={() => convertMutation.mutate({ id: r.id, ...convertForm })} disabled={convertMutation.isPending} className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 flex-1">Create Repair</button>
+                                      <button onClick={() => setConvertId(null)} className="text-xs text-slate-400 hover:text-slate-600 px-2">✕</button>
+                                    </div>
                                   </div>
                                 ) : (
-                                  <button
-                                    onClick={() => setConvertId(r.id)}
-                                    className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-100 font-medium"
-                                  >
+                                  <button onClick={() => { setConvertId(r.id); setConvertForm({ priority: 'low', scheduled_date: '', vendor: '', van_status: 'Active' }); }} className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-100 font-medium">
                                     Convert to Repair
                                   </button>
                                 )}

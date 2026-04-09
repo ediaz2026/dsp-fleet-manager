@@ -25,6 +25,7 @@ import AcceptInvitation from './pages/AcceptInvitation';
 import DriverToday from './pages/DriverToday';
 import DriverProfile from './pages/DriverProfile';
 import DriverScorecard from './pages/DriverScorecard';
+import DriverReportIssue from './pages/DriverReportIssue';
 import SignOutSheet from './pages/SignOutSheet';
 import DriverLayout from './components/DriverLayout';
 
@@ -91,6 +92,7 @@ export default function App() {
           <Route path="/my-attendance" element={<DriverAttendance />} />
           <Route path="/my-scorecard" element={<DriverScorecard />} />
           <Route path="/my-profile" element={<DriverProfile />} />
+          <Route path="/driver/report-issue" element={<DriverReportIssue />} />
         </Route>
 
         {/* Change password — all roles */}

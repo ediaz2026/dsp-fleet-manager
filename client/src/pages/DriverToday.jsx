@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, startOfWeek, addDays } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Clock, Truck, Layers, Navigation, Info, Lock } from 'lucide-react';
+import { MapPin, Clock, Truck, Layers, Navigation, Info, Lock, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import { resolveColor, buildShiftTypeMap } from '../utils/shiftColors';
@@ -254,6 +254,19 @@ export default function DriverToday() {
               </div>
             )}
           </div>}
+
+          {/* ── Report Vehicle Issue ────────────────────────────────────── */}
+          {assignment && (
+            <button onClick={() => navigate('/driver/report-issue')} className="w-full bg-orange-50 border border-orange-200 rounded-2xl p-4 flex items-center gap-3 hover:bg-orange-100 transition-colors text-left">
+              <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={18} className="text-orange-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-orange-800 text-sm">Report a Vehicle Issue</p>
+                <p className="text-xs text-orange-600">Tap to report a problem with your vehicle</p>
+              </div>
+            </button>
+          )}
 
           {/* ── This Week ──────────────────────────────────────────────── */}
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">

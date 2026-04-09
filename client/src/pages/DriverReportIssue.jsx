@@ -26,7 +26,7 @@ export default function DriverReportIssue() {
   const { data: vehicles = [] } = useQuery({
     queryKey: ['vehicles'],
     queryFn: () => api.get('/vehicles').then(r => r.data),
-    enabled: showVehiclePicker,
+    enabled: true,
   });
 
   const assignedVehicle = assignment?.vehicle_name || null;

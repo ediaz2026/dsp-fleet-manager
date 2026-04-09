@@ -1323,7 +1323,8 @@ function InlineAssignment({ staffId, assignment, vehicles, assignedVehicleMap, m
     setDeviceId(assignment?.device_id || '');
   }, [assignment?.vehicle_id, assignment?.device_id]);
 
-  const activeVehicles = vehicles.filter(v => v.status === 'active');
+  const activeVehicles = vehicles.filter(v => v.status === 'active' && v.amazon_status !== 'Grounded' && v.van_status !== 'Out of Service');
+  const unavailableVehicles = vehicles.filter(v => v.status === 'active' && (v.amazon_status === 'Grounded' || v.van_status === 'Out of Service'));
   const available = activeVehicles.filter(v => !assignedVehicleMap?.[v.id] || assignedVehicleMap[v.id] === myName);
   const assigned = activeVehicles.filter(v => assignedVehicleMap?.[v.id] && assignedVehicleMap[v.id] !== myName);
 
@@ -1385,6 +1386,13 @@ function InlineAssignment({ staffId, assignment, vehicles, assignedVehicleMap, m
             {assigned.map(v => (
               <option key={v.id} value={String(v.id)} style={{ color: '#9ca3af' }}>
                 {v.vehicle_name || v.license_plate || `#${v.id}`} ({assignedVehicleMap[v.id]})
+              </option>
+            ))}
+          </optgroup>}
+          {unavailableVehicles.length > 0 && <optgroup label="Unavailable">
+            {unavailableVehicles.map(v => (
+              <option key={v.id} value="" disabled style={{ color: '#9ca3af' }}>
+                {v.vehicle_name || `#${v.id}`} — {v.amazon_status === 'Grounded' ? 'Amazon Inactive' : 'DSP Inactive'}
               </option>
             ))}
           </optgroup>}

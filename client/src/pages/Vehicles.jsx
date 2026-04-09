@@ -751,8 +751,8 @@ export default function Vehicles() {
                     <VSortableHeader label="Insurance Exp" col="insurance_expiration"  sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
                     <VSortableHeader label="Reg. Exp"      col="registration_expiration" sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
                     <VSortableHeader label="Next Insp."    col="next_inspection_date"  sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
-                    <VSortableHeader label="DSP Status"    col="van_status"            sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
                     <VSortableHeader label="Amazon Status" col="amazon_status"         sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
+                    <VSortableHeader label="DSP Status"    col="van_status"            sortKey={vKey} sortDir={vDir} onToggle={vToggle} />
                     {isManager && <th className="px-3 py-2.5 w-20" />}
                   </tr>
                 </thead>
@@ -785,25 +785,16 @@ export default function Vehicles() {
                         <td className="px-3 py-2.5"><DaysLeft date={v.insurance_expiration} /> {v.insurance_expiration && <span className="text-[11px] text-slate-400 ml-1">{format(new Date(v.insurance_expiration), 'MM/dd/yy')}</span>}</td>
                         <td className="px-3 py-2.5"><DaysLeft date={v.registration_expiration} /> {v.registration_expiration && <span className="text-[11px] text-slate-400 ml-1">{format(new Date(v.registration_expiration), 'MM/dd/yy')}</span>}</td>
                         <td className="px-3 py-2.5"><DaysLeft date={v.next_inspection_date} warnDays={14} /> {v.next_inspection_date && <span className="text-[11px] text-slate-400 ml-1">{format(new Date(v.next_inspection_date), 'MM/dd/yy')}</span>}</td>
-                        <td className="px-3 py-2.5">
-                          {isManager ? (
-                            <select
-                              value={v.van_status || 'Active'}
-                              onChange={e => statusVehicleMutation.mutate({ id: v.id, van_status: e.target.value })}
-                              className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-600 cursor-pointer hover:border-blue-400 transition-colors focus:outline-none"
-                            >
-                              <option value="Active">Active</option>
-                              <option value="Out of Service">Out of Service</option>
-                            </select>
-                          ) : (
-                            <StatusPill value={v.van_status || 'Active'} />
-                          )}
-                        </td>
+                        {/* Amazon Status first */}
                         <td className="px-3 py-2.5">
                           {isManager ? (
                             <select
                               value={v.amazon_status || 'Active'}
-                              onChange={e => statusVehicleMutation.mutate({ id: v.id, amazon_status: e.target.value })}
+                              onChange={e => {
+                                const newAmazon = e.target.value;
+                                statusVehicleMutation.mutate({ id: v.id, amazon_status: newAmazon, ...(newAmazon === 'Grounded' ? { van_status: 'Out of Service' } : {}) });
+                                if (newAmazon === 'Grounded') toast('DSP Status auto-set to inactive', { icon: '🔒' });
+                              }}
                               className={`text-xs border rounded-lg px-2 py-1 bg-white cursor-pointer hover:border-blue-400 transition-colors focus:outline-none ${
                                 (v.amazon_status || 'Active') === 'Grounded'
                                   ? 'border-orange-300 text-orange-700'
@@ -815,6 +806,28 @@ export default function Vehicles() {
                             </select>
                           ) : (
                             <StatusPill value={v.amazon_status || 'Active'} />
+                          )}
+                        </td>
+                        {/* DSP Status — locked when Amazon inactive */}
+                        <td className="px-3 py-2.5">
+                          {isManager ? (
+                            isGrounded ? (
+                              <div className="flex items-center gap-1" title="Locked — Amazon status is inactive">
+                                <span className="text-xs text-red-500 font-semibold">Out of Service</span>
+                                <span className="text-slate-400">🔒</span>
+                              </div>
+                            ) : (
+                              <select
+                                value={v.van_status || 'Active'}
+                                onChange={e => statusVehicleMutation.mutate({ id: v.id, van_status: e.target.value })}
+                                className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-600 cursor-pointer hover:border-blue-400 transition-colors focus:outline-none"
+                              >
+                                <option value="Active">Active</option>
+                                <option value="Out of Service">Out of Service</option>
+                              </select>
+                            )
+                          ) : (
+                            <StatusPill value={v.van_status || 'Active'} />
                           )}
                         </td>
                         {isManager && (

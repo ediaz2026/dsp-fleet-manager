@@ -472,12 +472,15 @@ export default function Vehicles() {
 
   // ── Repair mutations
   const completeMutation = useMutation({
-    mutationFn: id => api.put(`/repairs/${id}/complete`),
+    mutationFn: async (r) => {
+      await api.put(`/repairs/${r.id}/complete`);
+      await api.patch(`/vehicles/${r.vehicle_id}/status`, { van_status: 'Active', amazon_status: 'Active' });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['repairs'] });
       qc.invalidateQueries({ queryKey: ['vehicles'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
-      toast.success('Repair marked complete');
+      toast.success('Repair complete — vehicle set to Active');
     },
   });
 
@@ -905,7 +908,6 @@ export default function Vehicles() {
                     <thead className="bg-slate-100">
                       <tr>
                         <SortableHeader label="Vehicle"        sortKey="vehicle_name"   currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
-                        <SortableHeader label="VIN (last 6)"   sortKey="vin"            currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
                         <SortableHeader label="DSP Status"     sortKey="van_status"     currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
                         <SortableHeader label="Amazon Status"  sortKey="amazon_status"  currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
                         <SortableHeader label="Priority"       sortKey="priority"       currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
@@ -913,7 +915,6 @@ export default function Vehicles() {
                         <SortableHeader label="Sched. Date"    sortKey="scheduled_date" currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
                         <SortableHeader label="Vendor"         sortKey="vendor"         currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
                         <SortableHeader label="Reported"       sortKey="created_at"     currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
-                        <SortableHeader label="Reported By"    sortKey="reported_by_name" currentKey={rKey} direction={rDir} onSort={rToggle} className="text-left" />
                         <th className="px-3 py-2.5"></th>
                       </tr>
                     </thead>
@@ -922,12 +923,11 @@ export default function Vehicles() {
                         <tr
                           key={r.id}
                           onClick={() => { setEditingRepair(r); setRepairPrefill(null); setShowRepairModal(true); }}
-                          className={`cursor-pointer hover:bg-blue-50/40 transition-colors ${
-                            r.priority === 'severe' ? 'bg-red-50/40' : ''
+                          className={`cursor-pointer hover:bg-blue-50/40 transition-colors border-l-4 ${
+                            r.priority === 'severe' ? 'border-l-red-400 bg-red-50/40' : 'border-l-slate-200'
                           }`}
                         >
                           <td className="px-3 py-2.5 font-medium text-slate-900 whitespace-nowrap">{r.vehicle_name}</td>
-                          <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{r.vin?.slice(-6) || '—'}</td>
                           <td className="px-3 py-2.5"><StatusPill value={r.van_status} /></td>
                           <td className="px-3 py-2.5"><StatusPill value={r.amazon_status} activeLabel="Active" inactiveLabel="Inactive" /></td>
                           <td className="px-3 py-2.5"><PriorityBadge priority={r.priority} /></td>
@@ -941,10 +941,9 @@ export default function Vehicles() {
                           <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap text-xs">
                             {format(new Date(r.created_at), 'MM/dd/yy')}
                           </td>
-                          <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{r.reported_by_name || '—'}</td>
                           <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center gap-1">
-                              <button onClick={() => completeMutation.mutate(r.id)} className="p-1.5 rounded hover:bg-emerald-50 text-emerald-600 transition-colors" title="Mark complete"><Check size={13} /></button>
+                              <button onClick={() => completeMutation.mutate(r)} className="p-1.5 rounded hover:bg-emerald-50 text-emerald-600 transition-colors" title="Mark complete"><Check size={13} /></button>
                               <button onClick={() => setConfirmDeleteRepairId(r.id)} className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors" title="Delete"><Trash2 size={13} /></button>
                             </div>
                           </td>

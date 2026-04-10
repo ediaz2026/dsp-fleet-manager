@@ -68,6 +68,11 @@ function licenseExpClass(d) {
 function hasRecurring(driver) {
   return Array.isArray(driver.recurring_rows) && driver.recurring_rows.length > 0;
 }
+function getPortalStatus(d) {
+  if (d.last_login) return 'active';
+  if (d.invitation_sent_at) return 'invited';
+  return 'not_sent';
+}
 
 // ─── ConfirmModal ─────────────────────────────────────────────────────────────
 function ConfirmModal({ title, message, confirmLabel, danger, onConfirm, onClose }) {
@@ -903,6 +908,15 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
   const hasActiveFilters = licenseFilter !== 'all' || scheduleFilter !== 'all';
   const clearFilters = () => { setLicenseFilter('all'); setScheduleFilter('all'); };
 
+  const sendInviteMutation = useMutation({
+    mutationFn: (staffId) => api.post(`/auth/resend-invitation/${staffId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['drivers'] });
+      toast.success('Invitation sent!');
+    },
+    onError: () => toast.error('Failed to send invitation'),
+  });
+
   const { data: allDrivers = [], isLoading } = useQuery({
     queryKey: ['drivers'],
     queryFn: () => api.get('/drivers').then(r => r.data),
@@ -944,7 +958,7 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
       return true;
     });
 
-  const { sorted: displayedDrivers, sortKey, sortDir, setSortKey, setSortDir } = useSort(filtered, 'last_name', 'asc');
+  const { sorted: displayedDrivers, sortKey, sortDir, toggle, setSortKey, setSortDir } = useSort(filtered, 'last_name', 'asc');
 
   const counts = STATUS_TABS.reduce((acc, s) => {
     acc[s] = s === 'all' ? drivers.length : drivers.filter(d => d.employment_status === s).length;
@@ -1066,6 +1080,7 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
                 <SortableHeader label="Hire Date"    col="hire_date"           sortKey={sortKey} sortDir={sortDir} onToggle={toggle} />
                 <SortableHeader label="License Exp"  col="license_expiration"  sortKey={sortKey} sortDir={sortDir} onToggle={toggle} />
                 <th className="text-center px-3 py-2.5 font-semibold text-slate-500 text-xs">Account</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-slate-500 text-xs">Portal</th>
                 <SortableHeader label="Status"       col="employment_status"   sortKey={sortKey} sortDir={sortDir} onToggle={toggle} align="center" />
                 <th className="px-3 py-2.5"></th>
               </tr>
@@ -1109,6 +1124,32 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
                           ? <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">Temp</span>
                           : <span className="text-xs bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded-full font-medium">No Login</span>
                       }
+                    </td>
+                    <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                      {(() => {
+                        const status = getPortalStatus(d);
+                        if (status === 'active') return (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700">Active</span>
+                        );
+                        if (status === 'invited') return (
+                          <div className="flex items-center gap-1.5">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700">Invited</span>
+                            <button
+                              onClick={() => sendInviteMutation.mutate(d.staff_id)}
+                              className="text-[11px] text-blue-600 hover:underline"
+                            >Resend</button>
+                          </div>
+                        );
+                        return (
+                          <div className="flex items-center gap-1.5">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700">Not Sent</span>
+                            <button
+                              onClick={() => sendInviteMutation.mutate(d.staff_id)}
+                              className="text-[11px] text-blue-600 hover:underline font-medium"
+                            >Send</button>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-2.5 text-center">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[d.employment_status] || ''}`}>
@@ -1426,6 +1467,12 @@ export default function Drivers() {
   const [profileDriver, setProfileDriver] = useState(null);
   const initialStatus = location.state?.status || null;
 
+  const { data: allDrivers = [] } = useQuery({
+    queryKey: ['drivers'],
+    queryFn: () => api.get('/drivers').then(r => r.data),
+  });
+  const notSentCount = allDrivers.filter(d => !d.invitation_sent_at && !d.last_login).length;
+
   const saveSection = (s) => { setSection(s); localStorage.setItem('drivers_section', s); };
 
   const statusMut = useMutation({
@@ -1474,7 +1521,12 @@ export default function Drivers() {
               }`}
             >
               <item.icon size={15} />
-              {item.label}
+              <span className="flex-1 text-left">{item.label}</span>
+              {item.id === 'all-drivers' && notSentCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold">
+                  {notSentCount}
+                </span>
+              )}
             </button>
           ))}
         </nav>

@@ -162,6 +162,71 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary: deduplicate shifts and add unique constraint (remove after use)
+app.get('/api/fix-duplicate-shifts', async (req, res) => {
+  const pool = require('./db/pool');
+  const results = {};
+
+  // Step 1: Delete duplicates in Jun 7-20
+  const { rowCount: junDeleted } = await pool.query(`
+    DELETE FROM shifts
+    WHERE id NOT IN (
+      SELECT MIN(id) FROM shifts
+      WHERE shift_date BETWEEN '2026-06-07' AND '2026-06-20'
+      GROUP BY staff_id, shift_date
+    )
+    AND shift_date BETWEEN '2026-06-07' AND '2026-06-20'
+  `);
+  results.junDupesDeleted = junDeleted;
+
+  // Step 2: Check for any remaining duplicates globally
+  const { rows: globalDupes } = await pool.query(`
+    SELECT staff_id, shift_date, COUNT(*) as cnt
+    FROM shifts GROUP BY staff_id, shift_date
+    HAVING COUNT(*) > 1 LIMIT 10
+  `);
+  results.remainingGlobalDupes = globalDupes.length;
+
+  // Step 3: If global dupes exist, clean them up (keep lowest id, only for safe types)
+  if (globalDupes.length > 0) {
+    const { rowCount: globalDeleted } = await pool.query(`
+      DELETE FROM shifts a USING shifts b
+      WHERE a.staff_id = b.staff_id
+        AND a.shift_date = b.shift_date
+        AND a.id > b.id
+    `);
+    results.globalDupesDeleted = globalDeleted;
+  }
+
+  // Step 4: Verify no more duplicates
+  const { rows: verifyDupes } = await pool.query(`
+    SELECT COUNT(*) as cnt FROM (
+      SELECT staff_id, shift_date FROM shifts
+      GROUP BY staff_id, shift_date HAVING COUNT(*) > 1
+    ) sub
+  `);
+  results.dupesAfterCleanup = parseInt(verifyDupes[0].cnt);
+
+  // Step 5: Add unique constraint
+  try {
+    await pool.query(`ALTER TABLE shifts ADD CONSTRAINT shifts_staff_date_unique UNIQUE (staff_id, shift_date)`);
+    results.constraintAdded = true;
+  } catch (e) {
+    results.constraintAdded = false;
+    results.constraintError = e.message;
+  }
+
+  // Step 6: Verify daily counts for Jun 7-20
+  const { rows: dailyCounts } = await pool.query(`
+    SELECT shift_date, COUNT(*) as shifts
+    FROM shifts WHERE shift_date BETWEEN '2026-06-07' AND '2026-06-20'
+    GROUP BY shift_date ORDER BY shift_date
+  `);
+  results.dailyCounts = dailyCounts;
+
+  res.json(results);
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

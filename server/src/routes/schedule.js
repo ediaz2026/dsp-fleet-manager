@@ -490,18 +490,13 @@ router.post('/day-recurring/apply', managerOnly, async (req, res) => {
         );
         if (skipCheck.length > 0) { skipped++; continue; }
 
-        const { rows: existing } = await client.query(
-          'SELECT id FROM shifts WHERE staff_id=$1 AND shift_date=$2',
-          [row.staff_id, dateStr]
-        );
-        if (existing.length > 0) { skipped++; continue; }
-
-        await client.query(
+        const { rowCount } = await client.query(
           `INSERT INTO shifts (staff_id, shift_date, start_time, end_time, shift_type, status, publish_status)
-           VALUES ($1,$2,$3,$4,$5,'scheduled','draft')`,
+           VALUES ($1,$2,$3,$4,$5,'scheduled','draft')
+           ON CONFLICT (staff_id, shift_date) DO NOTHING`,
           [row.staff_id, dateStr, row.start_time, row.end_time, row.shift_type]
         );
-        created++;
+        if (rowCount > 0) created++; else skipped++;
       }
     }
 
@@ -524,18 +519,13 @@ router.post('/day-recurring/apply', managerOnly, async (req, res) => {
         );
         if (skipCheck.length > 0) { skipped++; continue; }
 
-        const { rows: existing } = await client.query(
-          'SELECT id FROM shifts WHERE staff_id=$1 AND shift_date=$2',
-          [dr.staff_id, dateStr]
-        );
-        if (existing.length > 0) { skipped++; continue; }
-
-        await client.query(
+        const { rowCount } = await client.query(
           `INSERT INTO shifts (staff_id, shift_date, start_time, end_time, shift_type, status, publish_status)
-           VALUES ($1,$2,$3,$4,$5,'scheduled','draft')`,
+           VALUES ($1,$2,$3,$4,$5,'scheduled','draft')
+           ON CONFLICT (staff_id, shift_date) DO NOTHING`,
           [dr.staff_id, dateStr, day.start_time, day.end_time, day.shift_type]
         );
-        created++;
+        if (rowCount > 0) created++; else skipped++;
       }
     }
 
@@ -614,18 +604,13 @@ router.post('/rotating-apply', managerOnly, async (req, res) => {
         targetDate.setDate(weekDate.getDate() + dow);
         const dateStr = targetDate.toISOString().split('T')[0];
 
-        const { rows: existing } = await client.query(
-          'SELECT id FROM shifts WHERE staff_id=$1 AND shift_date=$2',
-          [staff_id, dateStr]
-        );
-        if (existing.length > 0) { skipped++; continue; }
-
-        await client.query(
+        const { rowCount } = await client.query(
           `INSERT INTO shifts (staff_id, shift_date, start_time, end_time, shift_type, status, publish_status)
-           VALUES ($1,$2,$3,$4,$5,'scheduled','draft')`,
+           VALUES ($1,$2,$3,$4,$5,'scheduled','draft')
+           ON CONFLICT (staff_id, shift_date) DO NOTHING`,
           [staff_id, dateStr, row.start_time, row.end_time, row.shift_type]
         );
-        created++;
+        if (rowCount > 0) created++; else skipped++;
       }
     }
 

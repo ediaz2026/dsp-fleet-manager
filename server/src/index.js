@@ -162,6 +162,74 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary diagnostic (remove after use)
+app.get('/api/diag-schedule-audit', async (req, res) => {
+  const pool = require('./db/pool');
+
+  // 1. Weekly counts (Sunday-based to match app)
+  const { rows: weeklyCounts } = await pool.query(`
+    SELECT
+      (shift_date - EXTRACT(DOW FROM shift_date)::int)::date as week_start,
+      COUNT(*) as total_shifts,
+      CASE
+        WHEN COUNT(*) BETWEEN 337 AND 357 THEN 'Normal'
+        WHEN COUNT(*) > 357 THEN 'Too many (+' || (COUNT(*) - 347) || ')'
+        WHEN COUNT(*) < 337 THEN 'Too few (-' || (347 - COUNT(*)) || ')'
+      END as status
+    FROM shifts
+    WHERE shift_date >= CURRENT_DATE
+      AND (publish_status IS NULL OR publish_status != 'published')
+    GROUP BY (shift_date - EXTRACT(DOW FROM shift_date)::int)
+    ORDER BY week_start
+  `);
+
+  // 2. Duplicate shifts in future
+  const { rows: dupes } = await pool.query(`
+    SELECT COUNT(*) as duplicate_groups FROM (
+      SELECT staff_id, shift_date, COUNT(*)
+      FROM shifts
+      WHERE shift_date >= CURRENT_DATE
+      GROUP BY staff_id, shift_date
+      HAVING COUNT(*) > 1
+    ) sub
+  `);
+
+  // 3. Stale shifts — drivers on days not in their recurring config
+  const { rows: stale } = await pool.query(`
+    SELECT
+      s.first_name || ' ' || s.last_name as driver,
+      sh.shift_date,
+      TO_CHAR(sh.shift_date, 'Dy') as day_of_week,
+      sh.shift_type,
+      EXTRACT(DOW FROM sh.shift_date)::int as dow,
+      drs.sun, drs.mon, drs.tue, drs.wed, drs.thu, drs.fri, drs.sat
+    FROM shifts sh
+    JOIN staff s ON s.id = sh.staff_id
+    JOIN driver_recurring_shifts drs ON drs.staff_id = sh.staff_id
+    WHERE sh.shift_date >= CURRENT_DATE
+      AND UPPER(sh.shift_type) IN ('EDV','STEP VAN','EXTRA','HELPER')
+      AND (sh.publish_status IS NULL OR sh.publish_status != 'published')
+      AND (
+        (EXTRACT(DOW FROM sh.shift_date)::int = 0 AND drs.sun = false) OR
+        (EXTRACT(DOW FROM sh.shift_date)::int = 1 AND drs.mon = false) OR
+        (EXTRACT(DOW FROM sh.shift_date)::int = 2 AND drs.tue = false) OR
+        (EXTRACT(DOW FROM sh.shift_date)::int = 3 AND drs.wed = false) OR
+        (EXTRACT(DOW FROM sh.shift_date)::int = 4 AND drs.thu = false) OR
+        (EXTRACT(DOW FROM sh.shift_date)::int = 5 AND drs.fri = false) OR
+        (EXTRACT(DOW FROM sh.shift_date)::int = 6 AND drs.sat = false)
+      )
+    ORDER BY driver, sh.shift_date
+  `);
+
+  // 4. Unique constraint check
+  const { rows: indexes } = await pool.query(`
+    SELECT indexname, indexdef FROM pg_indexes
+    WHERE tablename = 'shifts' AND indexname = 'shifts_staff_date_unique'
+  `);
+
+  res.json({ weeklyCounts, duplicateGroups: parseInt(dupes[0].duplicate_groups), staleCount: stale.length, stale: stale.slice(0, 100), indexes });
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

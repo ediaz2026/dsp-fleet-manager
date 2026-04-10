@@ -125,6 +125,9 @@ router.delete('/recurring/:scheduleId/entries/:entryId', managerOnly, async (req
   res.json({ message: 'Deleted' });
 });
 
+// Safe shift types that can be auto-deleted when recurring pattern changes
+const AUTO_SHIFT_TYPES = ['EDV', 'STEP VAN', 'EXTRA', 'HELPER'];
+
 // Apply recurring schedule to a week
 router.post('/recurring/apply', managerOnly, async (req, res) => {
   const { schedule_id, week_start } = req.body; // week_start = Sunday date string
@@ -135,11 +138,46 @@ router.post('/recurring/apply', managerOnly, async (req, res) => {
   );
 
   const weekDate = new Date(week_start + 'T00:00:00');
-  let created = 0;
+  const weekEnd = new Date(weekDate);
+  weekEnd.setDate(weekDate.getDate() + 6);
+  const weekEndStr = weekEnd.toISOString().split('T')[0];
+  let created = 0, deleted = 0;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // Check if any shifts in this week are published — if so, skip cleanup
+    const { rows: pubCheck } = await client.query(
+      `SELECT 1 FROM shifts WHERE shift_date BETWEEN $1 AND $2 AND publish_status = 'published' LIMIT 1`,
+      [week_start, weekEndStr]
+    );
+    const weekIsPublished = pubCheck.length > 0;
+
+    // Build per-staff enabled DOWs from entries
+    if (!weekIsPublished) {
+      const staffDOWs = {};
+      for (const entry of entries) {
+        if (!staffDOWs[entry.staff_id]) staffDOWs[entry.staff_id] = new Set();
+        staffDOWs[entry.staff_id].add(entry.day_of_week);
+      }
+      // Delete stale shifts for each staff member on days no longer in pattern
+      for (const [staffId, enabledDOWs] of Object.entries(staffDOWs)) {
+        const dows = Array.from(enabledDOWs);
+        if (dows.length === 7) continue; // all days enabled, nothing to delete
+        const placeholders = dows.map((_, i) => `$${i + 3}`).join(',');
+        const { rowCount } = await client.query(
+          `DELETE FROM shifts
+           WHERE staff_id = $1
+             AND shift_date BETWEEN $2 AND '${weekEndStr}'
+             AND EXTRACT(DOW FROM shift_date)::int NOT IN (${placeholders})
+             AND UPPER(shift_type) IN ('EDV','STEP VAN','EXTRA','HELPER')`,
+          [parseInt(staffId), week_start, ...dows]
+        );
+        deleted += rowCount;
+      }
+    }
+
     for (const entry of entries) {
       const shiftDate = new Date(weekDate);
       shiftDate.setDate(weekDate.getDate() + entry.day_of_week);
@@ -154,7 +192,7 @@ router.post('/recurring/apply', managerOnly, async (req, res) => {
       created++;
     }
     await client.query('COMMIT');
-    res.json({ created, message: `Applied ${created} shifts` });
+    res.json({ created, deleted, message: `Applied ${created} shifts, removed ${deleted} stale shifts` });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -399,11 +437,41 @@ router.post('/day-recurring/apply', managerOnly, async (req, res) => {
     );
     const absentStaffIds = new Set(absenceShifts.map(s => s.staff_id));
 
+    // Check if any shifts this week are published — skip cleanup if so
+    const { rows: pubCheck } = await client.query(
+      `SELECT 1 FROM shifts WHERE shift_date BETWEEN $1 AND $2 AND publish_status = 'published' LIMIT 1`,
+      [week_start, weekEndStr]
+    );
+    const weekIsPublished = pubCheck.length > 0;
+    let deleted = 0;
+
     // ── 1. Per-driver recurring shifts (specific config, highest priority) ──
     const { rows: perDriverRows } = await client.query(
       'SELECT * FROM driver_recurring_shifts'
     );
     const DAY_COLS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+    // Clean up stale shifts for drivers whose pattern changed (unpublished weeks only)
+    if (!weekIsPublished) {
+      for (const row of perDriverRows) {
+        if (absentStaffIds.has(row.staff_id)) continue;
+        const enabledDOWs = [];
+        for (let dow = 0; dow <= 6; dow++) {
+          if (row[DAY_COLS[dow]]) enabledDOWs.push(dow);
+        }
+        if (enabledDOWs.length === 0 || enabledDOWs.length === 7) continue;
+        const placeholders = enabledDOWs.map((_, i) => `$${i + 3}`).join(',');
+        const { rowCount } = await client.query(
+          `DELETE FROM shifts
+           WHERE staff_id = $1
+             AND shift_date BETWEEN $2 AND '${weekEndStr}'
+             AND EXTRACT(DOW FROM shift_date)::int NOT IN (${placeholders})
+             AND UPPER(shift_type) IN ('EDV','STEP VAN','EXTRA','HELPER')`,
+          [row.staff_id, week_start, ...enabledDOWs]
+        );
+        deleted += rowCount;
+      }
+    }
 
     for (const row of perDriverRows) {
       if (absentStaffIds.has(row.staff_id)) continue;
@@ -472,7 +540,7 @@ router.post('/day-recurring/apply', managerOnly, async (req, res) => {
     }
 
     await client.query('COMMIT');
-    res.json({ created, skipped });
+    res.json({ created, skipped, deleted });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -494,12 +562,22 @@ router.post('/rotating-apply', managerOnly, async (req, res) => {
   }
 
   const weekDate = new Date(week_start + 'T12:00:00Z');
+  const weekEnd = new Date(weekDate);
+  weekEnd.setDate(weekDate.getDate() + 6);
+  const weekEndStr = weekEnd.toISOString().split('T')[0];
   const DAY_COLS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-  let created = 0, skipped = 0;
+  let created = 0, skipped = 0, deleted = 0;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // Check if any shifts this week are published — skip cleanup if so
+    const { rows: pubCheck } = await client.query(
+      `SELECT 1 FROM shifts WHERE shift_date BETWEEN $1 AND $2 AND publish_status = 'published' LIMIT 1`,
+      [week_start, weekEndStr]
+    );
+    const weekIsPublished = pubCheck.length > 0;
 
     for (const { staff_id, row_id } of assignments) {
       const { rows: rowData } = await client.query(
@@ -508,6 +586,26 @@ router.post('/rotating-apply', managerOnly, async (req, res) => {
       );
       if (!rowData[0]) continue;
       const row = rowData[0];
+
+      // Clean up stale shifts for this driver (unpublished weeks only)
+      if (!weekIsPublished) {
+        const enabledDOWs = [];
+        for (let dow = 0; dow <= 6; dow++) {
+          if (row[DAY_COLS[dow]]) enabledDOWs.push(dow);
+        }
+        if (enabledDOWs.length > 0 && enabledDOWs.length < 7) {
+          const placeholders = enabledDOWs.map((_, i) => `$${i + 3}`).join(',');
+          const { rowCount } = await client.query(
+            `DELETE FROM shifts
+             WHERE staff_id = $1
+               AND shift_date BETWEEN $2 AND '${weekEndStr}'
+               AND EXTRACT(DOW FROM shift_date)::int NOT IN (${placeholders})
+               AND UPPER(shift_type) IN ('EDV','STEP VAN','EXTRA','HELPER')`,
+            [staff_id, week_start, ...enabledDOWs]
+          );
+          deleted += rowCount;
+        }
+      }
 
       for (let dow = 0; dow <= 6; dow++) {
         if (!row[DAY_COLS[dow]]) continue;
@@ -532,7 +630,7 @@ router.post('/rotating-apply', managerOnly, async (req, res) => {
     }
 
     await client.query('COMMIT');
-    res.json({ created, skipped });
+    res.json({ created, skipped, deleted });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

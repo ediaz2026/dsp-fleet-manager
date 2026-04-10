@@ -162,6 +162,56 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary: fix stale shifts for Iyana & Fernando (remove after use)
+app.get('/api/fix-stale-shifts', async (req, res) => {
+  const pool = require('./db/pool');
+
+  // Check if any shifts in Apr 19+ weeks are published
+  const { rows: pubCheck } = await pool.query(
+    `SELECT DISTINCT shift_date, publish_status FROM shifts
+     WHERE staff_id IN (351, 382) AND shift_date >= '2026-04-19'
+       AND publish_status = 'published'
+     ORDER BY shift_date LIMIT 5`
+  );
+
+  const results = { publishedShifts: pubCheck };
+
+  // Delete Iyana's Wednesday (DOW=3) auto-generated shifts from Apr 19+
+  const { rowCount: iyanaDeleted } = await pool.query(`
+    DELETE FROM shifts
+    WHERE staff_id = 351
+      AND EXTRACT(DOW FROM shift_date)::int = 3
+      AND shift_date >= '2026-04-19'
+      AND UPPER(shift_type) IN ('EDV','STEP VAN','EXTRA','HELPER')
+      AND (publish_status IS NULL OR publish_status != 'published')
+  `);
+
+  // Delete Fernando's Friday (DOW=5) auto-generated shifts from Apr 19+
+  const { rowCount: fernandoDeleted } = await pool.query(`
+    DELETE FROM shifts
+    WHERE staff_id = 382
+      AND EXTRACT(DOW FROM shift_date)::int = 5
+      AND shift_date >= '2026-04-19'
+      AND UPPER(shift_type) IN ('EDV','STEP VAN','EXTRA','HELPER')
+      AND (publish_status IS NULL OR publish_status != 'published')
+  `);
+
+  results.iyanaWedDeletedCount = iyanaDeleted;
+  results.fernandoFriDeletedCount = fernandoDeleted;
+
+  // Verify remaining shifts
+  const { rows: iyanaAfter } = await pool.query(
+    `SELECT shift_date, shift_type, publish_status FROM shifts WHERE staff_id = 351 AND shift_date >= '2026-04-19' ORDER BY shift_date`
+  );
+  const { rows: fernandoAfter } = await pool.query(
+    `SELECT shift_date, shift_type, publish_status FROM shifts WHERE staff_id = 382 AND shift_date >= '2026-04-19' ORDER BY shift_date`
+  );
+  results.iyana_remaining = iyanaAfter;
+  results.fernando_remaining = fernandoAfter;
+
+  res.json(results);
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

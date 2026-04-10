@@ -162,6 +162,31 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary diagnostic (remove after use)
+app.get('/api/diag-recurring-shifts', async (req, res) => {
+  const pool = require('./db/pool');
+  const { rows: iyana } = await pool.query(`
+    SELECT shift_date, shift_type, start_time, end_time, created_at, updated_at
+    FROM shifts WHERE staff_id = 351
+    AND shift_date BETWEEN '2026-04-19' AND '2026-04-25'
+    ORDER BY shift_date
+  `);
+  const { rows: fernando } = await pool.query(`
+    SELECT shift_date, shift_type, start_time, end_time, created_at, updated_at
+    FROM shifts WHERE staff_id = 382
+    AND shift_date BETWEEN '2026-04-19' AND '2026-04-25'
+    ORDER BY shift_date
+  `);
+  // Also get recurring config for both
+  const { rows: iyanaRecur } = await pool.query(
+    `SELECT sun,mon,tue,wed,thu,fri,sat,shift_type FROM driver_recurring_shifts WHERE staff_id=351`
+  );
+  const { rows: fernandoRecur } = await pool.query(
+    `SELECT sun,mon,tue,wed,thu,fri,sat,shift_type FROM driver_recurring_shifts WHERE staff_id=382`
+  );
+  res.json({ iyana_shifts: iyana, fernando_shifts: fernando, iyana_recurring: iyanaRecur, fernando_recurring: fernandoRecur });
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

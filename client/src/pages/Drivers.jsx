@@ -944,7 +944,7 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
       return true;
     });
 
-  const { sorted: displayedDrivers, sortKey, sortDir, toggle } = useSort(filtered, 'last_name', 'asc');
+  const { sorted: displayedDrivers, sortKey, sortDir, setSortKey, setSortDir } = useSort(filtered, 'last_name', 'asc');
 
   const counts = STATUS_TABS.reduce((acc, s) => {
     acc[s] = s === 'all' ? drivers.length : drivers.filter(d => d.employment_status === s).length;
@@ -1006,46 +1006,46 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
       </div>
 
       {/* Filter + Sort row */}
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-slate-400 font-medium">License:</span>
-          <LicensePill val="all" label="All" />
-          <LicensePill val="expiring" label="Expiring Soon" />
-          <LicensePill val="expired" label="Expired" />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-slate-400 font-medium">Schedule:</span>
-          <SchedulePill val="all" label="All" />
-          <SchedulePill val="configured" label="Configured" />
-          <SchedulePill val="not-set" label="Not Set" />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-slate-400 font-medium">Sort by:</span>
-          {[{ col: 'first_name', label: 'First Name' }, { col: 'last_name', label: 'Last Name' }].map(({ col, label }) => {
-            const active = sortKey === col;
-            return (
-              <button
-                key={col}
-                onClick={() => toggle(col)}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
-                  active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                {label}
-                {active
-                  ? sortDir === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />
-                  : <ChevronsUpDown size={11} className="opacity-40" />
-                }
-              </button>
-            );
-          })}
-        </div>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">License</span>
+        <LicensePill val="all" label="All" />
+        <LicensePill val="expiring" label="Expiring Soon" />
+        <LicensePill val="expired" label="Expired" />
+
+        <span className="w-px h-4 bg-slate-200" />
+
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Schedule</span>
+        <SchedulePill val="all" label="All" />
+        <SchedulePill val="configured" label="Configured" />
+        <SchedulePill val="not-set" label="Not Set" />
+
+        <span className="w-px h-4 bg-slate-200" />
+
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sort</span>
+        <select
+          value={`${sortKey}-${sortDir}`}
+          onChange={e => {
+            const [key, dir] = e.target.value.split('-');
+            setSortKey(key);
+            setSortDir(dir);
+          }}
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+        >
+          <option value="last_name-asc">Last Name A→Z</option>
+          <option value="last_name-desc">Last Name Z→A</option>
+          <option value="first_name-asc">First Name A→Z</option>
+          <option value="first_name-desc">First Name Z→A</option>
+          <option value="hire_date-asc">Hire Date (Oldest first)</option>
+          <option value="hire_date-desc">Hire Date (Newest first)</option>
+          <option value="license_expiration-asc">License Expiring Soon</option>
+        </select>
+
         {hasActiveFilters && (
-          <button onClick={clearFilters} className="ml-auto text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+          <button onClick={clearFilters} className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
             <X size={11} /> Clear Filters
           </button>
         )}
-        <span className={`text-xs text-slate-400 ${hasActiveFilters ? '' : 'ml-auto'}`}>{displayedDrivers.length} driver{displayedDrivers.length !== 1 ? 's' : ''}</span>
+        <span className="ml-auto text-xs text-slate-400">{displayedDrivers.length} driver{displayedDrivers.length !== 1 ? 's' : ''}</span>
       </div>
 
       {/* Table */}

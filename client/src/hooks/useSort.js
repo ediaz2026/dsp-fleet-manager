@@ -52,5 +52,5 @@ export function useSort(data, defaultKey = null, defaultDir = 'asc') {
     setSortDir(defaultDir);
   }, [defaultKey, defaultDir]);
 
-  return { sorted, sortKey, sortDir, toggle, reset };
+  return { sorted, sortKey, sortDir, toggle, reset, setSortKey, setSortDir };
 }

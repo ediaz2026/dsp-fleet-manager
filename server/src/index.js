@@ -166,13 +166,13 @@ app.use('/api/van-affinity', require('./routes/vanAffinity'));
 app.get('/api/diag-recurring-shifts', async (req, res) => {
   const pool = require('./db/pool');
   const { rows: iyana } = await pool.query(`
-    SELECT shift_date, shift_type, start_time, end_time, created_at, updated_at
+    SELECT shift_date, shift_type, start_time, end_time, created_at, publish_status
     FROM shifts WHERE staff_id = 351
     AND shift_date BETWEEN '2026-04-19' AND '2026-04-25'
     ORDER BY shift_date
   `);
   const { rows: fernando } = await pool.query(`
-    SELECT shift_date, shift_type, start_time, end_time, created_at, updated_at
+    SELECT shift_date, shift_type, start_time, end_time, created_at, publish_status
     FROM shifts WHERE staff_id = 382
     AND shift_date BETWEEN '2026-04-19' AND '2026-04-25'
     ORDER BY shift_date

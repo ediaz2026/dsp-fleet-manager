@@ -452,22 +452,28 @@ router.post('/day-recurring/apply', managerOnly, async (req, res) => {
     const DAY_COLS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
     // Clean up stale shifts for drivers whose pattern changed (unpublished weeks only)
+    // Aggregate ALL enabled DOWs across ALL of a driver's recurring rows so dual-role
+    // drivers (e.g. EDV some days + DISPATCH other days) don't lose valid shifts.
     if (!weekIsPublished) {
+      const driverEnabledDOWs = {};
       for (const row of perDriverRows) {
         if (absentStaffIds.has(row.staff_id)) continue;
-        const enabledDOWs = [];
+        if (!driverEnabledDOWs[row.staff_id]) driverEnabledDOWs[row.staff_id] = new Set();
         for (let dow = 0; dow <= 6; dow++) {
-          if (row[DAY_COLS[dow]]) enabledDOWs.push(dow);
+          if (row[DAY_COLS[dow]]) driverEnabledDOWs[row.staff_id].add(dow);
         }
-        if (enabledDOWs.length === 0 || enabledDOWs.length === 7) continue;
-        const placeholders = enabledDOWs.map((_, i) => `$${i + 3}`).join(',');
+      }
+      for (const [staffId, dowSet] of Object.entries(driverEnabledDOWs)) {
+        const dows = Array.from(dowSet);
+        if (dows.length === 0 || dows.length === 7) continue;
+        const placeholders = dows.map((_, i) => `$${i + 3}`).join(',');
         const { rowCount } = await client.query(
           `DELETE FROM shifts
            WHERE staff_id = $1
              AND shift_date BETWEEN $2 AND '${weekEndStr}'
              AND EXTRACT(DOW FROM shift_date)::int NOT IN (${placeholders})
              AND UPPER(shift_type) IN ('EDV','STEP VAN','EXTRA','HELPER')`,
-          [row.staff_id, week_start, ...enabledDOWs]
+          [parseInt(staffId), week_start, ...dows]
         );
         deleted += rowCount;
       }

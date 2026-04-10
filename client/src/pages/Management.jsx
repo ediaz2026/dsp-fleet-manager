@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import Modal from '../components/Modal';
 import Badge from '../components/Badge';
 import { useAuth } from '../context/AuthContext';
+import { useSearchParams } from 'react-router-dom';
 
 /* ─── Constants ───────────────────────────────────────────────────────────── */
 const DAYS_OF_WEEK = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -137,8 +138,11 @@ export default function Management() {
   const qc = useQueryClient();
   const isAdmin = user?.role === 'admin';
 
+  const [searchParams] = useSearchParams();
   const [activeSection, setActiveSection] = useState(
     () => {
+      const fromUrl = (typeof window !== 'undefined') && new URLSearchParams(window.location.search).get('section');
+      if (fromUrl) return fromUrl;
       const saved = localStorage.getItem('mgmt_active_section');
       // migrate away from removed driver sections
       if (!saved || saved === 'drivers' || saved === 'add-driver' || saved === 'driver-recurring') return 'scheduler-settings';
@@ -149,6 +153,15 @@ export default function Management() {
     setActiveSection(id);
     localStorage.setItem('mgmt_active_section', id);
   };
+
+  // Sync active section with ?section= query param when it changes (e.g. nav from Drivers)
+  useEffect(() => {
+    const section = searchParams.get('section');
+    if (section && section !== activeSection) {
+      setActiveSection(section);
+      localStorage.setItem('mgmt_active_section', section);
+    }
+  }, [searchParams]);
 
   /* ── General Settings ─────────────────────────────────────────────────── */
   const [settings, setSettings] = useState({});

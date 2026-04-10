@@ -162,47 +162,6 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
-// Temporary diagnostic (remove after use)
-app.get('/api/diag-schedule-bug', async (req, res) => {
-  const pool = require('./db/pool');
-
-  // 1. Iyana's recurring schedule
-  const { rows: recurring } = await pool.query(
-    `SELECT * FROM driver_recurring_shifts WHERE staff_id = 351`
-  );
-
-  // 1b. Also check recurring_schedule_entries
-  const { rows: recurEntries } = await pool.query(
-    `SELECT * FROM recurring_schedule_entries WHERE staff_id = 351`
-  );
-
-  // 2. Iyana's shifts for next 2 weeks
-  const { rows: shifts } = await pool.query(
-    `SELECT shift_date, shift_type, start_time, end_time, publish_status
-     FROM shifts WHERE staff_id = 351 ORDER BY shift_date ASC LIMIT 14`
-  );
-
-  // 3. Broader audit: all drivers' actual DOW for next 2 weeks
-  const { rows: audit } = await pool.query(`
-    SELECT s.id, s.first_name, s.last_name,
-      array_agg(DISTINCT EXTRACT(DOW FROM sh.shift_date)::int ORDER BY EXTRACT(DOW FROM sh.shift_date)::int) as actual_dow,
-      array_agg(DISTINCT sh.shift_date::text ORDER BY sh.shift_date::text) as shift_dates
-    FROM shifts sh
-    JOIN staff s ON s.id = sh.staff_id
-    WHERE sh.shift_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 14
-    GROUP BY s.id, s.first_name, s.last_name
-    ORDER BY s.last_name
-    LIMIT 80
-  `);
-
-  // 4. All recurring schedules to compare
-  const { rows: allRecurring } = await pool.query(
-    `SELECT staff_id, sun, mon, tue, wed, thu, fri, sat, shift_type FROM driver_recurring_shifts`
-  );
-
-  res.json({ iyana_recurring: recurring, iyana_recur_entries: recurEntries, iyana_shifts: shifts, audit, allRecurring });
-});
-
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

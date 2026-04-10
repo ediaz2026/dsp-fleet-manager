@@ -162,44 +162,6 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
-// Temporary diagnostic (remove after use)
-app.get('/api/diag-dupes', async (req, res) => {
-  const pool = require('./db/pool');
-
-  const { rows: dupes } = await pool.query(`
-    SELECT
-      s.first_name || ' ' || s.last_name as driver,
-      sh.shift_date,
-      array_agg(sh.id ORDER BY sh.id) as shift_ids,
-      array_agg(sh.shift_type ORDER BY sh.id) as shift_types,
-      array_agg(sh.start_time::text ORDER BY sh.id) as start_times,
-      array_agg(sh.end_time::text ORDER BY sh.id) as end_times,
-      array_agg(sh.created_at::text ORDER BY sh.id) as created_times,
-      array_agg(sh.publish_status ORDER BY sh.id) as pub_statuses,
-      COUNT(*) as count
-    FROM shifts sh
-    JOIN staff s ON s.id = sh.staff_id
-    WHERE sh.shift_date BETWEEN '2026-06-07' AND '2026-06-20'
-    GROUP BY s.id, s.first_name, s.last_name, sh.shift_date
-    HAVING COUNT(*) > 1
-    ORDER BY sh.shift_date, driver
-  `);
-
-  const { rows: indexes } = await pool.query(`
-    SELECT indexname, indexdef
-    FROM pg_indexes
-    WHERE tablename = 'shifts'
-  `);
-
-  const { rows: constraints } = await pool.query(`
-    SELECT conname, contype, pg_get_constraintdef(oid) as def
-    FROM pg_constraint
-    WHERE conrelid = 'shifts'::regclass
-  `);
-
-  res.json({ dupes, indexes, constraints });
-});
-
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

@@ -162,37 +162,6 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
-// Temporary: fix missing p1 assignments (remove after use)
-app.get('/api/fix-van-affinity-p1', async (req, res) => {
-  const pool = require('./db/pool');
-  const updates = [
-    { vehicle: 'EV 01', p1_id: 350 },
-    { vehicle: 'EV 02', p1_id: 349 },
-    { vehicle: 'EV 06', p1_id: 411 },
-    { vehicle: 'EV 17', p1_id: 408 },
-    { vehicle: 'EV 27', p1_id: 412 },
-    { vehicle: 'SV36',  p1_id: 388 },
-  ];
-  const results = [];
-  for (const u of updates) {
-    const r = await pool.query(
-      `UPDATE van_affinity SET primary_driver_1_id = $1 WHERE vehicle_id = (SELECT id FROM vehicles WHERE vehicle_name = $2)`,
-      [u.p1_id, u.vehicle]
-    );
-    results.push({ vehicle: u.vehicle, p1_id: u.p1_id, rowsUpdated: r.rowCount });
-  }
-  const { rows: verify } = await pool.query(`
-    SELECT v.vehicle_name, s1.first_name || ' ' || s1.last_name as p1, s2.first_name || ' ' || s2.last_name as p2
-    FROM van_affinity va
-    JOIN vehicles v ON v.id = va.vehicle_id
-    LEFT JOIN staff s1 ON s1.id = va.primary_driver_1_id
-    LEFT JOIN staff s2 ON s2.id = va.primary_driver_2_id
-    WHERE v.vehicle_name IN ('EV 01','EV 02','EV 06','EV 17','EV 27','SV36')
-    ORDER BY v.vehicle_name
-  `);
-  res.json({ updates: results, verification: verify });
-});
-
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

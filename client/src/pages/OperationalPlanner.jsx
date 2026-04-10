@@ -1313,7 +1313,7 @@ function InlineRouteCode({ currentCode, allRouteCodes = [], assignedRouteMap, my
 
 // ══ INLINE VEHICLE / DEVICE CELLS ════════════════════════════════════════════
 
-function InlineAssignment({ staffId, assignment, vehicles, assignedVehicleMap, myName, onSave, onPatch }) {
+function InlineAssignment({ staffId, assignment, vehicles, assignedVehicleMap, myName, onSave, onPatch, vanAffinityData = [] }) {
   const [vehicleId, setVehicleId] = useState(String(assignment?.vehicle_id || ''));
   const [deviceId,  setDeviceId]  = useState(assignment?.device_id || '');
   const [reassignConfirmVehicle, setReassignConfirmVehicle] = useState(null);
@@ -1370,33 +1370,64 @@ function InlineAssignment({ staffId, assignment, vehicles, assignedVehicleMap, m
   return (
     <>
       <td className="px-2 py-1.5 relative">
-        <select
-          value={vehicleId}
-          onChange={handleVehicleChange}
-          className="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 bg-white text-content w-28 max-w-full"
-        >
-          <option value="">— Vehicle</option>
-          <option value="__clear__">✕ Clear Vehicle</option>
-          {available.length > 0 && <optgroup label="Available">
-            {available.map(v => (
-              <option key={v.id} value={String(v.id)}>{v.vehicle_name || v.license_plate || `#${v.id}`}</option>
-            ))}
-          </optgroup>}
-          {assigned.length > 0 && <optgroup label="Assigned">
-            {assigned.map(v => (
-              <option key={v.id} value={String(v.id)} style={{ color: '#9ca3af' }}>
-                {v.vehicle_name || v.license_plate || `#${v.id}`} ({assignedVehicleMap[v.id]})
-              </option>
-            ))}
-          </optgroup>}
-          {unavailableVehicles.length > 0 && <optgroup label="Unavailable">
-            {unavailableVehicles.map(v => (
-              <option key={v.id} value="" disabled style={{ color: '#9ca3af' }}>
-                {v.vehicle_name || `#${v.id}`} — {v.amazon_status === 'Grounded' ? 'Amazon Inactive' : 'DSP Inactive'}
-              </option>
-            ))}
-          </optgroup>}
-        </select>
+        {(() => {
+          const affinityRecord = vanAffinityData.find(a =>
+            a.primary_driver_1_id === staffId ||
+            a.primary_driver_2_id === staffId
+          );
+          const affinityVehicleId = affinityRecord?.vehicle_id;
+          const affinityVehicle = affinityVehicleId
+            ? vehicles.find(v => v.id === affinityVehicleId)
+            : null;
+          const isAffinityAvailable = affinityVehicle &&
+            available.some(v => v.id === affinityVehicleId);
+          const isAffinityAssigned = affinityVehicle &&
+            assigned.some(v => v.id === affinityVehicleId);
+          return (
+            <select
+              value={vehicleId}
+              onChange={handleVehicleChange}
+              className="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 bg-white text-content w-28 max-w-full"
+            >
+              <option value="">— Vehicle</option>
+              <option value="__clear__">✕ Clear Vehicle</option>
+              {affinityVehicle && (
+                <optgroup label="⭐ Your Vehicle">
+                  <option
+                    value={String(affinityVehicle.id)}
+                    disabled={isAffinityAssigned && vehicleId !== String(affinityVehicle.id)}
+                  >
+                    {isAffinityAvailable
+                      ? `⭐ ${affinityVehicle.vehicle_name}`
+                      : isAffinityAssigned
+                        ? `⭐ ${affinityVehicle.vehicle_name} (taken)`
+                        : `⭐ ${affinityVehicle.vehicle_name} (unavailable)`
+                    }
+                  </option>
+                </optgroup>
+              )}
+              {available.filter(v => v.id !== affinityVehicleId).length > 0 && <optgroup label="Available">
+                {available.filter(v => v.id !== affinityVehicleId).map(v => (
+                  <option key={v.id} value={String(v.id)}>{v.vehicle_name || v.license_plate || `#${v.id}`}</option>
+                ))}
+              </optgroup>}
+              {assigned.filter(v => v.id !== affinityVehicleId).length > 0 && <optgroup label="Assigned">
+                {assigned.filter(v => v.id !== affinityVehicleId).map(v => (
+                  <option key={v.id} value={String(v.id)} style={{ color: '#9ca3af' }}>
+                    {v.vehicle_name || v.license_plate || `#${v.id}`} ({assignedVehicleMap[v.id]})
+                  </option>
+                ))}
+              </optgroup>}
+              {unavailableVehicles.filter(v => v.id !== affinityVehicleId).length > 0 && <optgroup label="Unavailable">
+                {unavailableVehicles.filter(v => v.id !== affinityVehicleId).map(v => (
+                  <option key={v.id} value="" disabled style={{ color: '#9ca3af' }}>
+                    {v.vehicle_name || `#${v.id}`} — {v.amazon_status === 'Grounded' ? 'Amazon Inactive' : 'DSP Inactive'}
+                  </option>
+                ))}
+              </optgroup>}
+            </select>
+          );
+        })()}
         {reassignConfirmVehicle && (
           <div className="absolute z-50 top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl p-3 w-56 text-xs" onClick={e => e.stopPropagation()}>
             <p className="font-semibold text-slate-800 mb-1">{reassignConfirmVehicle.name} is assigned to {reassignConfirmVehicle.from}</p>
@@ -1742,6 +1773,12 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   const { data: vehicles = [] } = useQuery({
     queryKey: ['vehicles'],
     queryFn:  () => api.get('/vehicles').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: vanAffinityData = [] } = useQuery({
+    queryKey: ['van-affinity'],
+    queryFn:  () => api.get('/van-affinity').then(r => r.data),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -3008,6 +3045,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             myName={displayName}
             onSave={data => staffId && saveAssignment.mutate({ staffId, data })}
             onPatch={data => staffId && patchAssignment.mutate({ staffId, data })}
+            vanAffinityData={vanAffinityData}
           />
           <td className="px-2 py-2 text-center w-10"><StatusPill status={row.status} /></td>
 

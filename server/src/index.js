@@ -220,7 +220,43 @@ app.get('/api/diag-week22', async (req, res) => {
     diff: parseInt(d.shifts_w22) - (w21Map[d.staff_id] || 0)
   })).filter(d => d.diff !== 0).sort((a, b) => b.diff - a.diff);
 
-  res.json({ weeklyCounts, week22Types, duplicates, driverCounts: driverCounts.slice(0, 30), comparison });
+  // 6. Sunday-based week counts (the app uses Sunday as week start)
+  const { rows: sundayWeeks } = await pool.query(`
+    SELECT (shift_date - EXTRACT(DOW FROM shift_date)::int)::date as week_sunday,
+      COUNT(*) as total,
+      COUNT(CASE WHEN publish_status != 'published' OR publish_status IS NULL THEN 1 END) as unpub
+    FROM shifts
+    WHERE shift_date BETWEEN '2026-04-19' AND '2026-07-05'
+    GROUP BY (shift_date - EXTRACT(DOW FROM shift_date)::int)
+    ORDER BY week_sunday
+  `);
+
+  // 7. For the inflated weeks, find which drivers appear that don't in a normal week
+  const { rows: w22drivers } = await pool.query(`
+    SELECT s.id, s.first_name, s.last_name, COUNT(*) as cnt,
+      array_agg(DISTINCT sh.shift_type) as types,
+      array_agg(DISTINCT sh.shift_date::text ORDER BY sh.shift_date::text) as dates
+    FROM shifts sh JOIN staff s ON s.id = sh.staff_id
+    WHERE sh.shift_date BETWEEN '2026-05-31' AND '2026-06-06'
+    GROUP BY s.id, s.first_name, s.last_name
+    ORDER BY s.last_name
+  `);
+
+  // 8. Check week Jun 8-14 (574 shifts!) — what's going on there
+  const { rows: w23types } = await pool.query(`
+    SELECT shift_type, COUNT(*) as count
+    FROM shifts WHERE shift_date BETWEEN '2026-06-08' AND '2026-06-14'
+    GROUP BY shift_type ORDER BY count DESC
+  `);
+  const { rows: w23dupes } = await pool.query(`
+    SELECT sh.staff_id, s.first_name, s.last_name, sh.shift_date, COUNT(*) as dupes
+    FROM shifts sh JOIN staff s ON s.id = sh.staff_id
+    WHERE sh.shift_date BETWEEN '2026-06-08' AND '2026-06-14'
+    GROUP BY sh.staff_id, s.first_name, s.last_name, sh.shift_date
+    HAVING COUNT(*) > 1 ORDER BY dupes DESC LIMIT 20
+  `);
+
+  res.json({ weeklyCounts, sundayWeeks, week22Types, duplicates, driverCounts: driverCounts.slice(0, 30), comparison, w22drivers: w22drivers.length, w23types, w23dupes });
 });
 
 // Health check

@@ -162,6 +162,26 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary diagnostic (remove after use)
+app.get('/api/diag-shift-format', async (req, res) => {
+  const pool = require('./db/pool');
+  const { rows } = await pool.query(
+    `SELECT shift_date, shift_type, staff_id FROM shifts WHERE staff_id = 351 AND shift_date BETWEEN '2026-04-13' AND '2026-04-19' ORDER BY shift_date`
+  );
+  // Show raw values and types
+  const details = rows.map(r => ({
+    raw_shift_date: r.shift_date,
+    type: typeof r.shift_date,
+    isDate: r.shift_date instanceof Date,
+    toString: String(r.shift_date),
+    toJSON: r.shift_date?.toJSON?.() || null,
+    toISOString: r.shift_date?.toISOString?.() || null,
+    splitT: r.shift_date instanceof Date ? r.shift_date.toISOString().split('T')[0] : String(r.shift_date).split('T')[0],
+    shift_type: r.shift_type,
+  }));
+  res.json({ rows, details });
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

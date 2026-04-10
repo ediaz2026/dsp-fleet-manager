@@ -162,6 +162,67 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary diagnostic (remove after use)
+app.get('/api/diag-week22', async (req, res) => {
+  const pool = require('./db/pool');
+
+  // 1. Shifts per week
+  const { rows: weeklyCounts } = await pool.query(`
+    SELECT DATE_TRUNC('week', shift_date)::date as week_start,
+      COUNT(*) as total_shifts,
+      COUNT(CASE WHEN publish_status != 'published' OR publish_status IS NULL THEN 1 END) as unpublished
+    FROM shifts
+    WHERE shift_date BETWEEN '2026-04-19' AND '2026-07-05'
+    GROUP BY DATE_TRUNC('week', shift_date)
+    ORDER BY week_start
+  `);
+
+  // 2. Shift types for week 22
+  const { rows: week22Types } = await pool.query(`
+    SELECT shift_type, COUNT(*) as count
+    FROM shifts WHERE shift_date BETWEEN '2026-05-31' AND '2026-06-06'
+    GROUP BY shift_type ORDER BY count DESC
+  `);
+
+  // 3. Duplicate shifts in week 22
+  const { rows: duplicates } = await pool.query(`
+    SELECT sh.staff_id, s.first_name, s.last_name, sh.shift_date, COUNT(*) as duplicates
+    FROM shifts sh JOIN staff s ON s.id = sh.staff_id
+    WHERE sh.shift_date BETWEEN '2026-05-31' AND '2026-06-06'
+    GROUP BY sh.staff_id, s.first_name, s.last_name, sh.shift_date
+    HAVING COUNT(*) > 1
+    ORDER BY duplicates DESC
+  `);
+
+  // 4. Drivers with most shifts in week 22
+  const { rows: driverCounts } = await pool.query(`
+    SELECT s.first_name, s.last_name, s.id as staff_id, COUNT(*) as shifts_w22
+    FROM shifts sh JOIN staff s ON s.id = sh.staff_id
+    WHERE sh.shift_date BETWEEN '2026-05-31' AND '2026-06-06'
+    GROUP BY s.id, s.first_name, s.last_name
+    ORDER BY shifts_w22 DESC
+  `);
+
+  // 5. Compare: same drivers in week 21
+  const { rows: driverCountsW21 } = await pool.query(`
+    SELECT s.id as staff_id, COUNT(*) as shifts_w21
+    FROM shifts sh JOIN staff s ON s.id = sh.staff_id
+    WHERE sh.shift_date BETWEEN '2026-05-24' AND '2026-05-30'
+    GROUP BY s.id
+  `);
+
+  const w21Map = {};
+  driverCountsW21.forEach(r => { w21Map[r.staff_id] = parseInt(r.shifts_w21); });
+
+  const comparison = driverCounts.map(d => ({
+    ...d,
+    shifts_w21: w21Map[d.staff_id] || 0,
+    diff: parseInt(d.shifts_w22) - (w21Map[d.staff_id] || 0)
+  })).filter(d => d.diff !== 0).sort((a, b) => b.diff - a.diff);
+
+  res.json({ weeklyCounts, week22Types, duplicates, driverCounts: driverCounts.slice(0, 30), comparison });
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

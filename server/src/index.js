@@ -162,22 +162,6 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
-// Temporary diagnostic (remove after use)
-app.get('/api/diag-sean-callout', async (req, res) => {
-  const pool = require('./db/pool');
-  const { rows: att } = await pool.query(`
-    SELECT a.staff_id, s.first_name, s.last_name, a.status, a.attendance_date
-    FROM attendance a JOIN staff s ON s.id = a.staff_id
-    WHERE a.attendance_date = '2026-04-12' AND s.first_name ILIKE '%sean%'
-  `);
-  const { rows: ops } = await pool.query(`
-    SELECT oa.staff_id, s.first_name, s.last_name, oa.route_code, oa.removed_from_ops
-    FROM ops_assignments oa JOIN staff s ON s.id = oa.staff_id
-    WHERE oa.plan_date = '2026-04-12' AND s.first_name ILIKE '%sean%'
-  `);
-  res.json({ attendance: att, ops_assignment: ops });
-});
-
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

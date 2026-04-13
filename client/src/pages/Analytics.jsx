@@ -7,7 +7,7 @@ import {
 import * as XLSX from 'xlsx';
 import {
   ChevronLeft, ChevronRight, Download, BarChart2, TrendingUp,
-  AlertTriangle, Users, Shield, X, Filter,
+  AlertTriangle, Users, Shield, X, Filter, ClipboardList,
 } from 'lucide-react';
 import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, addWeeks, addMonths, subMonths, subDays, getDaysInMonth } from 'date-fns';
 import api from '../api/client';
@@ -849,14 +849,76 @@ function RescueWorkloadTab() {
 
 // ══ MAIN ANALYTICS PAGE ═════════════════════════════════════════════════════
 const TABS = [
-  { id: 'volume',      label: 'Volume Share',      icon: BarChart2  },
-  { id: 'routes',      label: 'Route Intelligence', icon: TrendingUp },
-  { id: 'performance', label: 'Driver Performance', icon: Users      },
-  { id: 'rescue',      label: 'Rescue & Workload',  icon: AlertTriangle },
+  { id: 'volume',        label: 'Volume Share',        icon: BarChart2      },
+  { id: 'routes',        label: 'Route Intelligence',  icon: TrendingUp     },
+  { id: 'performance',   label: 'Driver Performance',  icon: Users          },
+  { id: 'rescue',        label: 'Rescue & Workload',   icon: AlertTriangle  },
+  { id: 'daily-summary', label: 'Daily Routes Summary', icon: ClipboardList },
 ];
 
+// ── Daily Routes Summary row config ──────────────────────────────────────────
+const SUMMARY_ROWS = [
+  { key: 'okami_l',              label: 'C — Route Commitment',   field: 'okami_count',    manual: true,  color: 'bg-blue-50' },
+  { key: 'scheduled_d',         label: 'D — Scheduled Routes',   manual: false, color: '' },
+  { key: 'cortex_no_flex_e',    label: 'E — Cortex (no Flex)',   manual: false, color: '' },
+  { key: 'flex_f',              label: 'F — Flex / Recycle',     manual: false, color: '' },
+  { key: 'hza_g',               label: 'G — HZA Step Vans',     manual: false, color: '' },
+  { key: 'helpers_h',           label: 'H — Helper Routes',     manual: false, color: '' },
+  { key: 'cx_routes_i',         label: 'I — CX Routes',         manual: false, color: 'bg-slate-50', formula: true },
+  { key: 'ero_count',           label: 'J — ERO',               field: 'ero_count',      manual: true,  color: 'bg-blue-50' },
+  { key: 'routes_dispatched_k', label: 'K — Routes Dispatched', manual: false, color: 'bg-slate-50', formula: true },
+  { key: 'amazon_canceled_m',   label: 'L — Amazon Canceled',   field: 'amazon_canceled', manual: true,  color: 'bg-blue-50' },
+  { key: 'training_day',        label: 'M — Training Day',      field: 'training_day',   manual: true,  color: 'bg-blue-50' },
+  { key: 'total_dispatched_n',  label: 'N — Total Dispatched',  manual: false, color: 'bg-slate-50', formula: true },
+  { key: 'scheduled_vs_total_o', label: 'O — Sched vs Total',   manual: false, color: 'bg-slate-50', formula: true },
+  { key: 'routes_owed_p',       label: 'P — Routes Owed DSP',   manual: false, color: 'bg-amber-50', formula: true },
+  { key: 'wst_completed_q',     label: 'Q — WST Completed',     field: 'wst_completed',  manual: true,  color: 'bg-blue-50' },
+  { key: 'wst_cancelled_r',     label: 'R — WST Cancelled',     field: 'wst_cancelled',  manual: true,  color: 'bg-blue-50' },
+  { key: 'routes_to_dispute_s', label: 'S — Routes to Dispute', manual: false, color: 'bg-red-50', formula: true },
+  { key: 'total_packages_t',    label: 'T — Total Packages',    manual: false, color: '' },
+  { key: 'spr_u',               label: 'U — SPR',               manual: false, color: 'bg-slate-50', formula: true },
+  { key: 'extras_v',            label: 'V — Extra Drivers',     manual: false, color: '' },
+];
+
+function getSundayStr() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const sunday = new Date(now);
+  sunday.setDate(now.getDate() - now.getDay());
+  return sunday.toISOString().split('T')[0];
+}
+
 export default function Analytics() {
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState('volume');
+
+  // Daily Routes Summary state
+  const [summaryWeekStart, setSummaryWeekStart] = useState(getSundayStr);
+  const [summaryStation] = useState('DMF5');
+
+  const { data: summaryData, isLoading: summaryLoading } = useQuery({
+    queryKey: ['daily-routes-summary', summaryWeekStart, summaryStation],
+    queryFn: () => api.get(`/analytics/daily-routes-summary?week_start=${summaryWeekStart}&station=${summaryStation}`).then(r => r.data),
+    enabled: tab === 'daily-summary',
+  });
+
+  const saveSummaryMutation = useMutation({
+    mutationFn: ({ date, ...data }) => api.put(`/analytics/daily-routes-summary/${date}`, { station: summaryStation, ...data }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['daily-routes-summary'] });
+      toast.success('Saved');
+    },
+    onError: () => toast.error('Failed to save'),
+  });
+
+  const prevSummaryWeek = () => { const d = new Date(summaryWeekStart + 'T12:00:00Z'); d.setDate(d.getDate() - 7); setSummaryWeekStart(d.toISOString().split('T')[0]); };
+  const nextSummaryWeek = () => { const d = new Date(summaryWeekStart + 'T12:00:00Z'); d.setDate(d.getDate() + 7); setSummaryWeekStart(d.toISOString().split('T')[0]); };
+  const goToCurrentWeek = () => setSummaryWeekStart(getSundayStr());
+
+  const fmtWeekDate = (offset) => {
+    const d = new Date(summaryWeekStart + 'T12:00:00Z');
+    d.setDate(d.getDate() + offset);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(offset === 6 ? { year: 'numeric' } : {}) });
+  };
 
   return (
     <div className="p-6 space-y-4">
@@ -879,6 +941,104 @@ export default function Analytics() {
       {tab === 'routes'      && <RouteIntelligenceTab />}
       {tab === 'performance' && <DriverPerformanceTab />}
       {tab === 'rescue'      && <RescueWorkloadTab />}
+
+      {tab === 'daily-summary' && (
+        <div className="space-y-4">
+          {/* Header + Week Navigation */}
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Daily Routes Summary</h2>
+              <p className="text-sm text-slate-500">DMF5 — Auto-populated from Ops Planner. Manual fields are editable.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={prevSummaryWeek} className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600">&#8249;</button>
+              <span className="text-sm font-semibold text-slate-700 min-w-[180px] text-center">
+                {fmtWeekDate(0)} – {fmtWeekDate(6)}
+              </span>
+              <button onClick={nextSummaryWeek} className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600">&#8250;</button>
+              <button onClick={goToCurrentWeek} className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50">Today</button>
+            </div>
+          </div>
+
+          {summaryLoading ? (
+            <div className="card h-48 animate-pulse bg-slate-100 rounded-xl" />
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="px-3 py-2.5 text-left font-semibold sticky left-0 bg-slate-800 z-10 min-w-[180px]">Field</th>
+                    {summaryData?.days?.map(d => (
+                      <th key={d.date} className="px-2 py-2.5 text-center font-semibold min-w-[80px]">
+                        <div>{d.day_of_week}</div>
+                        <div className="text-slate-300 text-[10px]">{new Date(d.date + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}</div>
+                      </th>
+                    ))}
+                    <th className="px-2 py-2.5 text-center font-semibold bg-slate-700 min-w-[80px]">Week Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {SUMMARY_ROWS.map(row => (
+                    <tr key={row.key} className={row.color}>
+                      <td className={`px-3 py-1.5 font-medium sticky left-0 z-10 ${row.color || 'bg-white'} ${row.formula ? 'text-slate-500 italic' : 'text-slate-800'}`}>
+                        {row.label}
+                        {row.manual && <span className="ml-1 text-[9px] text-blue-500 font-bold">EDIT</span>}
+                      </td>
+                      {summaryData?.days?.map(d => (
+                        <td key={d.date} className="px-1 py-1 text-center">
+                          {row.manual ? (
+                            <input
+                              type="number"
+                              min="0"
+                              defaultValue={d[row.key] ?? 0}
+                              key={`${d.date}-${row.key}-${d[row.key]}`}
+                              onBlur={e => {
+                                const val = parseInt(e.target.value) || 0;
+                                if (val !== (d[row.key] ?? 0)) {
+                                  saveSummaryMutation.mutate({ date: d.date, [row.field]: val });
+                                }
+                              }}
+                              className="w-14 text-center text-xs border border-blue-200 rounded px-1 py-0.5 bg-white focus:ring-1 focus:ring-blue-400 focus:outline-none"
+                            />
+                          ) : (
+                            <span className={`font-medium ${
+                              row.key === 'routes_to_dispute_s' && (d[row.key] ?? 0) > 0 ? 'text-red-600 font-bold' :
+                              row.key === 'routes_owed_p' ? 'text-amber-700' :
+                              row.formula ? 'text-slate-500' : 'text-slate-800'
+                            }`}>
+                              {row.key === 'spr_u'
+                                ? (d[row.key] != null ? Number(d[row.key]).toFixed(1) : '—')
+                                : row.key === 'total_packages_t'
+                                  ? (d[row.key] > 0 ? d[row.key].toLocaleString() : '—')
+                                  : (d[row.key] ?? 0)}
+                            </span>
+                          )}
+                        </td>
+                      ))}
+                      <td className="px-2 py-1 text-center font-bold text-slate-700 bg-slate-50">
+                        {row.key === 'spr_u' ? (
+                          summaryData?.weeklyTotals?.[row.key] != null
+                            ? Number(summaryData.weeklyTotals[row.key]).toFixed(1)
+                            : '—'
+                        ) : row.key === 'total_packages_t' ? (
+                          (summaryData?.weeklyTotals?.[row.key] ?? 0).toLocaleString()
+                        ) : (
+                          summaryData?.weeklyTotals?.[row.key] ?? 0
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 flex items-center gap-4 text-[10px] text-slate-400">
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 border border-blue-200 inline-block" /> Manual input</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-100 border border-slate-200 inline-block" /> Auto-calculated formula</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-white border border-slate-200 inline-block" /> Auto from Ops Planner</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

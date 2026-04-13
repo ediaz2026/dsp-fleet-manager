@@ -845,8 +845,8 @@ router.get('/sign-out-data', async (req, res) => {
       pool.query(`SELECT loadout FROM ops_loadout WHERE plan_date = $1`, [date]),
       pool.query(`SELECT oa.*, v.vehicle_name, v.license_plate FROM ops_assignments oa LEFT JOIN vehicles v ON v.id = oa.vehicle_id WHERE oa.plan_date = $1 AND oa.removed_from_ops IS NOT TRUE`, [date]),
       pool.query(`SELECT id, vehicle_name, license_plate FROM vehicles`),
-      pool.query(`SELECT d.staff_id, d.transponder_id, s.employee_id, s.first_name, s.last_name FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE s.status NOT IN ('terminated','deleted')`),
-      pool.query(`SELECT id, first_name, last_name FROM staff WHERE status NOT IN ('terminated','deleted')`),
+      pool.query(`SELECT d.staff_id, d.transponder_id, s.employee_id, s.first_name, s.last_name FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE s.status NOT IN ('deleted')`),
+      pool.query(`SELECT id, first_name, last_name FROM staff WHERE status NOT IN ('deleted')`),
       pool.query(`SELECT a.staff_id, a.status, s.first_name, s.last_name FROM attendance a JOIN staff s ON s.id = a.staff_id WHERE a.attendance_date = $1 AND a.status IN ('ncns','called_out','late','sent_home')`, [date]),
     ]);
 

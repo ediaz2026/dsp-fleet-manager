@@ -162,6 +162,51 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary diagnostic (remove after use)
+app.get('/api/diag-daily-summary', async (req, res) => {
+  const pool = require('./db/pool');
+
+  // 1. Daily summary from ops_assignments + pick_list
+  const { rows: dailySummary } = await pool.query(`
+    SELECT
+      oa.plan_date,
+      COUNT(DISTINCT oa.id) FILTER (WHERE oa.removed_from_ops IS NOT TRUE AND COALESCE(oa.shift_type,'') NOT IN ('ON CALL','UTO','PTO','SUSPENSION','TRAINING','TRAINER','DISPATCH AM','DISPATCH PM','HELPER','EXTRA')) as scheduled_routes,
+      COUNT(DISTINCT oa.id) FILTER (WHERE oa.removed_from_ops IS NOT TRUE AND oa.shift_type = 'HELPER') as helpers,
+      COUNT(DISTINCT oa.id) FILTER (WHERE oa.removed_from_ops IS NOT TRUE AND oa.shift_type = 'EXTRA') as extras
+    FROM ops_assignments oa
+    WHERE oa.plan_date BETWEEN '2026-04-06' AND '2026-04-12'
+    GROUP BY oa.plan_date ORDER BY oa.plan_date
+  `);
+
+  // Pick list totals separately (different table)
+  const { rows: pickTotals } = await pool.query(`
+    SELECT date as plan_date, SUM(total_packages) as total_packages, COUNT(*) as pick_rows
+    FROM pick_list_data
+    WHERE date BETWEEN '2026-04-06' AND '2026-04-12'
+    GROUP BY date ORDER BY date
+  `);
+
+  // 2. Route type breakdown from ops_daily_routes JSONB for Apr 9
+  const { rows: routeBreakdown } = await pool.query(`
+    SELECT
+      plan_date,
+      jsonb_array_length(routes) as total_routes,
+      (SELECT COUNT(*) FROM jsonb_array_elements(routes) r WHERE r->>'routeCode' LIKE 'CX%') as cx_count,
+      (SELECT COUNT(*) FROM jsonb_array_elements(routes) r WHERE r->>'routeCode' LIKE 'HZA%') as hza_count,
+      (SELECT COUNT(*) FROM jsonb_array_elements(routes) r WHERE r->>'routeCode' LIKE 'AT%' OR r->>'routeCode' LIKE 'AX%' OR r->>'routeCode' LIKE 'AV%') as flex_count
+    FROM ops_daily_routes
+    WHERE plan_date = '2026-04-09'
+  `);
+
+  // 3. All dates with ops_daily_routes data
+  const { rows: availableDates } = await pool.query(`
+    SELECT plan_date, jsonb_array_length(routes) as route_count
+    FROM ops_daily_routes ORDER BY plan_date DESC LIMIT 10
+  `);
+
+  res.json({ dailySummary, pickTotals, routeBreakdown, availableDates });
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

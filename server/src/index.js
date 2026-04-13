@@ -162,6 +162,20 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary: trim shifts beyond 8 weeks (remove after use)
+app.get('/api/trim-future-shifts', async (req, res) => {
+  const pool = require('./db/pool');
+  const { rowCount } = await pool.query(`
+    DELETE FROM shifts
+    WHERE shift_date > CURRENT_DATE + INTERVAL '8 weeks'
+      AND (publish_status IS NULL OR publish_status != 'published')
+      AND shift_type IN ('EDV','STEP VAN','EXTRA','HELPER','ON CALL','DISPATCH AM','DISPATCH PM','TRAINING','TRAINER')
+  `);
+  const { rows: [latest] } = await pool.query(`SELECT MAX(shift_date) as latest FROM shifts`);
+  const { rows: [count] } = await pool.query(`SELECT COUNT(*)::int as total FROM shifts WHERE shift_date >= CURRENT_DATE`);
+  res.json({ deleted: rowCount, latestShiftDate: latest.latest, remainingFutureShifts: count.total });
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

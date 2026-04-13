@@ -128,10 +128,23 @@ router.delete('/recurring/:scheduleId/entries/:entryId', managerOnly, async (req
 // Safe shift types that can be auto-deleted when recurring pattern changes
 const AUTO_SHIFT_TYPES = ['EDV', 'STEP VAN', 'EXTRA', 'HELPER'];
 
+// Maximum weeks ahead for schedule apply
+const MAX_WEEKS_AHEAD = 8;
+function checkWeekLimit(weekStart) {
+  const max = new Date();
+  max.setDate(max.getDate() + MAX_WEEKS_AHEAD * 7);
+  if (new Date(weekStart) > max) {
+    return { error: 'Cannot apply schedule more than 8 weeks in advance', maxDate: max.toISOString().split('T')[0] };
+  }
+  return null;
+}
+
 // Apply recurring schedule to a week
 router.post('/recurring/apply', managerOnly, async (req, res) => {
   const { schedule_id, week_start } = req.body; // week_start = Sunday date string
   if (!schedule_id || !week_start) return res.status(400).json({ error: 'schedule_id and week_start required' });
+  const weekLimitErr = checkWeekLimit(week_start);
+  if (weekLimitErr) return res.status(400).json(weekLimitErr);
 
   const { rows: entries } = await pool.query(
     'SELECT * FROM recurring_schedule_entries WHERE schedule_id=$1', [schedule_id]
@@ -408,6 +421,8 @@ router.delete('/day-recurring/:day/drivers/:staffId', managerOnly, async (req, r
 router.post('/day-recurring/apply', managerOnly, async (req, res) => {
   const { week_start } = req.body; // Sunday of target week (yyyy-MM-dd)
   if (!week_start) return res.status(400).json({ error: 'week_start required' });
+  const weekLimitErr = checkWeekLimit(week_start);
+  if (weekLimitErr) return res.status(400).json(weekLimitErr);
 
   // Get all enabled day configs with drivers
   const { rows: days } = await pool.query(
@@ -556,6 +571,8 @@ router.post('/rotating-apply', managerOnly, async (req, res) => {
   if (!week_start || !Array.isArray(assignments) || assignments.length === 0) {
     return res.status(400).json({ error: 'week_start and assignments required' });
   }
+  const weekLimitErr = checkWeekLimit(week_start);
+  if (weekLimitErr) return res.status(400).json(weekLimitErr);
 
   const weekDate = new Date(week_start + 'T12:00:00Z');
   const weekEnd = new Date(weekDate);

@@ -614,6 +614,14 @@ router.post('/bulk-apply', managerOnly, async (req, res) => {
     if (!Array.isArray(cells) || cells.length === 0) return res.status(400).json({ error: 'cells required' });
     if (!shift_type) return res.status(400).json({ error: 'shift_type required' });
 
+    // Cap at 8 weeks ahead
+    const MAX_WEEKS_AHEAD = 8;
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + MAX_WEEKS_AHEAD * 7);
+    const maxDateStr = maxDate.toISOString().split('T')[0];
+    const tooFar = cells.find(c => c.shift_date > maxDateStr);
+    if (tooFar) return res.status(400).json({ error: 'Cannot apply shifts more than 8 weeks in advance', maxDate: maxDateStr });
+
     let created = 0, updated = 0;
 
     for (const cell of cells) {

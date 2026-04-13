@@ -37,7 +37,25 @@ async function migrateAnalytics() {
   await pool.query(`ALTER TABLE ops_assignments ADD COLUMN IF NOT EXISTS finish_time VARCHAR(10)`);
   await pool.query(`ALTER TABLE ops_assignments ADD COLUMN IF NOT EXISTS rts_time    VARCHAR(10)`);
 
-  console.log('[migrateAnalytics] Done — dsp_volume_share, ops_rescues, ops_assignments columns');
+  // Daily Routes Manual — manual inputs for daily routes summary
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_routes_manual (
+      id SERIAL PRIMARY KEY,
+      plan_date DATE NOT NULL,
+      station VARCHAR(10) NOT NULL DEFAULT 'DMF5',
+      okami_count INTEGER DEFAULT 0,
+      ero_count INTEGER DEFAULT 0,
+      amazon_canceled INTEGER DEFAULT 0,
+      training_day INTEGER DEFAULT 0,
+      wst_completed INTEGER DEFAULT 0,
+      wst_cancelled INTEGER DEFAULT 0,
+      created_by INTEGER REFERENCES staff(id),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(plan_date, station)
+    )
+  `);
+
+  console.log('[migrateAnalytics] Done — dsp_volume_share, ops_rescues, daily_routes_manual, ops_assignments columns');
 }
 
 module.exports = migrateAnalytics;

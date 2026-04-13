@@ -373,4 +373,191 @@ router.get('/rescue-log', async (req, res) => {
   }
 });
 
+// ── Daily Routes Summary ─────────────────────────────────────────────────────
+
+// GET /api/analytics/daily-routes-summary?week_start=YYYY-MM-DD&station=DMF5
+router.get('/daily-routes-summary', async (req, res) => {
+  try {
+    const { week_start, station = 'DMF5' } = req.query;
+    if (!week_start) return res.status(400).json({ error: 'week_start required' });
+
+    const wsDate = new Date(week_start + 'T12:00:00Z');
+    const weDate = new Date(wsDate);
+    weDate.setDate(wsDate.getDate() + 6);
+    const weekEnd = weDate.toISOString().split('T')[0];
+
+    // Run all queries in parallel
+    const [asgnRes, routesRes, pickRes, manualRes] = await Promise.all([
+      // Scheduled drivers, helpers, extras from ops_assignments
+      pool.query(`
+        SELECT plan_date,
+          COUNT(*) FILTER (WHERE removed_from_ops IS NOT TRUE
+            AND COALESCE(shift_type,'') NOT IN ('ON CALL','UTO','PTO','SUSPENSION','TRAINING','TRAINER','DISPATCH AM','DISPATCH PM','HELPER','EXTRA')) as scheduled_d,
+          COUNT(*) FILTER (WHERE removed_from_ops IS NOT TRUE AND shift_type = 'HELPER') as helpers_h,
+          COUNT(*) FILTER (WHERE removed_from_ops IS NOT TRUE AND shift_type = 'EXTRA') as extras_v
+        FROM ops_assignments
+        WHERE plan_date BETWEEN $1 AND $2
+        GROUP BY plan_date
+      `, [week_start, weekEnd]),
+
+      // Route type breakdown from Amazon routes JSONB
+      pool.query(`
+        SELECT plan_date,
+          COUNT(*) FILTER (WHERE route->>'routeCode' NOT LIKE 'AT%'
+            AND route->>'routeCode' NOT LIKE 'AX%'
+            AND route->>'routeCode' NOT LIKE 'AV%'
+            AND route->>'routeCode' NOT LIKE 'HZA%') as cortex_no_flex_e,
+          COUNT(*) FILTER (WHERE route->>'routeCode' LIKE 'AT%'
+            OR route->>'routeCode' LIKE 'AX%'
+            OR route->>'routeCode' LIKE 'AV%') as flex_f,
+          COUNT(*) FILTER (WHERE route->>'routeCode' LIKE 'HZA%') as hza_g
+        FROM ops_daily_routes, jsonb_array_elements(routes) as route
+        WHERE plan_date BETWEEN $1 AND $2
+        GROUP BY plan_date
+      `, [week_start, weekEnd]),
+
+      // Total packages from pick list
+      pool.query(`
+        SELECT date as plan_date, SUM(total_packages)::int as total_packages_t
+        FROM pick_list_data
+        WHERE date BETWEEN $1 AND $2
+        GROUP BY date
+      `, [week_start, weekEnd]),
+
+      // Manual inputs
+      pool.query(`
+        SELECT * FROM daily_routes_manual
+        WHERE plan_date BETWEEN $1 AND $2 AND station = $3
+      `, [week_start, weekEnd, station]),
+    ]);
+
+    // Index results by date string
+    const byDate = (rows, key = 'plan_date') => {
+      const m = {};
+      rows.forEach(r => {
+        const d = r[key] instanceof Date ? r[key].toISOString().split('T')[0] : String(r[key]).split('T')[0];
+        m[d] = r;
+      });
+      return m;
+    };
+
+    const asgnMap = byDate(asgnRes.rows);
+    const routesMap = byDate(routesRes.rows);
+    const pickMap = byDate(pickRes.rows);
+    const manualMap = byDate(manualRes.rows);
+
+    // Build 7 day objects
+    const days = [];
+    const weeklyTotals = {
+      scheduled_d: 0, helpers_h: 0, extras_v: 0,
+      cortex_no_flex_e: 0, flex_f: 0, hza_g: 0,
+      cx_routes_i: 0, routes_dispatched_k: 0,
+      okami_l: 0, amazon_canceled_m: 0,
+      total_dispatched_n: 0, scheduled_vs_total_o: 0, routes_owed_p: 0,
+      wst_completed_q: 0, wst_cancelled_r: 0, routes_to_dispute_s: 0,
+      total_packages_t: 0, spr_u: null,
+      training_day: 0, ero_count: 0,
+    };
+
+    for (let i = 0; i < 7; i++) {
+      const dt = new Date(wsDate);
+      dt.setDate(wsDate.getDate() + i);
+      const dateStr = dt.toISOString().split('T')[0];
+
+      const a = asgnMap[dateStr] || {};
+      const r = routesMap[dateStr] || {};
+      const p = pickMap[dateStr] || {};
+      const m = manualMap[dateStr] || {};
+
+      const D = parseInt(a.scheduled_d) || 0;
+      const H = parseInt(a.helpers_h) || 0;
+      const V = parseInt(a.extras_v) || 0;
+      const E = parseInt(r.cortex_no_flex_e) || 0;
+      const F = parseInt(r.flex_f) || 0;
+      const G = parseInt(r.hza_g) || 0;
+      const L = parseInt(m.okami_count) || 0;
+      const M = parseInt(m.amazon_canceled) || 0;
+      const Q = parseInt(m.wst_completed) || 0;
+      const R = parseInt(m.wst_cancelled) || 0;
+      const T = parseInt(p.total_packages_t) || 0;
+      const training = parseInt(m.training_day) || 0;
+      const ero = parseInt(m.ero_count) || 0;
+
+      // Formula columns
+      const I = E - F - G;               // cx_routes
+      const K = E + F;                   // routes_dispatched
+      const N = K + L + H;               // total_dispatched
+      const O = N - D;                   // scheduled_vs_total
+      const P = N - H + M;               // routes_owed
+      const S = -Q - R + P;              // routes_to_dispute
+      const U = P > 0 ? +(T / P).toFixed(1) : null;  // spr
+
+      const day = {
+        date: dateStr,
+        day_of_week: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getUTCDay()],
+        // Auto data
+        scheduled_d: D, helpers_h: H, extras_v: V,
+        cortex_no_flex_e: E, flex_f: F, hza_g: G,
+        total_packages_t: T,
+        // Manual data
+        okami_l: L, amazon_canceled_m: M,
+        wst_completed_q: Q, wst_cancelled_r: R,
+        training_day: training, ero_count: ero,
+        // Formulas
+        cx_routes_i: I, routes_dispatched_k: K,
+        total_dispatched_n: N, scheduled_vs_total_o: O,
+        routes_owed_p: P, routes_to_dispute_s: S,
+        spr_u: U,
+      };
+      days.push(day);
+
+      // Accumulate weekly totals
+      for (const key of Object.keys(weeklyTotals)) {
+        if (key === 'spr_u') continue;
+        weeklyTotals[key] += day[key] || 0;
+      }
+    }
+
+    // Weekly SPR
+    weeklyTotals.spr_u = weeklyTotals.routes_owed_p > 0
+      ? +(weeklyTotals.total_packages_t / weeklyTotals.routes_owed_p).toFixed(1)
+      : null;
+
+    res.json({ week_start, station, days, weeklyTotals });
+  } catch (err) {
+    console.error('[analytics/daily-routes-summary]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/analytics/daily-routes-summary/:date
+router.put('/daily-routes-summary/:date', authMiddleware, async (req, res) => {
+  try {
+    const { date } = req.params;
+    const { station = 'DMF5', okami_count, ero_count, amazon_canceled, training_day, wst_completed, wst_cancelled } = req.body;
+
+    const { rows } = await pool.query(`
+      INSERT INTO daily_routes_manual (plan_date, station, okami_count, ero_count, amazon_canceled, training_day, wst_completed, wst_cancelled, created_by, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      ON CONFLICT (plan_date, station) DO UPDATE SET
+        okami_count = EXCLUDED.okami_count,
+        ero_count = EXCLUDED.ero_count,
+        amazon_canceled = EXCLUDED.amazon_canceled,
+        training_day = EXCLUDED.training_day,
+        wst_completed = EXCLUDED.wst_completed,
+        wst_cancelled = EXCLUDED.wst_cancelled,
+        updated_at = NOW()
+      RETURNING *
+    `, [date, station,
+        okami_count || 0, ero_count || 0, amazon_canceled || 0,
+        training_day || 0, wst_completed || 0, wst_cancelled || 0,
+        req.user?.id || null]);
+
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('[analytics/daily-routes-manual]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

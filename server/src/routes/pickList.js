@@ -941,14 +941,22 @@ router.get('/sign-out-data', async (req, res) => {
       });
     }
 
-    // 1. Drivers from ops_assignments
+    // 1. Drivers from ops_assignments (manual/dispatcher assignments take priority)
     for (const a of asgnArr) {
       if (a.staff_id) addRow(a.staff_id, a.route_code, a);
     }
 
-    // 2. Drivers matched via TID from ops_daily_routes
+    // Build set of routes already assigned via ops_assignments so TID matching
+    // doesn't overwrite manual reassignments (e.g. dispatcher moved Ray to CX176)
+    const assignedRouteCodes = new Set();
+    for (const a of asgnArr) {
+      if (a.route_code) assignedRouteCodes.add(a.route_code);
+    }
+
+    // 2. Drivers matched via TID from ops_daily_routes (skip manually assigned routes)
     for (const route of routes) {
       const rc = route.routeCode;
+      if (assignedRouteCodes.has(rc)) continue;
       for (const tid of (route.transponderIds || [])) {
         const d = tidToDriver[tid.trim().toUpperCase()];
         if (d?.staff_id) addRow(d.staff_id, rc, asgnByStaff[d.staff_id] || { vehicle_name: '', device_id: '' });

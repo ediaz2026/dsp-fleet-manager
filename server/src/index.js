@@ -162,6 +162,20 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary diagnostic (remove after use)
+app.get('/api/diag-cx176-v2', async (req, res) => {
+  const pool = require('./db/pool');
+  const { rows } = await pool.query(`
+    SELECT oa.id, s.first_name, s.last_name, oa.route_code, oa.staff_id
+    FROM ops_assignments oa
+    JOIN staff s ON s.id = oa.staff_id
+    WHERE oa.plan_date = '2026-04-09'
+      AND (oa.route_code = 'CX176' OR s.last_name ILIKE '%hernandez perdomo%' OR s.last_name ILIKE '%morales gonzalez%')
+    ORDER BY oa.route_code NULLS LAST
+  `);
+  res.json({ assignments: rows });
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

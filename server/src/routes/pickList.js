@@ -998,8 +998,12 @@ router.get('/sign-out-data', async (req, res) => {
       return true;
     });
 
-    // Remove EXTRA drivers from main list — they go in EXTRAS column only
-    const filteredRows = dedupedRows.filter(r => r.route !== 'EXTRA');
+    // Remove EXTRA drivers and absent drivers from main list — they go in EXTRAS column only
+    // Late drivers stay in main rows (they showed up and worked)
+    const filteredRows = dedupedRows.filter(r =>
+      r.route !== 'EXTRA' &&
+      !['called_out', 'ncns', 'sent_home'].includes(r.attStatus)
+    );
 
     // Extras by category — from attendance table + main rows, with route codes
     // Build name+route lookup from rows

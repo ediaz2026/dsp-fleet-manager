@@ -162,6 +162,53 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary diagnostic (remove after use)
+app.get('/api/diag-routes-summary', async (req, res) => {
+  const pool = require('./db/pool');
+
+  // 1. ops_assignments sample for Apr 9
+  const { rows: assignments } = await pool.query(`
+    SELECT oa.plan_date, oa.route_code, oa.shift_type,
+      s.first_name || ' ' || s.last_name as driver
+    FROM ops_assignments oa
+    JOIN staff s ON s.id = oa.staff_id
+    WHERE oa.plan_date = '2026-04-09' AND oa.removed_from_ops IS NOT TRUE
+    ORDER BY oa.route_code NULLS LAST LIMIT 20
+  `);
+
+  // 2. ops_daily_routes is JSONB — extract route types
+  const { rows: routesRaw } = await pool.query(`SELECT routes FROM ops_daily_routes WHERE plan_date = '2026-04-09'`);
+  const allRoutes = routesRaw[0]?.routes || [];
+  const routeSummary = allRoutes.slice(0, 30).map(r => ({ routeCode: r.routeCode, shiftType: r.shiftType }));
+
+  // 3. ops_daily_routes columns
+  const { rows: odrCols } = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'ops_daily_routes' ORDER BY ordinal_position`);
+
+  // 4. ops_assignments columns
+  const { rows: oaCols } = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'ops_assignments' ORDER BY ordinal_position`);
+
+  // 5. Route type classification
+  const { rows: routeTypes } = await pool.query(`
+    SELECT
+      CASE
+        WHEN route_code LIKE 'CX%' THEN 'CX'
+        WHEN route_code LIKE 'HZA%' THEN 'HZA'
+        WHEN route_code LIKE 'AX%' OR route_code LIKE 'AV%' OR route_code LIKE 'AT%' THEN 'Flex/Recycle'
+        WHEN route_code IS NULL OR route_code = '' THEN 'No Route'
+        ELSE 'Other: ' || route_code
+      END as route_type,
+      COUNT(*) as count
+    FROM ops_assignments
+    WHERE plan_date = '2026-04-09' AND removed_from_ops IS NOT TRUE
+    GROUP BY route_type ORDER BY count DESC
+  `);
+
+  // 6. pick_list_data columns
+  const { rows: plCols } = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'pick_list_data' ORDER BY ordinal_position`);
+
+  res.json({ assignments, routeSummary, odrColumns: odrCols.map(c => c.column_name), oaColumns: oaCols.map(c => c.column_name), routeTypes, plColumns: plCols.map(c => c.column_name) });
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

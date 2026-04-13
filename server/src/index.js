@@ -168,7 +168,7 @@ app.get('/api/diag-orlando-hza11', async (req, res) => {
 
   // 1. Orlando in staff table
   const { rows: orlando } = await pool.query(`
-    SELECT id, first_name, last_name, role, status, employment_status
+    SELECT id, first_name, last_name, role, status
     FROM staff WHERE first_name ILIKE '%orlando%' AND last_name ILIKE '%beltran%'
   `);
 

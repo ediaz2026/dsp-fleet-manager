@@ -162,6 +162,65 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary diagnostic (remove after use)
+app.get('/api/diag-orlando-hza11', async (req, res) => {
+  const pool = require('./db/pool');
+
+  // 1. Orlando in staff table
+  const { rows: orlando } = await pool.query(`
+    SELECT id, first_name, last_name, role, status, employment_status
+    FROM staff WHERE first_name ILIKE '%orlando%' AND last_name ILIKE '%beltran%'
+  `);
+
+  // 2. His historical data
+  const staffId = orlando[0]?.id;
+  let pastData = {};
+  if (staffId) {
+    const { rows: [pa] } = await pool.query(`SELECT COUNT(*)::int as cnt FROM ops_assignments WHERE staff_id=$1 AND plan_date < CURRENT_DATE`, [staffId]);
+    const { rows: [ps] } = await pool.query(`SELECT COUNT(*)::int as cnt FROM shifts WHERE staff_id=$1 AND shift_date < CURRENT_DATE`, [staffId]);
+    const { rows: [at] } = await pool.query(`SELECT COUNT(*)::int as cnt FROM attendance WHERE staff_id=$1`, [staffId]);
+    const { rows: [fs] } = await pool.query(`SELECT COUNT(*)::int as cnt FROM shifts WHERE staff_id=$1 AND shift_date >= CURRENT_DATE`, [staffId]);
+    const { rows: [fa] } = await pool.query(`SELECT COUNT(*)::int as cnt FROM ops_assignments WHERE staff_id=$1 AND plan_date >= CURRENT_DATE`, [staffId]);
+    pastData = {
+      past_assignments: pa.cnt, past_shifts: ps.cnt, attendance_records: at.cnt,
+      future_shifts: fs.cnt, future_assignments: fa.cnt
+    };
+  }
+
+  // 3. Check if Orlando exists in drivers table
+  let driversRow = null;
+  if (staffId) {
+    const { rows } = await pool.query(`SELECT * FROM drivers WHERE staff_id=$1`, [staffId]);
+    driversRow = rows[0] || 'NOT FOUND';
+  }
+
+  // 4. HZA11 on April 9
+  const { rows: hza11 } = await pool.query(`
+    SELECT oa.route_code, s.first_name, s.last_name, oa.removed_from_ops, oa.staff_id
+    FROM ops_assignments oa
+    JOIN staff s ON s.id = oa.staff_id
+    WHERE oa.plan_date = '2026-04-09' AND oa.route_code = 'HZA11'
+  `);
+
+  // Also check Amazon routes for HZA11
+  const { rows: routesRaw } = await pool.query(`SELECT routes FROM ops_daily_routes WHERE plan_date = '2026-04-09'`);
+  const allRoutes = routesRaw[0]?.routes || [];
+  const hza11Route = allRoutes.filter(r => r.routeCode === 'HZA11');
+
+  // Check audit log for Orlando
+  let auditLog = [];
+  if (staffId) {
+    const { rows } = await pool.query(`
+      SELECT action_type, entity_description, new_value, timestamp
+      FROM audit_log WHERE entity_id = $1 AND entity_type = 'staff'
+      ORDER BY timestamp DESC LIMIT 5
+    `, [staffId]);
+    auditLog = rows;
+  }
+
+  res.json({ orlando, pastData, driversRow, hza11, hza11Route, auditLog });
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

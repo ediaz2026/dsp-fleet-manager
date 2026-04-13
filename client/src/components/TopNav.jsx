@@ -19,7 +19,7 @@ const navGroups = [
   { to: '/vehicles', icon: Car, label: 'Fleet', mgmtOnly: true },
   { to: '/scorecard', icon: Star, label: 'Scorecard' },
   { to: '/attendance', icon: ClipboardCheck, label: 'Attendance', adminOnly: true },
-  { to: '/analytics', icon: BarChart2, label: 'Analytics', mgmtOnly: true },
+  { to: '/analytics', icon: BarChart2, label: 'Analytics', managerOnly: true },
   { to: '/payroll', icon: DollarSign, label: 'Payroll', adminOnly: true },
   { to: '/management', icon: Settings, label: 'Management', adminOnly: true },
 ];
@@ -108,6 +108,7 @@ export default function TopNav() {
   const isDriver = user?.role === 'driver';
   const isMgmt = ['manager', 'admin', 'dispatcher'].includes(user?.role);
   const isAdmin = user?.role === 'admin';
+  const isAdminOrManager = ['manager', 'admin'].includes(user?.role);
   const qc = useQueryClient();
 
   const [showNotifications, setShowNotifications] = useState(false);
@@ -189,6 +190,7 @@ export default function TopNav() {
   // Filter nav items based on role
   const visibleNavGroups = navGroups.filter(g => {
     if (g.adminOnly) return isAdmin;
+    if (g.managerOnly) return isAdminOrManager;
     if (g.mgmtOnly) return isMgmt;
     return true;
   });

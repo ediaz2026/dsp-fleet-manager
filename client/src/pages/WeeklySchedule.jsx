@@ -1404,7 +1404,7 @@ export default function WeeklySchedule() {
 
   // ── RENDER ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full relative">
+    <div className="flex flex-col relative -mt-6 -mx-6 -mb-6 px-6 pt-6 overflow-hidden" style={{ height: 'calc(100vh - 3.5rem)' }}>
 
       {/* ── Single-row header ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 mb-4 min-w-0">
@@ -1486,10 +1486,10 @@ export default function WeeklySchedule() {
       </div>
 
       {/* ── Main content area ──────────────────────────────────────────────── */}
-      <div className="flex gap-2 flex-1 min-h-0 -ml-6">
+      <div className="flex gap-2 flex-1 min-h-0 -ml-6 overflow-hidden">
 
         {/* ── Left filter panel ───────────────────────────────────────────── */}
-        <div className="w-52 flex-shrink-0 flex flex-col gap-2 sticky top-0 self-start">
+        <div className="w-52 flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
 
           {/* Driver chip search */}
           <div ref={chipContainerRef} className="relative bg-white border border-card-border rounded-r-xl shadow-sm cursor-text" onClick={() => chipInputRef.current?.focus()}>

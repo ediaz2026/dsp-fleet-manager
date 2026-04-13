@@ -162,6 +162,48 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary diagnostic (remove after use)
+app.get('/api/diag-signout-cx176', async (req, res) => {
+  const pool = require('./db/pool');
+
+  // 1. ops_assignments for CX176 on Apr 9
+  const { rows: assignments } = await pool.query(`
+    SELECT oa.id, oa.staff_id, s.first_name, s.last_name, oa.route_code, oa.plan_date,
+      oa.name_override, oa.removed_from_ops
+    FROM ops_assignments oa
+    JOIN staff s ON s.id = oa.staff_id
+    WHERE oa.plan_date = '2026-04-09'
+      AND (oa.route_code = 'CX176' OR oa.staff_id IN (
+        SELECT id FROM staff WHERE first_name ILIKE '%ray%' AND last_name ILIKE '%hernandez%'
+      ) OR oa.staff_id IN (
+        SELECT id FROM staff WHERE first_name ILIKE '%dayron%' AND last_name ILIKE '%morales%'
+      ))
+  `);
+
+  // 2. ops_daily_routes for CX176
+  const { rows: dailyRoutes } = await pool.query(`
+    SELECT route_code, transporter_id, da_name
+    FROM ops_daily_routes WHERE plan_date = '2026-04-09' AND route_code = 'CX176'
+  `);
+
+  // 3. TID for both drivers
+  const { rows: driverTids } = await pool.query(`
+    SELECT d.staff_id, d.transponder_id, s.employee_id, s.first_name, s.last_name
+    FROM drivers d JOIN staff s ON s.id = d.staff_id
+    WHERE d.staff_id IN (348, 360)
+  `);
+
+  // 4. All assignments with CX176 route
+  const { rows: allCx176 } = await pool.query(`
+    SELECT oa.id, oa.staff_id, s.first_name, s.last_name, oa.route_code, oa.removed_from_ops
+    FROM ops_assignments oa
+    JOIN staff s ON s.id = oa.staff_id
+    WHERE oa.plan_date = '2026-04-09' AND oa.route_code = 'CX176'
+  `);
+
+  res.json({ assignments, dailyRoutes, driverTids, allCx176 });
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

@@ -891,6 +891,13 @@ router.get('/sign-out-data', async (req, res) => {
       else if (d.employee_id) staffToTid[d.staff_id] = d.employee_id.trim().toUpperCase();
     }
 
+    // Build set of manually assigned routes BEFORE processing any rows —
+    // prevents TID fallback from stealing routes that were manually reassigned
+    const assignedRouteCodes = new Set();
+    for (const a of asgnArr) {
+      if (a.route_code) assignedRouteCodes.add(a.route_code);
+    }
+
     function addRow(staffId, routeCode, asgn) {
       if (seen.has(staffId)) return;
       const shift = shiftByStaff[staffId];
@@ -899,9 +906,13 @@ router.get('/sign-out-data', async (req, res) => {
       // No route code format filtering — all route codes are valid
       seen.add(staffId);
 
-      // If no route, try TID matching fallback
+      // If no route, try TID matching fallback — but only if that route
+      // hasn't been manually assigned to someone else
       if (!routeCode && staffToTid[staffId]) {
-        routeCode = tidToRoute[staffToTid[staffId]] || '';
+        const tidRoute = tidToRoute[staffToTid[staffId]] || '';
+        if (tidRoute && !assignedRouteCodes.has(tidRoute)) {
+          routeCode = tidRoute;
+        }
       }
       // If still no route, show shift type for HELPER/EXTRA
       const displayRoute = routeCode || (type === 'HELPER' ? 'HELPER' : type === 'EXTRA' ? 'EXTRA' : '');
@@ -944,13 +955,6 @@ router.get('/sign-out-data', async (req, res) => {
     // 1. Drivers from ops_assignments (manual/dispatcher assignments take priority)
     for (const a of asgnArr) {
       if (a.staff_id) addRow(a.staff_id, a.route_code, a);
-    }
-
-    // Build set of routes already assigned via ops_assignments so TID matching
-    // doesn't overwrite manual reassignments (e.g. dispatcher moved Ray to CX176)
-    const assignedRouteCodes = new Set();
-    for (const a of asgnArr) {
-      if (a.route_code) assignedRouteCodes.add(a.route_code);
     }
 
     // 2. Drivers matched via TID from ops_daily_routes (skip manually assigned routes)

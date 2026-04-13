@@ -252,38 +252,6 @@ export default function Dashboard() {
           </span>
         </div>
 
-        {/* Unassigned Routes */}
-        <div
-          className={`col-span-2 md:col-span-2 relative rounded-xl border shadow-sm p-3.5 flex flex-col gap-1.5 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all group ${
-            totalRouteCount === 0  ? 'bg-white border-slate-200'
-            : unassignedCount === 0 ? 'bg-emerald-50/50 border-emerald-100'
-            : 'bg-red-50/70 border-red-100'
-          }`}
-          onClick={() => navigate('/operational-planner')}
-        >
-          <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-            totalRouteCount === 0  ? 'bg-slate-100 text-slate-400'
-            : unassignedCount === 0 ? 'bg-emerald-100 text-emerald-600'
-            : 'bg-red-100 text-red-600'
-          }`}>
-            <AlertCircle size={14} />
-          </div>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0">Unassigned</p>
-            <p className="text-[1.75rem] font-black text-slate-900 leading-none">
-              {totalRouteCount === 0 ? '—' : unassignedCount}
-            </p>
-            <p className="text-[12px] text-slate-500 mt-0.5">
-              {totalRouteCount === 0 ? 'no routes loaded'
-              : unassignedCount === 0 ? '✅ all covered'
-              : `of ${totalRouteCount} routes`}
-            </p>
-          </div>
-          <span className="absolute bottom-2.5 right-3 flex items-center gap-0.5 text-[10px] text-slate-400 group-hover:text-blue-500 font-medium transition-colors">
-            View all <ChevronRight size={10} />
-          </span>
-        </div>
-
         {/* Schedule Status — HERO */}
         {(() => {
           const tintCls = {

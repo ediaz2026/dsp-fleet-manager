@@ -65,7 +65,7 @@ router.get('/', async (req, res) => {
              COUNT(*) FILTER (WHERE status='called_out') as called_out_count,
              COUNT(*) FILTER (WHERE status='late') as late_count
       FROM attendance
-      WHERE attendance_date >= date_trunc('week', CURRENT_DATE)
+      WHERE attendance_date >= date_trunc('week', CURRENT_DATE + INTERVAL '1 day') - INTERVAL '1 day'
     `),
 
     // AI-flagged inspections

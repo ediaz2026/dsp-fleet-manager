@@ -479,7 +479,8 @@ router.get('/daily-routes-summary', async (req, res) => {
       const M = parseInt(m.amazon_canceled) || 0;
       const Q = parseInt(m.wst_completed) || 0;
       const R = parseInt(m.wst_cancelled) || 0;
-      const T = parseInt(p.total_packages_t) || 0;
+      const pkgOverride = m.total_packages_override != null ? parseInt(m.total_packages_override) : null;
+      const T = pkgOverride != null ? pkgOverride : (parseInt(p.total_packages_t) || 0);
       const training = parseInt(m.training_day) || 0;
       const ero = parseInt(m.ero_count) || 0;
 
@@ -534,11 +535,11 @@ router.get('/daily-routes-summary', async (req, res) => {
 router.put('/daily-routes-summary/:date', authMiddleware, async (req, res) => {
   try {
     const { date } = req.params;
-    const { station = 'DMF5', okami_count, ero_count, amazon_canceled, training_day, wst_completed, wst_cancelled } = req.body;
+    const { station = 'DMF5', okami_count, ero_count, amazon_canceled, training_day, wst_completed, wst_cancelled, total_packages_override } = req.body;
 
     const { rows } = await pool.query(`
-      INSERT INTO daily_routes_manual (plan_date, station, okami_count, ero_count, amazon_canceled, training_day, wst_completed, wst_cancelled, created_by, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      INSERT INTO daily_routes_manual (plan_date, station, okami_count, ero_count, amazon_canceled, training_day, wst_completed, wst_cancelled, total_packages_override, created_by, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
       ON CONFLICT (plan_date, station) DO UPDATE SET
         okami_count = EXCLUDED.okami_count,
         ero_count = EXCLUDED.ero_count,
@@ -546,11 +547,13 @@ router.put('/daily-routes-summary/:date', authMiddleware, async (req, res) => {
         training_day = EXCLUDED.training_day,
         wst_completed = EXCLUDED.wst_completed,
         wst_cancelled = EXCLUDED.wst_cancelled,
+        total_packages_override = EXCLUDED.total_packages_override,
         updated_at = NOW()
       RETURNING *
     `, [date, station,
         okami_count || 0, ero_count || 0, amazon_canceled || 0,
         training_day || 0, wst_completed || 0, wst_cancelled || 0,
+        total_packages_override != null ? total_packages_override : null,
         req.user?.id || null]);
 
     res.json(rows[0]);

@@ -875,7 +875,7 @@ const SUMMARY_ROWS = [
   { key: 'wst_completed_q',     label: 'Q — WST Completed',     field: 'wst_completed',  manual: true,  color: 'bg-blue-50' },
   { key: 'wst_cancelled_r',     label: 'R — WST Cancelled',     field: 'wst_cancelled',  manual: true,  color: 'bg-blue-50' },
   { key: 'routes_to_dispute_s', label: 'S — Routes to Dispute', manual: false, color: 'bg-red-50', formula: true },
-  { key: 'total_packages_t',    label: 'T — Total Packages',    manual: false, color: '' },
+  { key: 'total_packages_t',    label: 'T — Total Packages',    field: 'total_packages_override', manual: true, color: 'bg-blue-50' },
   { key: 'spr_u',               label: 'U — SPR',               manual: false, color: 'bg-slate-50', formula: true },
   { key: 'extras_v',            label: 'V — Extra Drivers',     manual: false, color: '' },
 ];

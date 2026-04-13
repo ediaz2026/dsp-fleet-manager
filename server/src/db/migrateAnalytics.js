@@ -55,6 +55,8 @@ async function migrateAnalytics() {
     )
   `);
 
+  await pool.query(`ALTER TABLE daily_routes_manual ADD COLUMN IF NOT EXISTS total_packages_override INTEGER`);
+
   console.log('[migrateAnalytics] Done — dsp_volume_share, ops_rescues, daily_routes_manual, ops_assignments columns');
 }
 

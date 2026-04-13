@@ -3427,6 +3427,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
           {pickListData.length > 0 && (
             <p className="text-[11px] text-content-muted truncate">
               <ClipboardList size={10} className="inline mr-1 opacity-60" />{pickListData.length} routes loaded
+              {' · '}
+              {pickListData.reduce((s, r) => s + (r.total_packages || 0), 0).toLocaleString()} pkgs
             </p>
           )}
           <div className="flex items-center gap-1.5">

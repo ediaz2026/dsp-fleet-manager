@@ -963,7 +963,7 @@ export default function Analytics() {
           {summaryLoading ? (
             <div className="card h-48 animate-pulse bg-slate-100 rounded-xl" />
           ) : (
-            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-x-auto">
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-x-auto overflow-y-visible">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-slate-800 text-white">

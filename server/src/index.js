@@ -180,11 +180,12 @@ app.get('/api/diag-signout-cx176', async (req, res) => {
       ))
   `);
 
-  // 2. ops_daily_routes for CX176
-  const { rows: dailyRoutes } = await pool.query(`
-    SELECT route_code, transporter_id, da_name
-    FROM ops_daily_routes WHERE plan_date = '2026-04-09' AND route_code = 'CX176'
-  `);
+  // 2. ops_daily_routes for CX176 (routes is JSONB array)
+  const { rows: dailyRoutesRaw } = await pool.query(
+    `SELECT routes FROM ops_daily_routes WHERE plan_date = '2026-04-09'`
+  );
+  const allRoutes = dailyRoutesRaw[0]?.routes || [];
+  const dailyRoutes = allRoutes.filter(r => r.routeCode === 'CX176');
 
   // 3. TID for both drivers
   const { rows: driverTids } = await pool.query(`

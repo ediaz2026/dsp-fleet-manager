@@ -176,18 +176,20 @@ export default function Dashboard() {
   const publishedPct = totalTodayShifts === 0 ? null
     : Math.round((publishedToday / totalTodayShifts) * 100);
 
-  // ── Weekly attendance
-  const present_count    = parseInt(hoursSummary?.present_count    || 0, 10);
+  // ── Weekly attendance (scheduled drivers as denominator, NCNS + CO as absent)
+  const scheduled_count  = parseInt(hoursSummary?.scheduled_count  || 0, 10);
   const ncns_count       = parseInt(hoursSummary?.ncns_count       || 0, 10);
   const called_out_count = parseInt(hoursSummary?.called_out_count || 0, 10);
   const late_count       = parseInt(hoursSummary?.late_count       || 0, 10);
-  const attendTotal = present_count + late_count + ncns_count + called_out_count;
-  const attendRate  = attendTotal > 0 ? Math.round(((present_count + late_count) / attendTotal) * 100) : null;
-  const attendExtra = attendTotal > 0 ? (
+  const sent_home_count  = parseInt(hoursSummary?.sent_home_count  || 0, 10);
+  const absent = ncns_count + called_out_count;
+  const attendRate = scheduled_count > 0 ? Math.round(((scheduled_count - absent) / scheduled_count) * 100) : null;
+  const attendExtra = scheduled_count > 0 ? (
     <div className="flex gap-1.5 flex-wrap">
       {called_out_count > 0 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">CO: {called_out_count}</span>}
       {ncns_count > 0       && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700">NCNS: {ncns_count}</span>}
       {late_count > 0       && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Late: {late_count}</span>}
+      {sent_home_count > 0  && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">Sent Home: {sent_home_count}</span>}
     </div>
   ) : null;
 
@@ -395,7 +397,7 @@ export default function Dashboard() {
         <StatCard
           title="Weekly Attendance"
           value={attendRate !== null ? `${attendRate}%` : '—'}
-          subtitle={attendTotal > 0 ? `${attendTotal} shifts recorded` : 'no records yet this week'}
+          subtitle={scheduled_count > 0 ? `${scheduled_count - absent} of ${scheduled_count} drivers present` : 'no shifts yet this week'}
           icon={Users}
           tint={attendRate === null ? 'neutral' : attendRate >= 95 ? 'success' : attendRate >= 88 ? 'warning' : 'danger'}
           extra={attendExtra}

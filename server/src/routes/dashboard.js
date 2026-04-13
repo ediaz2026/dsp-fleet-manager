@@ -57,15 +57,21 @@ router.get('/', async (req, res) => {
       ORDER BY a.attendance_date DESC LIMIT 10
     `),
 
-    // Hours summary this week
+    // Weekly attendance: scheduled drivers as denominator, NCNS + called_out as absent
     pool.query(`
-      SELECT COALESCE(SUM(hours_worked), 0) as total_hours,
-             COUNT(*) FILTER (WHERE status='present') as present_count,
-             COUNT(*) FILTER (WHERE status='ncns') as ncns_count,
-             COUNT(*) FILTER (WHERE status='called_out') as called_out_count,
-             COUNT(*) FILTER (WHERE status='late') as late_count
+      SELECT
+        (SELECT COUNT(DISTINCT staff_id) FROM shifts
+         WHERE shift_date >= date_trunc('week', CURRENT_DATE + INTERVAL '1 day') - INTERVAL '1 day'
+           AND shift_date <= CURRENT_DATE
+           AND shift_type NOT IN ('ON CALL','UTO','PTO','SUSPENSION','TRAINING','TRAINER','DISPATCH AM','DISPATCH PM')
+        ) as scheduled_count,
+        COUNT(*) FILTER (WHERE status = 'ncns') as ncns_count,
+        COUNT(*) FILTER (WHERE status = 'called_out') as called_out_count,
+        COUNT(*) FILTER (WHERE status = 'late') as late_count,
+        COUNT(*) FILTER (WHERE status = 'sent_home') as sent_home_count
       FROM attendance
       WHERE attendance_date >= date_trunc('week', CURRENT_DATE + INTERVAL '1 day') - INTERVAL '1 day'
+        AND attendance_date <= CURRENT_DATE
     `),
 
     // AI-flagged inspections

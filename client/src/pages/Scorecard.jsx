@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Upload, Star, Award, CheckCircle, XCircle, X, Search } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
 
 function Badge({ pass, label }) {
   return pass
@@ -23,8 +24,89 @@ function MetricCell({ value, good, suffix = '' }) {
   return <span className={`font-semibold ${isGood ? 'text-green-700' : 'text-red-600'}`}>{fmt(value)}{suffix}</span>;
 }
 
+function SafetyCard({ label, value }) {
+  const v = parseFloat(value);
+  const color = value == null || isNaN(v) ? 'text-slate-400' : v === 0 ? 'text-green-600' : v <= 1 ? 'text-amber-600' : 'text-red-600';
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">{label}</p>
+      <p className={`text-lg font-bold ${color}`}>{value != null && !isNaN(v) ? v.toFixed(1) : 'No Data'}</p>
+      <p className="text-[9px] text-slate-400">events/100 trips</p>
+    </div>
+  );
+}
+
+function DriverScoreView({ weekLabel, currentYear }) {
+  const { data: sc, isLoading } = useQuery({
+    queryKey: ['my-scorecard', weekLabel, currentYear],
+    queryFn: () => api.get('/amazon-scorecard/mine', { params: { week: weekLabel } }).then(r => r.data),
+    enabled: !!weekLabel,
+  });
+
+  if (isLoading) return <div className="h-32 bg-slate-100 rounded-xl animate-pulse" />;
+  if (!sc) return <div className="text-center text-slate-400 py-16">No scorecard data available for this week.</div>;
+
+  const fmtMoney = v => v != null ? `$${parseFloat(v).toFixed(2)}` : '—';
+  const fmtPct = v => v != null ? `${parseFloat(v).toFixed(1)}%` : '—';
+
+  return (
+    <div className="space-y-4">
+      {/* Summary stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center">
+          <p className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wide">Rank</p>
+          <p className="text-2xl font-black text-indigo-700">#{sc.rank_position || '—'}</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Packages</p>
+          <p className="text-2xl font-black text-slate-800">{sc.packages != null ? Math.round(sc.packages) : '—'}</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">DCR</p>
+          <p className="text-2xl font-black text-slate-800">{fmtPct(sc.dcr_score)}</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">POD Rate</p>
+          <p className="text-2xl font-black text-slate-800">{sc.pod_rate != null ? `${(parseFloat(sc.pod_rate) * 100).toFixed(1)}%` : '—'}</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Bonus Hours</p>
+          <p className="text-2xl font-black">{sc.bonus_hours ? <span className="text-green-600">✓</span> : <span className="text-red-500">✗</span>}</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Incentive</p>
+          <p className="text-xl font-black text-emerald-700">{fmtMoney(sc.perfect_incentive)}</p>
+          {sc.incentive_per_package != null && <p className="text-[10px] text-slate-400">~{fmtMoney(sc.incentive_per_package)}/pkg</p>}
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">CDF DPMO</p>
+          <p className="text-2xl font-black text-slate-800">{sc.cdf_revised != null ? Math.round(sc.cdf_revised) : '—'}</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">DSB DPMO</p>
+          <p className="text-2xl font-black text-slate-800">{sc.dsb_revised != null ? Math.round(sc.dsb_revised) : '—'}</p>
+        </div>
+      </div>
+
+      {/* Safety metrics */}
+      <div>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Safety Metrics</p>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <SafetyCard label="Seatbelt Off Rate" value={sc.seatbelt_score} />
+          <SafetyCard label="Speeding Event Rate" value={sc.speeding_score} />
+          <SafetyCard label="Distractions Rate" value={sc.distraction_score} />
+          <SafetyCard label="Following Distance" value={sc.following_dist_score} />
+          <SafetyCard label="Sign/Signal Violations" value={sc.sign_signal_score} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Scorecard() {
+  const { user } = useAuth();
   const qc = useQueryClient();
+  const isDriver = user?.role === 'driver';
   const [selectedWeek, setSelectedWeek] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadingPdf, setUploadingPdf] = useState(false);
@@ -125,21 +207,23 @@ export default function Scorecard() {
     <div className="p-6 max-w-screen-xl mx-auto space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-slate-900">Scorecard</h1>
-        <div className="flex items-center gap-2">
-          <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border bg-indigo-50 border-indigo-200 hover:bg-indigo-100 cursor-pointer text-sm font-medium text-indigo-700 ${uploadingPdf ? 'opacity-50 pointer-events-none' : ''}`}>
-            <Upload size={14} /> {uploadingPdf ? 'Uploading…' : 'Upload Pre Dispute PDF'}
-            <input type="file" accept=".pdf" className="hidden" ref={pdfRef} disabled={uploadingPdf} onChange={e => handlePdfUpload(e.target.files?.[0])} />
-          </label>
-          <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border bg-white hover:bg-slate-50 cursor-pointer text-sm font-medium ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-            <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Final Scorecard (Excel)'}
-            <input type="file" accept=".xlsx,.xls" className="hidden" ref={fileRef} disabled={uploading} onChange={e => handleUpload(e.target.files?.[0])} />
-          </label>
-        </div>
+        <h1 className="text-2xl font-bold text-slate-900">{isDriver ? 'My Scorecard' : 'Scorecard'}</h1>
+        {!isDriver && (
+          <div className="flex items-center gap-2">
+            <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border bg-indigo-50 border-indigo-200 hover:bg-indigo-100 cursor-pointer text-sm font-medium text-indigo-700 ${uploadingPdf ? 'opacity-50 pointer-events-none' : ''}`}>
+              <Upload size={14} /> {uploadingPdf ? 'Uploading…' : 'Upload Pre Dispute PDF'}
+              <input type="file" accept=".pdf" className="hidden" ref={pdfRef} disabled={uploadingPdf} onChange={e => handlePdfUpload(e.target.files?.[0])} />
+            </label>
+            <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border bg-white hover:bg-slate-50 cursor-pointer text-sm font-medium ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+              <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Final Scorecard (Excel)'}
+              <input type="file" accept=".xlsx,.xls" className="hidden" ref={fileRef} disabled={uploading} onChange={e => handleUpload(e.target.files?.[0])} />
+            </label>
+          </div>
+        )}
       </div>
 
-      {/* Upload result */}
-      {uploadResult && (
+      {/* Upload result — managers only */}
+      {!isDriver && uploadResult && (
         <div className="bg-white rounded-xl border p-4 text-sm space-y-2">
           <div className="flex justify-between items-center">
             <p className="font-semibold">{uploadResult.weekLabel}: {uploadResult.matched}/{uploadResult.uploaded} matched</p>
@@ -166,8 +250,11 @@ export default function Scorecard() {
         </div>
       )}
 
-      {/* Pre Dispute PDF viewer */}
-      {weekLabel && (
+      {/* Driver view */}
+      {isDriver && weekLabel && <DriverScoreView weekLabel={weekLabel} currentYear={currentYear} />}
+
+      {/* Pre Dispute PDF viewer — managers only */}
+      {!isDriver && weekLabel && (
         preDisputePdf ? (
           <div className="w-full rounded-xl overflow-hidden border border-slate-200 shadow-sm">
             <div className="bg-slate-50 px-4 py-2.5 flex items-center justify-between border-b border-slate-200">
@@ -185,8 +272,8 @@ export default function Scorecard() {
         )
       )}
 
-      {/* Search + sort */}
-      {drivers.length > 0 && (
+      {/* Search + sort — managers only */}
+      {!isDriver && drivers.length > 0 && (
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative flex-1 min-w-[200px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -202,8 +289,8 @@ export default function Scorecard() {
       )}
 
       {/* Empty / loading */}
-      {isLoading && <p className="text-center text-slate-400 py-12">Loading…</p>}
-      {!isLoading && rawDrivers.length === 0 && weekLabel && (
+      {!isDriver && isLoading && <p className="text-center text-slate-400 py-12">Loading…</p>}
+      {!isDriver && !isLoading && rawDrivers.length === 0 && weekLabel && (
         <div className="bg-white rounded-xl border py-12 text-center">
           <Award size={36} className="mx-auto text-slate-300 mb-3" />
           <p className="font-semibold text-slate-500">No scorecard data for {weekLabel}</p>
@@ -211,8 +298,8 @@ export default function Scorecard() {
         </div>
       )}
 
-      {/* Leaderboard */}
-      {drivers.length > 0 && (
+      {/* Leaderboard — managers only */}
+      {!isDriver && drivers.length > 0 && (
         <div className="bg-white rounded-xl border overflow-hidden">
           <table className="w-full text-sm">
             <thead>

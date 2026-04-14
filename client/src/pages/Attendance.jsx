@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useMemo } from 'react';
 import { format, subDays, getWeek } from 'date-fns';
-import { Download, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Check, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import api from '../api/client';
 import Badge from '../components/Badge';
 import toast from 'react-hot-toast';
@@ -65,6 +65,19 @@ export default function Attendance() {
     queryKey: ['weekly-issues', weekStart],
     queryFn: () => api.get(`/attendance/weekly-issues?week_start=${weekStart}`).then(r => r.data),
     enabled: tab === 'week',
+  });
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => api.delete(`/attendance/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['weekly-issues'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      setConfirmDeleteId(null);
+      toast.success('Record deleted');
+    },
+    onError: () => toast.error('Failed to delete'),
   });
 
   const excuseMutation = useMutation({
@@ -214,6 +227,19 @@ export default function Attendance() {
                           >
                             <div className="flex items-center justify-between gap-3 flex-wrap">
                               <div className="flex items-center gap-2.5">
+                                {isManager && (
+                                  confirmDeleteId === issue.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] text-red-500 font-semibold">Delete?</span>
+                                      <button onClick={() => deleteMutation.mutate(issue.id)} className="text-[10px] font-bold text-red-600 hover:text-red-700">Yes</button>
+                                      <button onClick={() => setConfirmDeleteId(null)} className="text-[10px] text-slate-400 hover:text-slate-600">Cancel</button>
+                                    </div>
+                                  ) : (
+                                    <button onClick={() => setConfirmDeleteId(issue.id)} className="text-slate-300 hover:text-red-500 transition-colors" title="Delete record">
+                                      <Trash2 size={13} />
+                                    </button>
+                                  )
+                                )}
                                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${badge.bg} ${badge.text}`}>
                                   {badge.label}
                                 </span>

@@ -68,6 +68,12 @@ router.post('/', managerOnly, async (req, res) => {
   res.status(201).json({ attendance: rows[0], consequences });
 });
 
+// DELETE /api/attendance/:id
+router.delete('/:id', managerOnly, async (req, res) => {
+  await pool.query('DELETE FROM attendance WHERE id = $1', [req.params.id]);
+  res.json({ success: true });
+});
+
 // PUT /api/attendance/:id
 router.put('/:id', managerOnly, async (req, res) => {
   const { status, call_out_reason, late_minutes, clock_in, clock_out, notes, excused, excuse_reason } = req.body;

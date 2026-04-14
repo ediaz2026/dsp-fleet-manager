@@ -137,7 +137,7 @@ export default function Attendance() {
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 w-fit">
-        {[['week', 'This Week'], ['violations', 'Violations'], ['export', 'Export']].map(([v, l]) => (
+        {[['week', 'Attendance'], ['violations', 'Violations'], ['export', 'Export']].map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${tab === v ? 'bg-primary text-white' : 'text-slate-500 hover:text-slate-700'}`}>
             {l}

@@ -148,14 +148,21 @@ export default function Attendance() {
       {/* ── This Week ─────────────────────────────────────────────────────── */}
       {tab === 'week' && (
         <div className="space-y-4">
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+          <div className="rounded-xl p-4 bg-indigo-50 border border-indigo-100">
             <div className="flex items-center justify-between">
-              <button onClick={() => setWeekStart(w => shiftWeek(w, -1))} className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 transition-colors">
-                <ChevronLeft size={16} />
+              <button onClick={() => setWeekStart(w => shiftWeek(w, -1))} className="flex items-center justify-center w-9 h-9 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-600 text-xl font-bold transition-colors">
+                <ChevronLeft size={18} />
               </button>
               <div className="text-center">
-                <p className="text-sm font-semibold text-slate-800">Week {getWeekNumber(weekStart)} · {fmtWeekRange(weekStart)}</p>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-600 text-white tracking-wide">
+                    Week {getWeekNumber(weekStart)}
+                  </span>
+                  <span className="text-sm font-bold text-slate-800">
+                    {fmtWeekRange(weekStart)}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
                   Showing NCNS, Call Outs, Late arrivals and Sent Home. Excused absences do not count toward violations.
                 </p>
               </div>
@@ -163,12 +170,12 @@ export default function Attendance() {
                 <button
                   onClick={() => setWeekStart(w => shiftWeek(w, 1))}
                   disabled={isCurrentWeek}
-                  className={`p-2 rounded-lg border border-slate-200 transition-colors ${isCurrentWeek ? 'text-slate-300 cursor-not-allowed' : 'hover:bg-slate-50 text-slate-500'}`}
+                  className={`flex items-center justify-center w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 text-xl font-bold transition-colors ${isCurrentWeek ? 'opacity-25 cursor-not-allowed' : 'hover:bg-indigo-200'}`}
                 >
-                  <ChevronRight size={16} />
+                  <ChevronRight size={18} />
                 </button>
                 {!isCurrentWeek && (
-                  <button onClick={() => setWeekStart(currentSunday)} className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors">
+                  <button onClick={() => setWeekStart(currentSunday)} className="px-3 py-1.5 text-xs font-semibold rounded-full bg-white border border-indigo-300 text-indigo-600 hover:bg-indigo-50 transition-colors">
                     Today
                   </button>
                 )}

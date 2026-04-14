@@ -162,36 +162,6 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
-// Temporary diagnostic (remove after use)
-app.get('/api/diag-dash-error', async (req, res) => {
-  const pool = require('./db/pool');
-  // Try each dashboard query individually to find the one that fails
-  const results = {};
-  const queries = {
-    todayShifts: `SELECT COUNT(*) FROM shifts WHERE shift_date = CURRENT_DATE`,
-    fleetAlerts: `SELECT COUNT(*) FROM fleet_alerts WHERE is_resolved = false`,
-    attendanceIssues: `SELECT COUNT(*) FROM attendance WHERE status IN ('ncns','called_out','late') AND attendance_date >= CURRENT_DATE - 7`,
-    hoursSummary: `SELECT COUNT(*) FROM attendance WHERE attendance_date >= date_trunc('week', CURRENT_DATE + INTERVAL '1 day') - INTERVAL '1 day'`,
-    flaggedInspections: `SELECT COUNT(*) FROM inspections WHERE ai_analysis_status = 'flagged' OR damage_detected = true`,
-    upcomingExpirations: `SELECT COUNT(*) FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE s.status = 'active' AND d.license_expiration IS NOT NULL AND d.license_expiration <= CURRENT_DATE + 90`,
-    recentViolations: `SELECT COUNT(*) FROM staff_violations sv JOIN consequence_rules cr ON cr.id = sv.rule_id WHERE sv.created_at >= CURRENT_DATE - 30`,
-    staffStats: `SELECT COUNT(*) FROM staff WHERE status = 'active'`,
-    vehicleStats: `SELECT COUNT(*) FROM vehicles`,
-    repairStats: `SELECT COUNT(*) FROM repairs WHERE status = 'open'`,
-    driverReportStats: `SELECT COUNT(*) FROM driver_reports WHERE status = 'pending'`,
-    driverAlerts: `SELECT COUNT(*) FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE s.role = 'driver' AND s.status = 'active' AND d.license_expiration IS NOT NULL`,
-  };
-  for (const [name, sql] of Object.entries(queries)) {
-    try {
-      await pool.query(sql);
-      results[name] = 'OK';
-    } catch (e) {
-      results[name] = 'ERROR: ' + e.message;
-    }
-  }
-  res.json(results);
-});
-
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

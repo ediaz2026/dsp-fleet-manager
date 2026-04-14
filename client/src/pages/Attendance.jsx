@@ -16,15 +16,20 @@ const STATUS_BADGE = {
   sent_home:  { label: 'Sent Home',  bg: 'bg-slate-100',  text: 'text-slate-600' },
 };
 
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function getSundayStr() {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const sun = new Date(now);
   sun.setDate(now.getDate() - now.getDay());
-  return sun.toISOString().split('T')[0];
+  return localDateStr(sun);
 }
 
 function fmtWeekRange(ws) {
-  const s = new Date(ws + 'T12:00:00Z');
+  const parts = ws.split('-').map(Number);
+  const s = new Date(parts[0], parts[1] - 1, parts[2]);
   const e = new Date(s);
   e.setDate(s.getDate() + 6);
   return `${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;

@@ -197,6 +197,15 @@ export default function Scorecard() {
   };
 
   const pkgs = (v) => v != null ? Math.round(v) : '—';
+  const isPD = scorecardView === 'pre_dispute';
+
+  // Pre Dispute derived pass logic
+  const pdSafetyPass = (d) => {
+    const metrics = [d.seatbelt_score, d.speeding_score, d.distraction_score, d.following_dist_score, d.sign_signal_score];
+    return metrics.every(v => v == null || parseFloat(v) === 0);
+  };
+  const pdDsbPass = (d) => d.dsb_revised == null || parseFloat(d.dsb_revised) === 0;
+  const pdBonusPass = (d) => pdSafetyPass(d) && pdDsbPass(d);
 
   return (
     <div className="p-6 max-w-screen-xl mx-auto space-y-4">
@@ -308,16 +317,16 @@ export default function Scorecard() {
                   <tr className={`${getRowBg(d, i)} cursor-pointer hover:bg-slate-100/70 transition-colors`} onClick={() => setExpandedRow(expandedRow === d.id ? null : d.id)}>
                     <td className="px-3 py-2 text-center font-mono text-xs text-slate-400">{d.rank_position ?? i + 1}</td>
                     <td className="px-3 py-2 font-medium text-slate-800">
-                      {isPerfect(d) && <Star size={12} className="inline text-amber-500 mr-1" fill="#F59E0B" />}
+                      {!isPD && isPerfect(d) && <Star size={12} className="inline text-amber-500 mr-1" fill="#F59E0B" />}
                       {d.driver_name}
                       {!d.staff_id && <span className="ml-1 text-[9px] text-red-400">(unmatched)</span>}
                     </td>
-                    <td className="px-3 py-2 text-center font-bold">{fmt(d.final_ranking)}</td>
+                    <td className="px-3 py-2 text-center font-bold">{isPD ? (d.dcr_score != null ? `${fmt(d.dcr_score)}%` : '—') : fmt(d.final_ranking)}</td>
                     <td className="px-3 py-2 text-center">{pkgs(d.packages)}</td>
-                    <td className="px-3 py-2 text-center"><Badge pass={d.safety_pass} /></td>
-                    <td className="px-3 py-2 text-center"><Badge pass={d.dsb_pass} /></td>
-                    <td className="px-3 py-2 text-center"><Badge pass={d.bonus_hours} label={d.bonus_hours ? 'Yes' : '—'} /></td>
-                    <td className="px-3 py-2 text-center text-xs">{d.incentive_per_package > 0 ? `$${parseFloat(d.incentive_per_package).toFixed(2)}` : '—'}</td>
+                    <td className="px-3 py-2 text-center">{isPD ? <Badge pass={pdSafetyPass(d)} /> : <Badge pass={d.safety_pass} />}</td>
+                    <td className="px-3 py-2 text-center">{isPD ? <Badge pass={pdDsbPass(d)} /> : <Badge pass={d.dsb_pass} />}</td>
+                    <td className="px-3 py-2 text-center">{isPD ? <Badge pass={pdBonusPass(d)} label={pdBonusPass(d) ? 'Yes' : '—'} /> : <Badge pass={d.bonus_hours} label={d.bonus_hours ? 'Yes' : '—'} />}</td>
+                    <td className="px-3 py-2 text-center text-xs">{isPD ? '—' : (d.incentive_per_package > 0 ? `$${parseFloat(d.incentive_per_package).toFixed(2)}` : '—')}</td>
                     <td className="px-2 py-2 text-center text-slate-400">
                       {expandedRow === d.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </td>
@@ -357,9 +366,11 @@ export default function Scorecard() {
                                 ['DSB DPMO', d.dsb_revised != null ? Math.round(d.dsb_revised) : '—'],
                                 ['CDF DPMO', d.cdf_revised != null ? Math.round(d.cdf_revised) : '—'],
                                 ['POD Rate', d.pod_rate != null ? `${(parseFloat(d.pod_rate) * 100).toFixed(1)}%` : '—'],
-                                ['Transporter ID', d.transporter_id || '—'],
-                                ['Incentive/pkg', d.incentive_per_package > 0 ? `$${parseFloat(d.incentive_per_package).toFixed(2)}` : '—'],
-                                ['Perfect Incentive', isPerfect(d) ? `$${parseFloat(d.perfect_incentive||0).toFixed(2)}` : '—'],
+                                ...(!isPD ? [
+                                  ['Transporter ID', d.transporter_id || '—'],
+                                  ['Incentive/pkg', d.incentive_per_package > 0 ? `$${parseFloat(d.incentive_per_package).toFixed(2)}` : '—'],
+                                  ['Perfect Incentive', isPerfect(d) ? `$${parseFloat(d.perfect_incentive||0).toFixed(2)}` : '—'],
+                                ] : []),
                               ].map(([label, val]) => (
                                 <div key={label} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-indigo-100">
                                   <span className="text-xs text-slate-600">{label}</span>

@@ -162,39 +162,6 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
-// Temporary diagnostic (remove after use)
-app.get('/api/diag-attendance', async (req, res) => {
-  const pool = require('./db/pool');
-
-  const { rows: thisWeek } = await pool.query(`
-    SELECT a.attendance_date, s.first_name || ' ' || s.last_name as driver, a.status
-    FROM attendance a JOIN staff s ON s.id = a.staff_id
-    WHERE a.attendance_date >= date_trunc('week', CURRENT_DATE + INTERVAL '1 day') - INTERVAL '1 day'
-      AND a.status IN ('ncns','called_out','late','sent_home')
-    ORDER BY a.attendance_date DESC
-  `);
-
-  const { rows: rules } = await pool.query(`SELECT * FROM consequence_rules ORDER BY id`);
-
-  const { rows: violationTables } = await pool.query(
-    `SELECT table_name FROM information_schema.tables WHERE table_name ILIKE '%violation%'`
-  );
-
-  let violationsSample = [];
-  if (violationTables.some(t => t.table_name === 'staff_violations')) {
-    const { rows } = await pool.query(`
-      SELECT sv.*, s.first_name, s.last_name, cr.rule_name
-      FROM staff_violations sv
-      JOIN staff s ON s.id = sv.staff_id
-      LEFT JOIN consequence_rules cr ON cr.id = sv.rule_id
-      ORDER BY sv.created_at DESC LIMIT 10
-    `);
-    violationsSample = rows;
-  }
-
-  res.json({ thisWeekAttendance: thisWeek, consequenceRules: rules, violationTables: violationTables.map(t => t.table_name), violationsSample });
-});
-
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

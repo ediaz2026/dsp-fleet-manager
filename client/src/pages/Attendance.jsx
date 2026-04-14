@@ -228,17 +228,17 @@ export default function Attendance() {
                               {isManager && (
                                 <div className="flex items-center gap-2">
                                   <span className="text-[10px] text-slate-400">Excused?</span>
-                                  <div className="flex gap-1">
+                                  <div className="inline-flex">
                                     <button
                                       onClick={() => excuseMutation.mutate({ id: issue.id, excused: false, excuse_reason: null })}
-                                      className={`px-2 py-0.5 text-[11px] font-semibold rounded-lg border transition-colors ${
-                                        !issue.excused ? 'bg-slate-800 text-white border-slate-800' : 'text-slate-400 border-slate-200 hover:border-slate-300'
+                                      className={`px-3 py-1 text-xs font-semibold rounded-l-full border transition-colors ${
+                                        !issue.excused ? 'bg-red-500 text-white border-red-500' : 'bg-white text-slate-400 border-slate-200 hover:border-red-300 hover:text-red-400'
                                       }`}
                                     >No</button>
                                     <button
                                       onClick={() => excuseMutation.mutate({ id: issue.id, excused: true, excuse_reason: issue.excuse_reason || '' })}
-                                      className={`px-2 py-0.5 text-[11px] font-semibold rounded-lg border transition-colors ${
-                                        issue.excused ? 'bg-emerald-600 text-white border-emerald-600' : 'text-slate-400 border-slate-200 hover:border-slate-300'
+                                      className={`px-3 py-1 text-xs font-semibold rounded-r-full border-t border-b border-r transition-colors ${
+                                        issue.excused ? 'bg-green-500 text-white border-green-500' : 'bg-white text-slate-400 border-slate-200 hover:border-green-300 hover:text-green-400'
                                       }`}
                                     >Yes</button>
                                   </div>

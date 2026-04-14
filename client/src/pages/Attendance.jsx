@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useMemo } from 'react';
-import { format, subDays } from 'date-fns';
-import { Download, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Check } from 'lucide-react';
+import { format, subDays, getWeek } from 'date-fns';
+import { Download, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../api/client';
 import Badge from '../components/Badge';
 import toast from 'react-hot-toast';
@@ -35,6 +35,19 @@ function fmtWeekRange(ws) {
   return `${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 }
 
+function getWeekNumber(ws) {
+  const parts = ws.split('-').map(Number);
+  const d = new Date(parts[0], parts[1] - 1, parts[2]);
+  return getWeek(d, { weekStartsOn: 0, firstWeekContainsDate: 1 });
+}
+
+function shiftWeek(ws, delta) {
+  const parts = ws.split('-').map(Number);
+  const d = new Date(parts[0], parts[1] - 1, parts[2]);
+  d.setDate(d.getDate() + delta * 7);
+  return localDateStr(d);
+}
+
 export default function Attendance() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -43,7 +56,9 @@ export default function Attendance() {
   const [exportEnd, setExportEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
 
   const isManager = ['manager', 'admin', 'dispatcher'].includes(user?.role);
-  const weekStart = getSundayStr();
+  const currentSunday = getSundayStr();
+  const [weekStart, setWeekStart] = useState(currentSunday);
+  const isCurrentWeek = weekStart === currentSunday;
 
   // ── This Week tab data ────────────────────────────────────────────────────
   const { data: weeklyIssues = [], isLoading: weekLoading } = useQuery({
@@ -134,11 +149,32 @@ export default function Attendance() {
       {tab === 'week' && (
         <div className="space-y-4">
           <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-            <p className="text-sm font-semibold text-slate-700">{fmtWeekRange(weekStart)}</p>
-            <p className="text-xs text-slate-500 mt-1">
-              Showing NCNS, Call Outs, Late arrivals and Sent Home for this week.
-              Excused absences are saved but do not count toward violations.
-            </p>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-bold text-slate-700">Week {getWeekNumber(weekStart)} · {fmtWeekRange(weekStart)}</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Showing NCNS, Call Outs, Late arrivals and Sent Home.
+                  Excused absences do not count toward violations.
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => setWeekStart(w => shiftWeek(w, -1))} className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 transition-colors">
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  onClick={() => setWeekStart(w => shiftWeek(w, 1))}
+                  disabled={isCurrentWeek}
+                  className={`p-1.5 rounded-lg border border-slate-200 transition-colors ${isCurrentWeek ? 'text-slate-300 cursor-not-allowed' : 'hover:bg-slate-50 text-slate-500'}`}
+                >
+                  <ChevronRight size={16} />
+                </button>
+                {!isCurrentWeek && (
+                  <button onClick={() => setWeekStart(currentSunday)} className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors">
+                    Today
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           {weekLoading ? (

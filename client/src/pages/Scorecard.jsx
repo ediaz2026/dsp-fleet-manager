@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Upload, Star, Award, CheckCircle, XCircle, X, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Upload, Star, Award, CheckCircle, XCircle, X, Search } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -114,8 +114,12 @@ export default function Scorecard() {
   const [expandedRow, setExpandedRow] = useState(null);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('rank');
+  const [scorecardView, setScorecardView] = useState('final');
+  const [iframeError, setIframeError] = useState(false);
   const fileRef = useRef();
   const pdfRef = useRef();
+
+  const getEmbedUrl = (url) => `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
 
   const { data: weeks = [] } = useQuery({
     queryKey: ['amazon-scorecard-weeks'],
@@ -209,21 +213,34 @@ export default function Scorecard() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-slate-900">{isDriver ? 'My Scorecard' : 'Scorecard'}</h1>
         {!isDriver && (
-          <div className="flex items-center gap-2">
+          scorecardView === 'pre_dispute' ? (
             <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border bg-indigo-50 border-indigo-200 hover:bg-indigo-100 cursor-pointer text-sm font-medium text-indigo-700 ${uploadingPdf ? 'opacity-50 pointer-events-none' : ''}`}>
               <Upload size={14} /> {uploadingPdf ? 'Uploading…' : 'Upload Pre Dispute PDF'}
               <input type="file" accept=".pdf" className="hidden" ref={pdfRef} disabled={uploadingPdf} onChange={e => handlePdfUpload(e.target.files?.[0])} />
             </label>
+          ) : (
             <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border bg-white hover:bg-slate-50 cursor-pointer text-sm font-medium ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
               <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Final Scorecard (Excel)'}
               <input type="file" accept=".xlsx,.xls" className="hidden" ref={fileRef} disabled={uploading} onChange={e => handleUpload(e.target.files?.[0])} />
             </label>
-          </div>
+          )
         )}
       </div>
 
-      {/* Upload result — managers only */}
-      {!isDriver && uploadResult && (
+      {/* Tab bar — managers only */}
+      {!isDriver && (
+        <div className="flex gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 w-fit">
+          {[['pre_dispute', 'Pre Dispute'], ['final', 'Final Scorecard']].map(([v, l]) => (
+            <button key={v} onClick={() => { setScorecardView(v); setIframeError(false); }}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${scorecardView === v ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Upload result — managers only, final view */}
+      {!isDriver && scorecardView === 'final' && uploadResult && (
         <div className="bg-white rounded-xl border p-4 text-sm space-y-2">
           <div className="flex justify-between items-center">
             <p className="font-semibold">{uploadResult.weekLabel}: {uploadResult.matched}/{uploadResult.uploaded} matched</p>
@@ -241,20 +258,20 @@ export default function Scorecard() {
       {/* Week nav */}
       {weeks.length > 0 && (
         <div className="flex items-center justify-center gap-4">
-          <button onClick={() => setSelectedWeek(prevWeek)} disabled={!prevWeek} className="p-2 rounded-lg border bg-white hover:bg-slate-50 disabled:opacity-30"><ChevronLeft size={16} /></button>
+          <button onClick={() => { setSelectedWeek(prevWeek); setIframeError(false); }} disabled={!prevWeek} className="p-2 rounded-lg border bg-white hover:bg-slate-50 disabled:opacity-30"><ChevronLeft size={16} /></button>
           <div className="text-center">
             <p className="font-bold text-lg text-slate-900">{weekLabel || '—'}</p>
             <p className="text-xs text-slate-400">{weeks[weekIdx]?.year || ''}</p>
           </div>
-          <button onClick={() => setSelectedWeek(nextWeek)} disabled={!nextWeek} className="p-2 rounded-lg border bg-white hover:bg-slate-50 disabled:opacity-30"><ChevronRight size={16} /></button>
+          <button onClick={() => { setSelectedWeek(nextWeek); setIframeError(false); }} disabled={!nextWeek} className="p-2 rounded-lg border bg-white hover:bg-slate-50 disabled:opacity-30"><ChevronRight size={16} /></button>
         </div>
       )}
 
       {/* Driver view */}
       {isDriver && weekLabel && <DriverScoreView weekLabel={weekLabel} currentYear={currentYear} />}
 
-      {/* Pre Dispute PDF viewer — managers only */}
-      {!isDriver && weekLabel && (
+      {/* Pre Dispute PDF viewer — managers, pre_dispute tab */}
+      {!isDriver && scorecardView === 'pre_dispute' && weekLabel && (
         preDisputePdf ? (
           <div className="w-full rounded-xl overflow-hidden border border-slate-200 shadow-sm">
             <div className="bg-slate-50 px-4 py-2.5 flex items-center justify-between border-b border-slate-200">
@@ -263,7 +280,18 @@ export default function Scorecard() {
                 Open in new tab ↗
               </a>
             </div>
-            <iframe src={preDisputePdf.pdf_url} className="w-full" style={{ height: '800px' }} title="Pre Dispute Scorecard" />
+            {iframeError ? (
+              <div className="text-center py-8">
+                <p className="text-slate-500 text-sm mb-3">Unable to preview PDF inline.</p>
+                <a href={preDisputePdf.pdf_url} target="_blank" rel="noopener noreferrer"
+                   className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
+                  Open Pre Dispute Scorecard ↗
+                </a>
+              </div>
+            ) : (
+              <iframe src={getEmbedUrl(preDisputePdf.pdf_url)} className="w-full" style={{ height: '800px' }} title="Pre Dispute Scorecard"
+                onError={() => setIframeError(true)} />
+            )}
           </div>
         ) : (
           <div className="bg-white border border-slate-200 rounded-xl p-4 text-center">
@@ -272,8 +300,8 @@ export default function Scorecard() {
         )
       )}
 
-      {/* Search + sort — managers only */}
-      {!isDriver && drivers.length > 0 && (
+      {/* Search + sort — managers only, final view */}
+      {!isDriver && scorecardView === 'final' && drivers.length > 0 && (
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative flex-1 min-w-[200px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -289,8 +317,8 @@ export default function Scorecard() {
       )}
 
       {/* Empty / loading */}
-      {!isDriver && isLoading && <p className="text-center text-slate-400 py-12">Loading…</p>}
-      {!isDriver && !isLoading && rawDrivers.length === 0 && weekLabel && (
+      {!isDriver && scorecardView === 'final' && isLoading && <p className="text-center text-slate-400 py-12">Loading…</p>}
+      {!isDriver && scorecardView === 'final' && !isLoading && rawDrivers.length === 0 && weekLabel && (
         <div className="bg-white rounded-xl border py-12 text-center">
           <Award size={36} className="mx-auto text-slate-300 mb-3" />
           <p className="font-semibold text-slate-500">No scorecard data for {weekLabel}</p>
@@ -298,8 +326,8 @@ export default function Scorecard() {
         </div>
       )}
 
-      {/* Leaderboard — managers only */}
-      {!isDriver && drivers.length > 0 && (
+      {/* Leaderboard — managers only, final view */}
+      {!isDriver && scorecardView === 'final' && drivers.length > 0 && (
         <div className="bg-white rounded-xl border overflow-hidden">
           <table className="w-full text-sm">
             <thead>
@@ -312,6 +340,7 @@ export default function Scorecard() {
                 <th className="px-3 py-2.5 text-center">DSB</th>
                 <th className="px-3 py-2.5 text-center">Bonus</th>
                 <th className="px-3 py-2.5 text-center">Incentive</th>
+                <th className="px-2 py-2.5 w-6"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -330,39 +359,55 @@ export default function Scorecard() {
                     <td className="px-3 py-2 text-center"><Badge pass={d.dsb_pass} /></td>
                     <td className="px-3 py-2 text-center"><Badge pass={d.bonus_hours} label={d.bonus_hours ? 'Yes' : '—'} /></td>
                     <td className="px-3 py-2 text-center text-xs">{d.incentive_per_package > 0 ? `$${parseFloat(d.incentive_per_package).toFixed(2)}` : '—'}</td>
+                    <td className="px-2 py-2 text-center text-slate-400">
+                      {expandedRow === d.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </td>
                   </tr>
                   {expandedRow === d.id && (
-                    <tr><td colSpan={8} className="bg-slate-50 p-0">
-                      <div className="px-6 py-4 space-y-4">
-                        {/* Incentives */}
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-green-700 mb-2">Incentives & Bonus</p>
-                          <div className="grid grid-cols-3 gap-3 text-xs">
-                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">Bonus Hours</span><Badge pass={d.bonus_hours} label={d.bonus_hours ? 'Earned' : 'Not eligible'} /></div>
-                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">Perfect Incentive</span>{isPerfect(d) ? <span className="font-bold text-green-700">${parseFloat(d.perfect_incentive||0).toFixed(2)}</span> : <span className="text-slate-400">—</span>}</div>
-                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">Per Package</span><span className="font-bold">{d.incentive_per_package > 0 ? `$${parseFloat(d.incentive_per_package).toFixed(2)}` : '—'}</span></div>
+                    <tr><td colSpan={9} className="p-0">
+                      <div className="bg-indigo-50 border-t border-indigo-100 px-6 py-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {/* Left — Safety */}
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-600 mb-2">Safety Metrics</p>
+                            <div className="space-y-1.5">
+                              {[
+                                ['Seatbelt Off Rate', d.seatbelt_score],
+                                ['Speeding Event Rate', d.speeding_score],
+                                ['Distractions Rate', d.distraction_score],
+                                ['Following Distance Rate', d.following_dist_score],
+                                ['Sign/Signal Violations Rate', d.sign_signal_score],
+                              ].map(([label, val]) => {
+                                const v = parseFloat(val);
+                                const color = val == null || isNaN(v) ? 'text-slate-400' : v === 0 ? 'text-green-600' : v <= 1 ? 'text-amber-600' : 'text-red-600';
+                                return (
+                                  <div key={label} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                                    <span className="text-xs text-slate-600">{label}</span>
+                                    <span className={`text-xs font-bold ${color}`}>{val != null && !isNaN(v) ? v.toFixed(1) : 'No Data'}<span className="text-slate-400 font-normal ml-1">events/100 trips</span></span>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                        {/* Quality */}
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700 mb-2">Quality Metrics</p>
-                          <div className="grid grid-cols-4 gap-3 text-xs">
-                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">DCR Score</span><MetricCell value={d.dcr_score} good={v => v >= 95} /></div>
-                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">POD Rate</span><MetricCell value={d.pod_rate != null ? parseFloat((d.pod_rate * 100).toFixed(1)) : null} good={v => v >= 98} suffix="%" /></div>
-                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">CDF (Revised)</span><MetricCell value={d.cdf_revised} good={v => v === 0} /></div>
-                            <div className="bg-white rounded-lg p-2.5 border"><span className="text-slate-400 block mb-0.5">DSB (Revised)</span><MetricCell value={d.dsb_revised} good={v => v === 0} /></div>
-                          </div>
-                        </div>
-                        {/* Safety */}
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-600 mb-2">Safety Metrics</p>
-                          <div className="grid grid-cols-5 gap-3 text-xs">
-                            {[['Speeding',d.speeding_score],['Seatbelt',d.seatbelt_score],['Distraction',d.distraction_score],['Sign/Signal',d.sign_signal_score],['Following Dist',d.following_dist_score]].map(([label,val]) => (
-                              <div key={label} className="bg-white rounded-lg p-2.5 border">
-                                <span className="text-slate-400 block mb-0.5">{label}</span>
-                                <span className="font-bold mr-1">{fmt(val)}</span><Badge pass={val == 100} />
-                              </div>
-                            ))}
+                          {/* Right — Delivery */}
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-600 mb-2">Delivery Details</p>
+                            <div className="space-y-1.5">
+                              {[
+                                ['DCR', d.dcr_score != null ? `${fmt(d.dcr_score)}%` : '—'],
+                                ['DSB DPMO', d.dsb_revised != null ? Math.round(d.dsb_revised) : '—'],
+                                ['CDF DPMO', d.cdf_revised != null ? Math.round(d.cdf_revised) : '—'],
+                                ['POD Rate', d.pod_rate != null ? `${(parseFloat(d.pod_rate) * 100).toFixed(1)}%` : '—'],
+                                ['Transporter ID', d.transporter_id || '—'],
+                                ['Incentive/pkg', d.incentive_per_package > 0 ? `$${parseFloat(d.incentive_per_package).toFixed(2)}` : '—'],
+                                ['Perfect Incentive', isPerfect(d) ? `$${parseFloat(d.perfect_incentive||0).toFixed(2)}` : '—'],
+                              ].map(([label, val]) => (
+                                <div key={label} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                                  <span className="text-xs text-slate-600">{label}</span>
+                                  <span className="text-xs font-bold text-slate-800">{val}</span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </div>

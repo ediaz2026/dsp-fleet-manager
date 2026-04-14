@@ -162,33 +162,6 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
-// Temporary diagnostic (remove after use)
-app.get('/api/diag-expirations', async (req, res) => {
-  const pool = require('./db/pool');
-  const { rows: licenses } = await pool.query(`
-    SELECT s.first_name || ' ' || s.last_name as driver, d.license_expiration,
-      (d.license_expiration - CURRENT_DATE) as days_until
-    FROM drivers d JOIN staff s ON s.id = d.staff_id
-    WHERE d.license_expiration IS NOT NULL AND s.status = 'active'
-    ORDER BY d.license_expiration ASC LIMIT 20
-  `);
-  const { rows: vehicles } = await pool.query(`
-    SELECT vehicle_name, insurance_expiration, registration_expiration, next_inspection_date
-    FROM vehicles WHERE status = 'active'
-    AND (insurance_expiration <= CURRENT_DATE + 30 OR registration_expiration <= CURRENT_DATE + 30 OR next_inspection_date <= CURRENT_DATE + 14)
-    LIMIT 10
-  `);
-  const { rows: alerts } = await pool.query(`
-    SELECT
-      COUNT(*) FILTER (WHERE d.license_expiration BETWEEN CURRENT_DATE AND CURRENT_DATE + 30) AS d30,
-      COUNT(*) FILTER (WHERE d.license_expiration BETWEEN CURRENT_DATE + 31 AND CURRENT_DATE + 60) AS d60,
-      COUNT(*) FILTER (WHERE d.license_expiration BETWEEN CURRENT_DATE + 61 AND CURRENT_DATE + 90) AS d90
-    FROM drivers d JOIN staff s ON s.id = d.staff_id
-    WHERE s.role = 'driver' AND s.status = 'active' AND d.license_expiration IS NOT NULL
-  `);
-  res.json({ licenses, vehicles, alerts: alerts[0] });
-});
-
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

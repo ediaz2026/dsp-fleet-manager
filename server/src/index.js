@@ -162,6 +162,25 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
+// Temporary diagnostic (remove after use)
+app.get('/api/diag-scorecard', async (req, res) => {
+  const pool = require('./db/pool');
+  const { rows: cols } = await pool.query(`
+    SELECT column_name, data_type FROM information_schema.columns
+    WHERE table_name = 'amazon_scorecards' ORDER BY ordinal_position
+  `);
+  const { rows: weeks } = await pool.query(`
+    SELECT DISTINCT week_label, amazon_week, year, COUNT(*) as drivers
+    FROM amazon_scorecards GROUP BY week_label, amazon_week, year
+    ORDER BY year DESC, amazon_week DESC LIMIT 10
+  `);
+  const { rows: sample } = await pool.query(`
+    SELECT id, week_label, staff_id, driver_name, rank_position, overall_standing
+    FROM amazon_scorecards ORDER BY id DESC LIMIT 5
+  `);
+  res.json({ columns: cols, weeks, sample });
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

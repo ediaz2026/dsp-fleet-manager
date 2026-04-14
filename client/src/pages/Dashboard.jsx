@@ -524,37 +524,32 @@ export default function Dashboard() {
           ))}
         </InsightCard>
 
-        {/* Upcoming Expirations */}
+        {/* Upcoming Expirations — drivers + vehicles */}
         <InsightCard
           title="Expirations"
           icon={Calendar}
           iconClass="bg-amber-100 text-amber-600"
-          to="/vehicles"
+          to="/drivers"
           tint={upcomingExpirations.length > 0 ? 'warning' : 'neutral'}
         >
           {upcomingExpirations.length === 0 ? (
             <div className="flex flex-col items-center py-3 text-emerald-500">
               <CheckCircle size={20} className="mb-1 opacity-60" />
-              <p className="text-xs text-slate-400">No upcoming expirations</p>
+              <p className="text-xs text-slate-400">All documents current</p>
             </div>
-          ) : upcomingExpirations.flatMap((v, i) =>
-              [
-                v.insurance_expiration    && { label: 'Ins', date: v.insurance_expiration },
-                v.registration_expiration && { label: 'Reg', date: v.registration_expiration },
-                v.next_inspection_date    && { label: 'Insp', date: v.next_inspection_date },
-              ].filter(Boolean).map((d, j) => {
-                const daysLeft = Math.round((new Date(d.date) - new Date()) / 86400000);
-                return (
-                  <div key={`${i}-${j}`} className="flex items-center gap-1.5 py-0.5 border-b border-slate-50 last:border-0">
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${daysLeft <= 7 ? 'bg-red-500' : 'bg-amber-400'}`} />
-                    <p className="text-xs text-slate-700 truncate flex-1">{v.vehicle_name}</p>
-                    <span className="text-[10px] text-slate-400 flex-shrink-0">{d.label}</span>
-                    <span className={`text-[10px] font-bold flex-shrink-0 ${daysLeft <= 7 ? 'text-red-600' : 'text-amber-600'}`}>{daysLeft}d</span>
-                  </div>
-                );
-              })
-            ).slice(0, 8)
-          }
+          ) : upcomingExpirations.slice(0, 8).map((item, i) => {
+            const d = item.days_remaining;
+            const badgeClass = d < 0 ? 'bg-red-100 text-red-700' : d <= 14 ? 'bg-red-100 text-red-700' : d <= 30 ? 'bg-orange-100 text-orange-700' : 'bg-yellow-100 text-yellow-700';
+            const badgeText = d < 0 ? `${Math.abs(d)}d ago` : `${d}d`;
+            return (
+              <div key={i} className="flex items-center gap-1.5 py-1 border-b border-slate-50 last:border-0">
+                <span className="text-[11px] flex-shrink-0">{item.type === 'driver' ? '🪪' : '🚐'}</span>
+                <p className="text-xs text-slate-700 truncate flex-1">{item.name}</p>
+                <span className="text-[10px] text-slate-400 flex-shrink-0">{item.document}</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${badgeClass}`}>{badgeText}</span>
+              </div>
+            );
+          })}
         </InsightCard>
 
         {/* AI Damage Flags */}

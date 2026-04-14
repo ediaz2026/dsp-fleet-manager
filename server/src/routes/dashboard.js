@@ -83,21 +83,32 @@ router.get('/', async (req, res) => {
       ORDER BY i.inspection_date DESC LIMIT 5
     `),
 
-    // Upcoming document expirations (30 days)
+    // Upcoming expirations — drivers + vehicles combined (90 days)
     pool.query(`
-      SELECT vehicle_name, license_plate,
-             insurance_expiration, registration_expiration, next_inspection_date,
-             LEAST(
-               CASE WHEN insurance_expiration IS NOT NULL THEN insurance_expiration END,
-               CASE WHEN registration_expiration IS NOT NULL THEN registration_expiration END,
-               CASE WHEN next_inspection_date IS NOT NULL THEN next_inspection_date END
-             ) as earliest_expiry
-      FROM vehicles
-      WHERE status = 'active'
-        AND (insurance_expiration <= CURRENT_DATE + 30
-          OR registration_expiration <= CURRENT_DATE + 30
-          OR next_inspection_date <= CURRENT_DATE + 14)
-      ORDER BY earliest_expiry LIMIT 10
+      SELECT 'driver' as type, s.first_name || ' ' || s.last_name as name,
+        d.license_expiration as expiry_date, 'Driver License' as document,
+        (d.license_expiration - CURRENT_DATE)::int as days_remaining
+      FROM drivers d JOIN staff s ON s.id = d.staff_id
+      WHERE s.status = 'active' AND s.role = 'driver'
+        AND d.license_expiration IS NOT NULL
+        AND d.license_expiration <= CURRENT_DATE + 90
+      UNION ALL
+      SELECT 'vehicle', v.vehicle_name, v.insurance_expiration, 'Insurance',
+        (v.insurance_expiration - CURRENT_DATE)::int
+      FROM vehicles v WHERE v.status = 'active'
+        AND v.insurance_expiration IS NOT NULL AND v.insurance_expiration <= CURRENT_DATE + 90
+      UNION ALL
+      SELECT 'vehicle', v.vehicle_name, v.registration_expiration, 'Registration',
+        (v.registration_expiration - CURRENT_DATE)::int
+      FROM vehicles v WHERE v.status = 'active'
+        AND v.registration_expiration IS NOT NULL AND v.registration_expiration <= CURRENT_DATE + 90
+      UNION ALL
+      SELECT 'vehicle', v.vehicle_name, v.next_inspection_date, 'Inspection',
+        (v.next_inspection_date - CURRENT_DATE)::int
+      FROM vehicles v WHERE v.status = 'active'
+        AND v.next_inspection_date IS NOT NULL AND v.next_inspection_date <= CURRENT_DATE + 90
+      ORDER BY days_remaining ASC
+      LIMIT 20
     `),
 
     // Recent violations

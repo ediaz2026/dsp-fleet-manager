@@ -11,6 +11,7 @@ async function checkAndApplyConsequences(staffId, violationType) {
     const { rows } = await pool.query(
       `SELECT COUNT(*) as cnt FROM attendance
        WHERE staff_id = $1 AND status = $2
+       AND (excused IS NOT TRUE)
        AND attendance_date >= CURRENT_DATE - $3`,
       [staffId, violationType, rule.time_period_days]
     );

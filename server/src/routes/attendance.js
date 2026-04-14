@@ -47,21 +47,21 @@ router.get('/today', async (req, res) => {
 
 // POST /api/attendance - record/update attendance
 router.post('/', managerOnly, async (req, res) => {
-  const { staff_id, shift_id, attendance_date, status, call_out_reason, late_minutes = 0, notes } = req.body;
+  const { staff_id, shift_id, attendance_date, status, call_out_reason, late_minutes = 0, notes, excused = false, excuse_reason } = req.body;
 
   // Upsert attendance record
   const { rows } = await pool.query(
-    `INSERT INTO attendance (staff_id, shift_id, attendance_date, status, call_out_reason, late_minutes, notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    `INSERT INTO attendance (staff_id, shift_id, attendance_date, status, call_out_reason, late_minutes, notes, excused, excuse_reason, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      ON CONFLICT (staff_id, attendance_date)
-     DO UPDATE SET status=$4, call_out_reason=$5, late_minutes=$6, notes=$7, created_by=$8, created_at=NOW()
+     DO UPDATE SET status=$4, call_out_reason=$5, late_minutes=$6, notes=$7, excused=$8, excuse_reason=$9, created_by=$10, created_at=NOW()
      RETURNING *`,
-    [staff_id, shift_id, attendance_date, status, call_out_reason, late_minutes, notes, req.user.id]
+    [staff_id, shift_id, attendance_date, status, call_out_reason, late_minutes, notes, excused, excuse_reason || null, req.user.id]
   );
 
-  // Check consequences for NCNS, called_out, late
+  // Check consequences for NCNS, called_out, late (only if NOT excused)
   let consequences = [];
-  if (['ncns', 'called_out', 'late'].includes(status)) {
+  if (['ncns', 'called_out', 'late'].includes(status) && !excused) {
     consequences = await checkAndApplyConsequences(staff_id, status);
   }
 
@@ -70,20 +70,23 @@ router.post('/', managerOnly, async (req, res) => {
 
 // PUT /api/attendance/:id
 router.put('/:id', managerOnly, async (req, res) => {
-  const { status, call_out_reason, late_minutes, clock_in, clock_out, notes } = req.body;
+  const { status, call_out_reason, late_minutes, clock_in, clock_out, notes, excused, excuse_reason } = req.body;
   let hours = null;
   if (clock_in && clock_out) {
     hours = (new Date(clock_out) - new Date(clock_in)) / 3600000;
   }
   const { rows } = await pool.query(
     `UPDATE attendance SET status=$1, call_out_reason=$2, late_minutes=$3,
-     clock_in=$4, clock_out=$5, hours_worked=$6, notes=$7 WHERE id=$8 RETURNING *`,
-    [status, call_out_reason, late_minutes, clock_in, clock_out, hours, notes, req.params.id]
+     clock_in=$4, clock_out=$5, hours_worked=$6, notes=$7,
+     excused=COALESCE($8, excused), excuse_reason=COALESCE($9, excuse_reason)
+     WHERE id=$10 RETURNING *`,
+    [status, call_out_reason, late_minutes, clock_in, clock_out, hours, notes,
+     excused != null ? excused : null, excuse_reason !== undefined ? excuse_reason : null, req.params.id]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found' });
 
   let consequences = [];
-  if (['ncns', 'called_out', 'late'].includes(status)) {
+  if (['ncns', 'called_out', 'late'].includes(status) && !rows[0].excused) {
     consequences = await checkAndApplyConsequences(rows[0].staff_id, status);
   }
   res.json({ attendance: rows[0], consequences });
@@ -137,6 +140,58 @@ router.post('/clock-out/:staffId', async (req, res) => {
   res.json(rows[0]);
 });
 
+// GET /api/attendance/weekly-issues?week_start=YYYY-MM-DD
+router.get('/weekly-issues', async (req, res) => {
+  const { week_start } = req.query;
+  if (!week_start) return res.status(400).json({ error: 'week_start required' });
+  const wsDate = new Date(week_start + 'T12:00:00Z');
+  const weDate = new Date(wsDate);
+  weDate.setDate(wsDate.getDate() + 6);
+  const weekEnd = weDate.toISOString().split('T')[0];
+
+  const { rows } = await pool.query(`
+    SELECT a.id, a.staff_id, s.first_name || ' ' || s.last_name as driver_name,
+      a.attendance_date, TO_CHAR(a.attendance_date, 'Dy') as day_of_week,
+      a.status, a.excused, a.excuse_reason, a.notes
+    FROM attendance a
+    JOIN staff s ON s.id = a.staff_id
+    WHERE a.attendance_date BETWEEN $1 AND $2
+      AND a.status IN ('ncns','called_out','late','sent_home')
+    ORDER BY a.attendance_date DESC, s.last_name
+  `, [week_start, weekEnd]);
+  res.json(rows);
+});
+
+// GET /api/attendance/violations
+router.get('/violations', async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT sv.*, s.first_name, s.last_name, cr.rule_name, cr.consequence_action,
+      cr.violation_type, cr.threshold, cr.time_period_days,
+      rb.first_name as reviewed_by_first, rb.last_name as reviewed_by_last
+    FROM staff_violations sv
+    JOIN staff s ON s.id = sv.staff_id
+    LEFT JOIN consequence_rules cr ON cr.id = sv.rule_id
+    LEFT JOIN staff rb ON rb.id = sv.reviewed_by
+    ORDER BY sv.created_at DESC
+  `);
+  res.json(rows);
+});
+
+// PUT /api/attendance/violations/:id
+router.put('/violations/:id', managerOnly, async (req, res) => {
+  const { status, dismiss_reason } = req.body;
+  if (!['confirmed', 'dismissed', 'pending'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+  const { rows } = await pool.query(
+    `UPDATE staff_violations SET status=$1, reviewed_by=$2, reviewed_at=NOW(),
+     dismiss_reason=$3 WHERE id=$4 RETURNING *`,
+    [status, req.user.id, dismiss_reason || null, req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+  res.json(rows[0]);
+});
+
 // GET /api/attendance/metrics/:staffId
 router.get('/metrics/:staffId', async (req, res) => {
   const { days = 90 } = req.query;
@@ -176,7 +231,7 @@ router.get('/export', managerOnly, async (req, res) => {
   res.json(rows);
 });
 
-// Add unique constraint if missing (idempotent helper)
+// Idempotent migrations
 pool.query(`
   DO $$ BEGIN
     ALTER TABLE attendance ADD CONSTRAINT attendance_staff_date_unique UNIQUE (staff_id, attendance_date);
@@ -184,5 +239,11 @@ pool.query(`
   WHEN others THEN NULL;
   END $$;
 `).catch(() => {});
+pool.query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS excused BOOLEAN DEFAULT FALSE`).catch(() => {});
+pool.query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS excuse_reason TEXT`).catch(() => {});
+pool.query(`ALTER TABLE staff_violations ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending'`).catch(() => {});
+pool.query(`ALTER TABLE staff_violations ADD COLUMN IF NOT EXISTS reviewed_by INTEGER REFERENCES staff(id)`).catch(() => {});
+pool.query(`ALTER TABLE staff_violations ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`).catch(() => {});
+pool.query(`ALTER TABLE staff_violations ADD COLUMN IF NOT EXISTS dismiss_reason TEXT`).catch(() => {});
 
 module.exports = router;

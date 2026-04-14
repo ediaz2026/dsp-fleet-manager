@@ -3,7 +3,21 @@ const pool = require('../db/pool');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 const multer = require('multer');
 const XLSX = require('xlsx');
-const pdfParse = require('pdf-parse');
+const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+pdfjsLib.GlobalWorkerOptions.workerSrc = false;
+
+async function extractTextFromPDF(buffer) {
+  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
+  const pdf = await loadingTask.promise;
+  let fullText = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(item => item.str).join(' ');
+    fullText += pageText + '\n';
+  }
+  return fullText;
+}
 
 router.use(authMiddleware);
 
@@ -216,8 +230,7 @@ router.post('/upload-pdf', adminOnly, upload.single('file'), async (req, res) =>
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    const data = await pdfParse(req.file.buffer);
-    const text = data.text;
+    const text = await extractTextFromPDF(req.file.buffer);
 
     // Extract week and year
     const weekMatch = text.match(/Week\s+(\d+)/i);

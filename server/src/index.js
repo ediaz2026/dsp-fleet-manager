@@ -162,25 +162,6 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
-// Temporary diagnostic (remove after use)
-app.get('/api/diag-sean-week', async (req, res) => {
-  const pool = require('./db/pool');
-  const { rows } = await pool.query(`
-    SELECT a.id, a.attendance_date, a.status, a.excused, s.first_name, s.last_name
-    FROM attendance a JOIN staff s ON s.id = a.staff_id
-    WHERE s.first_name ILIKE '%sean%' AND a.attendance_date >= '2026-04-06'
-    ORDER BY a.attendance_date DESC
-  `);
-  // Also show what the frontend week_start would be for today
-  const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const etDay = etNow.getDay();
-  const etSun = new Date(etNow);
-  etSun.setDate(etNow.getDate() - etDay);
-  const weekStart = etSun.toISOString().split('T')[0];
-
-  res.json({ seanRecords: rows, currentWeekStart: weekStart, etNowStr: etNow.toISOString(), etDayOfWeek: etDay });
-});
-
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

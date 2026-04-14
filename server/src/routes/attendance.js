@@ -71,23 +71,38 @@ router.post('/', managerOnly, async (req, res) => {
 // PUT /api/attendance/:id
 router.put('/:id', managerOnly, async (req, res) => {
   const { status, call_out_reason, late_minutes, clock_in, clock_out, notes, excused, excuse_reason } = req.body;
-  let hours = null;
+
+  // Build dynamic SET clause — only update fields that were actually sent
+  const sets = [];
+  const vals = [];
+  let idx = 1;
+
+  if (status !== undefined)         { sets.push(`status=$${idx++}`);          vals.push(status); }
+  if (call_out_reason !== undefined) { sets.push(`call_out_reason=$${idx++}`); vals.push(call_out_reason); }
+  if (late_minutes !== undefined)   { sets.push(`late_minutes=$${idx++}`);    vals.push(late_minutes); }
+  if (clock_in !== undefined)       { sets.push(`clock_in=$${idx++}`);        vals.push(clock_in); }
+  if (clock_out !== undefined)      { sets.push(`clock_out=$${idx++}`);       vals.push(clock_out); }
+  if (notes !== undefined)          { sets.push(`notes=$${idx++}`);           vals.push(notes); }
+  if (excused != null)              { sets.push(`excused=$${idx++}`);         vals.push(excused); }
+  if (excuse_reason !== undefined)  { sets.push(`excuse_reason=$${idx++}`);   vals.push(excuse_reason); }
+
   if (clock_in && clock_out) {
-    hours = (new Date(clock_out) - new Date(clock_in)) / 3600000;
+    sets.push(`hours_worked=$${idx++}`);
+    vals.push((new Date(clock_out) - new Date(clock_in)) / 3600000);
   }
+
+  if (sets.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+  vals.push(req.params.id);
   const { rows } = await pool.query(
-    `UPDATE attendance SET status=$1, call_out_reason=$2, late_minutes=$3,
-     clock_in=$4, clock_out=$5, hours_worked=$6, notes=$7,
-     excused=COALESCE($8, excused), excuse_reason=COALESCE($9, excuse_reason)
-     WHERE id=$10 RETURNING *`,
-    [status, call_out_reason, late_minutes, clock_in, clock_out, hours, notes,
-     excused != null ? excused : null, excuse_reason !== undefined ? excuse_reason : null, req.params.id]
+    `UPDATE attendance SET ${sets.join(', ')} WHERE id=$${idx} RETURNING *`,
+    vals
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found' });
 
   let consequences = [];
-  if (['ncns', 'called_out', 'late'].includes(status) && !rows[0].excused) {
-    consequences = await checkAndApplyConsequences(rows[0].staff_id, status);
+  if (['ncns', 'called_out', 'late'].includes(rows[0].status) && !rows[0].excused) {
+    consequences = await checkAndApplyConsequences(rows[0].staff_id, rows[0].status);
   }
   res.json({ attendance: rows[0], consequences });
 });

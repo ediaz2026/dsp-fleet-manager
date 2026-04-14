@@ -75,7 +75,21 @@ export default function Attendance() {
     queryFn: () => api.get('/attendance/violations').then(r => r.data),
     enabled: tab === 'violations',
   });
-  const { sorted: sortedViolations, sortKey: vKey, sortDir: vDir, toggle: vToggle } = useSort(violations, 'created_at', 'desc');
+
+  const [dismissingId, setDismissingId] = useState(null);
+  const [dismissReason, setDismissReason] = useState('');
+
+  const violationMutation = useMutation({
+    mutationFn: ({ id, status, dismiss_reason }) =>
+      api.put(`/attendance/violations/${id}`, { status, dismiss_reason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['violations'] });
+      setDismissingId(null);
+      setDismissReason('');
+      toast.success('Violation updated');
+    },
+    onError: () => toast.error('Failed to update violation'),
+  });
 
   // ── Export tab data ───────────────────────────────────────────────────────
   const { data: exportData = [] } = useQuery({
@@ -223,33 +237,94 @@ export default function Attendance() {
 
       {/* ── Violations ────────────────────────────────────────────────────── */}
       {tab === 'violations' && (
-        <div className="card p-0 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-100">
-                <SortableHeader label="Employee" sortKey="first_name" currentKey={vKey} direction={vDir} onSort={vToggle} className="text-left" />
-                <SortableHeader label="Rule" sortKey="rule_name" currentKey={vKey} direction={vDir} onSort={vToggle} className="text-left" />
-                <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Type</th>
-                <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Action</th>
-                <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-700 uppercase tracking-wide bg-slate-100">Notes</th>
-                <SortableHeader label="Date" sortKey="created_at" currentKey={vKey} direction={vDir} onSort={vToggle} className="text-left" />
-              </tr>
-            </thead>
-            <tbody>
-              {sortedViolations.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-10 text-slate-500">No violations recorded</td></tr>
-              ) : sortedViolations.map(v => (
-                <tr key={v.id} className="table-row even:bg-slate-50">
-                  <td className="px-3 py-3 font-medium text-slate-800">{v.first_name} {v.last_name}</td>
-                  <td className="px-3 py-3 text-slate-600">{v.rule_name}</td>
-                  <td className="px-3 py-3"><Badge status={v.violation_type} /></td>
-                  <td className="px-3 py-3"><Badge status={v.action_taken || v.consequence_action} /></td>
-                  <td className="px-3 py-3 text-slate-500 text-xs max-w-xs truncate">{v.notes}</td>
-                  <td className="px-3 py-3 text-slate-500">{v.created_at ? format(new Date(v.created_at), 'MMM d, yyyy') : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-3">
+          {violations.length === 0 ? (
+            <div className="bg-white border border-emerald-200 rounded-xl p-8 text-center shadow-sm">
+              <Check size={28} className="text-emerald-500 mx-auto mb-2" />
+              <p className="font-semibold text-slate-800">No pending violations</p>
+              <p className="text-sm text-slate-500 mt-1">All consequence rules are clear.</p>
+            </div>
+          ) : violations.map(v => {
+            const actionColors = {
+              written_warning:    { bg: 'bg-amber-100',  text: 'text-amber-700',  label: 'Written Warning' },
+              suspension:         { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Suspension' },
+              termination_review: { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Termination Review' },
+            };
+            const ac = actionColors[v.action_taken || v.consequence_action] || { bg: 'bg-slate-100', text: 'text-slate-600', label: v.action_taken || v.consequence_action || '—' };
+            const statusColors = {
+              pending:   { bg: 'bg-amber-100',   text: 'text-amber-700',   label: 'Pending' },
+              confirmed: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Confirmed' },
+              dismissed: { bg: 'bg-slate-100',   text: 'text-slate-500',   label: 'Dismissed' },
+            };
+            const sc = statusColors[v.status] || statusColors.pending;
+            const isPending = !v.status || v.status === 'pending';
+
+            return (
+              <div key={v.id} className={`bg-white border rounded-xl p-4 shadow-sm ${isPending ? 'border-amber-200' : 'border-slate-200'}`}>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-slate-800">{v.first_name} {v.last_name}</span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${ac.bg} ${ac.text}`}>
+                        {ac.label}
+                      </span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${sc.bg} ${sc.text}`}>
+                        {sc.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1">{v.rule_name}</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">{v.notes}</p>
+                    {v.created_at && <p className="text-[10px] text-slate-400 mt-1">Triggered {format(new Date(v.created_at), 'MMM d, yyyy')}</p>}
+                  </div>
+
+                  {isPending && isManager && (
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => violationMutation.mutate({ id: v.id, status: 'confirmed' })}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                      >Confirm</button>
+                      {dismissingId === v.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            autoFocus
+                            placeholder="Reason..."
+                            value={dismissReason}
+                            onChange={e => setDismissReason(e.target.value)}
+                            className="text-xs border border-slate-200 rounded-lg px-2 py-1 w-36 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                          />
+                          <button
+                            onClick={() => violationMutation.mutate({ id: v.id, status: 'dismissed', dismiss_reason: dismissReason })}
+                            className="px-2 py-1 text-xs font-semibold rounded-lg bg-slate-600 text-white hover:bg-slate-700 transition-colors"
+                          >Save</button>
+                          <button
+                            onClick={() => { setDismissingId(null); setDismissReason(''); }}
+                            className="px-2 py-1 text-xs text-slate-400 hover:text-slate-600"
+                          >Cancel</button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setDismissingId(v.id); setDismissReason(''); }}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                        >Dismiss</button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {v.status === 'confirmed' && v.reviewed_by_first && (
+                  <p className="text-[10px] text-emerald-600 mt-2">
+                    Confirmed by {v.reviewed_by_first} {v.reviewed_by_last}{v.reviewed_at ? ` on ${format(new Date(v.reviewed_at), 'MMM d, yyyy')}` : ''}
+                  </p>
+                )}
+                {v.status === 'dismissed' && (
+                  <p className="text-[10px] text-slate-400 mt-2">
+                    Dismissed{v.dismiss_reason ? ` — ${v.dismiss_reason}` : ''}{v.reviewed_by_first ? ` by ${v.reviewed_by_first} ${v.reviewed_by_last}` : ''}
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

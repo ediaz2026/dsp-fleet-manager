@@ -57,6 +57,22 @@ for (const c of fixCols) {
 // Drop the problematic partial unique index — we handle dedup via DELETE before INSERT
 pool.query(`DROP INDEX IF EXISTS idx_amazon_sc_week_name`).catch(() => {});
 
+// Scorecard PDF storage table
+pool.query(`
+  CREATE TABLE IF NOT EXISTS scorecard_pdfs (
+    id SERIAL PRIMARY KEY,
+    week_label VARCHAR NOT NULL,
+    amazon_week INTEGER NOT NULL,
+    year INTEGER NOT NULL,
+    scorecard_type VARCHAR NOT NULL DEFAULT 'pre_dispute',
+    pdf_url TEXT NOT NULL,
+    public_id TEXT NOT NULL,
+    uploaded_by INTEGER REFERENCES staff(id),
+    uploaded_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(week_label, year, scorecard_type)
+  )
+`).catch(e => console.error('[scorecard_pdfs] Table error:', e.message));
+
 // POST /api/amazon-scorecard/upload — parse Excel with dynamic header detection
 router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
   try {
@@ -231,6 +247,62 @@ router.get('/', async (req, res) => {
   const { week } = req.query;
   if (!week) return res.status(400).json({ error: 'week param required' });
   const { rows } = await pool.query(`SELECT * FROM amazon_scorecards WHERE week_label=$1 ORDER BY rank_position`, [week]);
+  res.json(rows);
+});
+
+// ── Scorecard PDF upload + retrieval ────────────────────────────────────────
+
+const cloudinary = require('../config/cloudinary');
+const { Readable } = require('stream');
+
+// POST /api/amazon-scorecard/upload-pdf
+router.post('/upload-pdf', adminOnly, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const { week_label, year, scorecard_type = 'pre_dispute' } = req.body;
+    if (!week_label || !year) return res.status(400).json({ error: 'week_label and year required' });
+
+    const weekMatch = week_label.match(/(\d+)/);
+    const amazonWeek = weekMatch ? parseInt(weekMatch[1]) : 0;
+    const publicId = `scorecard_${week_label.replace(/\s+/g, '_')}_${year}_${scorecard_type}`;
+
+    // Upload to Cloudinary via stream
+    const result = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { resource_type: 'raw', folder: 'dsp_scorecards', public_id: publicId, format: 'pdf', overwrite: true },
+        (err, result) => err ? reject(err) : resolve(result)
+      );
+      const readable = new Readable();
+      readable.push(req.file.buffer);
+      readable.push(null);
+      readable.pipe(uploadStream);
+    });
+
+    // Upsert into scorecard_pdfs
+    await pool.query(`
+      INSERT INTO scorecard_pdfs (week_label, amazon_week, year, scorecard_type, pdf_url, public_id, uploaded_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (week_label, year, scorecard_type) DO UPDATE SET
+        pdf_url = EXCLUDED.pdf_url, public_id = EXCLUDED.public_id,
+        uploaded_by = EXCLUDED.uploaded_by, uploaded_at = NOW()
+    `, [week_label, amazonWeek, parseInt(year), scorecard_type, result.secure_url, result.public_id, req.user?.id || null]);
+
+    res.json({ success: true, pdf_url: result.secure_url, week_label, scorecard_type });
+  } catch (err) {
+    console.error('[amazon-scorecard/upload-pdf]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/amazon-scorecard/pdfs?week_label=Week+13&year=2026
+router.get('/pdfs', async (req, res) => {
+  const { week_label, year } = req.query;
+  if (!week_label || !year) return res.status(400).json({ error: 'week_label and year required' });
+  const { rows } = await pool.query(
+    `SELECT id, week_label, year, scorecard_type, pdf_url, uploaded_at
+     FROM scorecard_pdfs WHERE week_label = $1 AND year = $2 ORDER BY scorecard_type`,
+    [week_label, parseInt(year)]
+  );
   res.json(rows);
 });
 

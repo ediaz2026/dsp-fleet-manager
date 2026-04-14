@@ -27,11 +27,13 @@ export default function Scorecard() {
   const qc = useQueryClient();
   const [selectedWeek, setSelectedWeek] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
   const [uploadResult, setUploadResult] = useState(null);
   const [expandedRow, setExpandedRow] = useState(null);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('rank');
   const fileRef = useRef();
+  const pdfRef = useRef();
 
   const { data: weeks = [] } = useQuery({
     queryKey: ['amazon-scorecard-weeks'],
@@ -81,6 +83,31 @@ export default function Scorecard() {
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
   };
 
+  // PDF scorecard data
+  const currentYear = weeks[weekIdx]?.year || new Date().getFullYear();
+  const { data: scorecardPdfs = [] } = useQuery({
+    queryKey: ['scorecard-pdfs', weekLabel, currentYear],
+    queryFn: () => api.get('/amazon-scorecard/pdfs', { params: { week_label: weekLabel, year: currentYear } }).then(r => r.data),
+    enabled: !!weekLabel,
+  });
+  const preDisputePdf = scorecardPdfs.find(p => p.scorecard_type === 'pre_dispute');
+
+  const handlePdfUpload = async (file) => {
+    if (!file || !weekLabel) return;
+    setUploadingPdf(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('week_label', weekLabel);
+      formData.append('year', currentYear);
+      formData.append('scorecard_type', 'pre_dispute');
+      await api.post('/amazon-scorecard/upload-pdf', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      qc.invalidateQueries({ queryKey: ['scorecard-pdfs'] });
+      toast.success('Pre Dispute PDF uploaded');
+    } catch (err) { toast.error(err?.response?.data?.error || 'PDF upload failed'); }
+    finally { setUploadingPdf(false); if (pdfRef.current) pdfRef.current.value = ''; }
+  };
+
   const isPerfect = (d) => d.final_ranking == 100 && d.packages > 899
     && d.speeding_score == 100 && d.seatbelt_score == 100 && d.distraction_score == 100
     && d.sign_signal_score == 100 && d.following_dist_score == 100
@@ -99,10 +126,16 @@ export default function Scorecard() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-slate-900">Scorecard</h1>
-        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border bg-white hover:bg-slate-50 cursor-pointer text-sm font-medium ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-          <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Scorecard'}
-          <input type="file" accept=".xlsx,.xls" className="hidden" ref={fileRef} disabled={uploading} onChange={e => handleUpload(e.target.files?.[0])} />
-        </label>
+        <div className="flex items-center gap-2">
+          <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border bg-indigo-50 border-indigo-200 hover:bg-indigo-100 cursor-pointer text-sm font-medium text-indigo-700 ${uploadingPdf ? 'opacity-50 pointer-events-none' : ''}`}>
+            <Upload size={14} /> {uploadingPdf ? 'Uploading…' : 'Upload Pre Dispute PDF'}
+            <input type="file" accept=".pdf" className="hidden" ref={pdfRef} disabled={uploadingPdf} onChange={e => handlePdfUpload(e.target.files?.[0])} />
+          </label>
+          <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border bg-white hover:bg-slate-50 cursor-pointer text-sm font-medium ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+            <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Final Scorecard (Excel)'}
+            <input type="file" accept=".xlsx,.xls" className="hidden" ref={fileRef} disabled={uploading} onChange={e => handleUpload(e.target.files?.[0])} />
+          </label>
+        </div>
       </div>
 
       {/* Upload result */}
@@ -131,6 +164,25 @@ export default function Scorecard() {
           </div>
           <button onClick={() => setSelectedWeek(nextWeek)} disabled={!nextWeek} className="p-2 rounded-lg border bg-white hover:bg-slate-50 disabled:opacity-30"><ChevronRight size={16} /></button>
         </div>
+      )}
+
+      {/* Pre Dispute PDF viewer */}
+      {weekLabel && (
+        preDisputePdf ? (
+          <div className="w-full rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+            <div className="bg-slate-50 px-4 py-2.5 flex items-center justify-between border-b border-slate-200">
+              <span className="text-sm font-semibold text-slate-700">Pre Dispute Scorecard — {weekLabel}</span>
+              <a href={preDisputePdf.pdf_url} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline font-medium">
+                Open in new tab ↗
+              </a>
+            </div>
+            <iframe src={preDisputePdf.pdf_url} className="w-full" style={{ height: '800px' }} title="Pre Dispute Scorecard" />
+          </div>
+        ) : (
+          <div className="bg-white border border-slate-200 rounded-xl p-4 text-center">
+            <p className="text-sm text-slate-400">No Pre Dispute Scorecard uploaded for {weekLabel}.</p>
+          </div>
+        )
       )}
 
       {/* Search + sort */}

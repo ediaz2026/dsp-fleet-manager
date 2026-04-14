@@ -165,52 +165,31 @@ app.use('/api/van-affinity', require('./routes/vanAffinity'));
 // Temporary diagnostic (remove after use)
 app.get('/api/diag-dash-error', async (req, res) => {
   const pool = require('./db/pool');
-  try {
-    const { rows: cols } = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'vehicles' ORDER BY ordinal_position`);
-    // Try the actual query
-    let queryResult = null;
-    let queryError = null;
+  // Try each dashboard query individually to find the one that fails
+  const results = {};
+  const queries = {
+    todayShifts: `SELECT COUNT(*) FROM shifts WHERE shift_date = CURRENT_DATE`,
+    fleetAlerts: `SELECT COUNT(*) FROM fleet_alerts WHERE is_resolved = false`,
+    attendanceIssues: `SELECT COUNT(*) FROM attendance WHERE status IN ('ncns','called_out','late') AND attendance_date >= CURRENT_DATE - 7`,
+    hoursSummary: `SELECT COUNT(*) FROM attendance WHERE attendance_date >= date_trunc('week', CURRENT_DATE + INTERVAL '1 day') - INTERVAL '1 day'`,
+    flaggedInspections: `SELECT COUNT(*) FROM inspections WHERE ai_analysis_status = 'flagged' OR damage_detected = true`,
+    upcomingExpirations: `SELECT COUNT(*) FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE s.status = 'active' AND d.license_expiration IS NOT NULL AND d.license_expiration <= CURRENT_DATE + 90`,
+    recentViolations: `SELECT COUNT(*) FROM staff_violations sv JOIN consequence_rules cr ON cr.id = sv.rule_id WHERE sv.created_at >= CURRENT_DATE - 30`,
+    staffStats: `SELECT COUNT(*) FROM staff WHERE status = 'active'`,
+    vehicleStats: `SELECT COUNT(*) FROM vehicles`,
+    repairStats: `SELECT COUNT(*) FROM repairs WHERE status = 'open'`,
+    driverReportStats: `SELECT COUNT(*) FROM driver_reports WHERE status = 'pending'`,
+    driverAlerts: `SELECT COUNT(*) FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE s.role = 'driver' AND s.status = 'active' AND d.license_expiration IS NOT NULL`,
+  };
+  for (const [name, sql] of Object.entries(queries)) {
     try {
-      const { rows } = await pool.query(`
-        SELECT 'driver' as type, s.first_name || ' ' || s.last_name as name,
-          d.license_expiration as expiry_date, 'Driver License' as document,
-          (d.license_expiration - CURRENT_DATE)::int as days_remaining
-        FROM drivers d JOIN staff s ON s.id = d.staff_id
-        WHERE s.status = 'active' AND s.role = 'driver'
-          AND d.license_expiration IS NOT NULL
-          AND d.license_expiration <= CURRENT_DATE + 90
-        UNION ALL
-        SELECT 'vehicle', v.vehicle_name, v.insurance_expiration, 'Insurance',
-          (v.insurance_expiration - CURRENT_DATE)::int
-        FROM vehicles v WHERE v.status = 'active'
-          AND v.insurance_expiration IS NOT NULL AND v.insurance_expiration <= CURRENT_DATE + 90
-        UNION ALL
-        SELECT 'vehicle', v.vehicle_name, v.registration_expiration, 'Registration',
-          (v.registration_expiration - CURRENT_DATE)::int
-        FROM vehicles v WHERE v.status = 'active'
-          AND v.registration_expiration IS NOT NULL AND v.registration_expiration <= CURRENT_DATE + 90
-        UNION ALL
-        SELECT 'vehicle', v.vehicle_name, v.next_inspection_date, 'Inspection',
-          (v.next_inspection_date - CURRENT_DATE)::int
-        FROM vehicles v WHERE v.status = 'active'
-          AND v.next_inspection_date IS NOT NULL AND v.next_inspection_date <= CURRENT_DATE + 90
-        ORDER BY days_remaining ASC LIMIT 20
-      `);
-      queryResult = rows;
+      await pool.query(sql);
+      results[name] = 'OK';
     } catch (e) {
-      queryError = e.message;
+      results[name] = 'ERROR: ' + e.message;
     }
-    // Try dashboard endpoint
-    let dashError = null;
-    try {
-      const { rows: test } = await pool.query(`SELECT COUNT(*) FROM fleet_alerts`);
-    } catch (e) {
-      dashError = 'fleet_alerts: ' + e.message;
-    }
-    res.json({ vehicleCols: cols.map(c => c.column_name), queryResult, queryError, dashError });
-  } catch (e) {
-    res.json({ error: e.message });
   }
+  res.json(results);
 });
 
 // Health check

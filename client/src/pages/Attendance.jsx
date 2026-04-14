@@ -82,15 +82,26 @@ export default function Attendance() {
 
   const excuseMutation = useMutation({
     mutationFn: ({ id, excused, excuse_reason }) => {
-      if (!id) { console.error('[excuseMutation] Missing id'); return Promise.reject(new Error('Missing attendance id')); }
+      if (!id) return Promise.reject(new Error('Missing attendance id'));
       return api.put(`/attendance/${id}`, { excused, excuse_reason });
     },
-    onSuccess: () => {
+    onMutate: async ({ id, excused, excuse_reason }) => {
+      await qc.cancelQueries({ queryKey: ['weekly-issues', weekStart] });
+      const previous = qc.getQueryData(['weekly-issues', weekStart]);
+      qc.setQueryData(['weekly-issues', weekStart], old =>
+        old?.map(item => item.id === id ? { ...item, excused, excuse_reason: excuse_reason ?? item.excuse_reason } : item)
+      );
+      return { previous };
+    },
+    onError: (err, _vars, context) => {
+      qc.setQueryData(['weekly-issues', weekStart], context?.previous);
+      toast.error(err?.response?.data?.error || 'Failed to save');
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['weekly-issues'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
-      toast.success('Saved');
     },
-    onError: (err) => toast.error(err?.response?.data?.error || 'Failed to save'),
+    onSuccess: () => toast.success('Saved'),
   });
 
   // Group issues by date

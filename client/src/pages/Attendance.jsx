@@ -81,14 +81,16 @@ export default function Attendance() {
   });
 
   const excuseMutation = useMutation({
-    mutationFn: ({ id, excused, excuse_reason }) =>
-      api.put(`/attendance/${id}`, { excused, excuse_reason }),
+    mutationFn: ({ id, excused, excuse_reason }) => {
+      if (!id) { console.error('[excuseMutation] Missing id'); return Promise.reject(new Error('Missing attendance id')); }
+      return api.put(`/attendance/${id}`, { excused, excuse_reason });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['weekly-issues'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
       toast.success('Saved');
     },
-    onError: () => toast.error('Failed to save'),
+    onError: (err) => toast.error(err?.response?.data?.error || 'Failed to save'),
   });
 
   // Group issues by date

@@ -149,13 +149,15 @@ export default function Dashboard() {
 
   const {
     todayShifts = [], fleetAlerts = [], attendanceIssues = [],
-    flaggedInspections = [], upcomingExpirations = [],
+    flaggedInspections = [],
+    upcomingExpirations: rawExpirations,
     recentViolations = [], vehicleStats = {},
     routes_today = 0, blocks_today = 0, helpers_today = 0,
     driverAlerts = { d30: 0, d60: 0, d90: 0 },
     driversScheduled = {},
     hoursSummary = {},
   } = data || {};
+  const upcomingExpirations = Array.isArray(rawExpirations) ? rawExpirations : [];
 
   // ── Unassigned routes
   const todayRoutes    = opsRoutesData?.routes || [];
@@ -538,7 +540,7 @@ export default function Dashboard() {
               <p className="text-xs text-slate-400">All documents current</p>
             </div>
           ) : upcomingExpirations.slice(0, 8).map((item, i) => {
-            const d = item.days_remaining;
+            const d = parseInt(item?.days_remaining) || 0;
             const badgeClass = d < 0 ? 'bg-red-100 text-red-700' : d <= 14 ? 'bg-red-100 text-red-700' : d <= 30 ? 'bg-orange-100 text-orange-700' : 'bg-yellow-100 text-yellow-700';
             const badgeText = d < 0 ? `${Math.abs(d)}d ago` : `${d}d`;
             return (

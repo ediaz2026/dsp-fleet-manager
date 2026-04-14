@@ -89,7 +89,7 @@ router.put('/:id', managerOnly, async (req, res) => {
   if (clock_in !== undefined)       { sets.push(`clock_in=$${idx++}`);        vals.push(clock_in); }
   if (clock_out !== undefined)      { sets.push(`clock_out=$${idx++}`);       vals.push(clock_out); }
   if (notes !== undefined)          { sets.push(`notes=$${idx++}`);           vals.push(notes); }
-  if (excused != null)              { sets.push(`excused=$${idx++}`);         vals.push(excused); }
+  if (excused !== undefined)         { sets.push(`excused=$${idx++}`);         vals.push(!!excused); }
   if (excuse_reason !== undefined)  { sets.push(`excuse_reason=$${idx++}`);   vals.push(excuse_reason); }
 
   if (clock_in && clock_out) {

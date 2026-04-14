@@ -36,10 +36,10 @@ function SafetyCard({ label, value }) {
   );
 }
 
-function DriverScoreView({ weekLabel, currentYear }) {
+function DriverScoreView({ weekLabel, currentYear, scorecardType = 'final' }) {
   const { data: sc, isLoading } = useQuery({
-    queryKey: ['my-scorecard', weekLabel, currentYear],
-    queryFn: () => api.get('/amazon-scorecard/mine', { params: { week: weekLabel } }).then(r => r.data),
+    queryKey: ['my-scorecard', weekLabel, currentYear, scorecardType],
+    queryFn: () => api.get('/amazon-scorecard/mine', { params: { week: weekLabel, type: scorecardType } }).then(r => r.data),
     enabled: !!weekLabel,
   });
 
@@ -115,11 +115,8 @@ export default function Scorecard() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('rank');
   const [scorecardView, setScorecardView] = useState('final');
-  const [iframeError, setIframeError] = useState(false);
   const fileRef = useRef();
   const pdfRef = useRef();
-
-  const getEmbedUrl = (url) => `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
 
   const { data: weeks = [] } = useQuery({
     queryKey: ['amazon-scorecard-weeks'],
@@ -132,9 +129,9 @@ export default function Scorecard() {
   const nextWeek = weekIdx > 0 ? weeks[weekIdx - 1]?.week_label : null;
 
   const { data: rawDrivers = [], isLoading } = useQuery({
-    queryKey: ['amazon-scorecard-all', weekLabel],
-    queryFn: () => api.get('/amazon-scorecard', { params: { week: weekLabel } }).then(r => r.data),
-    enabled: !!weekLabel,
+    queryKey: ['amazon-scorecard-all', weekLabel, scorecardView],
+    queryFn: () => api.get('/amazon-scorecard', { params: { week: weekLabel, type: scorecardView } }).then(r => r.data),
+    enabled: !!weekLabel && !isDriver,
   });
 
   const drivers = useMemo(() => {
@@ -169,27 +166,21 @@ export default function Scorecard() {
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
   };
 
-  // PDF scorecard data
   const currentYear = weeks[weekIdx]?.year || new Date().getFullYear();
-  const { data: scorecardPdfs = [] } = useQuery({
-    queryKey: ['scorecard-pdfs', weekLabel, currentYear],
-    queryFn: () => api.get('/amazon-scorecard/pdfs', { params: { week_label: weekLabel, year: currentYear } }).then(r => r.data),
-    enabled: !!weekLabel,
-  });
-  const preDisputePdf = scorecardPdfs.find(p => p.scorecard_type === 'pre_dispute');
 
   const handlePdfUpload = async (file) => {
-    if (!file || !weekLabel) return;
+    if (!file) return;
     setUploadingPdf(true);
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('week_label', weekLabel);
-      formData.append('year', currentYear);
-      formData.append('scorecard_type', 'pre_dispute');
-      await api.post('/amazon-scorecard/upload-pdf', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      qc.invalidateQueries({ queryKey: ['scorecard-pdfs'] });
-      toast.success('Pre Dispute PDF uploaded');
+      const { data } = await api.post('/amazon-scorecard/upload-pdf', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setUploadResult(data);
+      qc.invalidateQueries({ queryKey: ['amazon-scorecard-weeks'] });
+      qc.invalidateQueries({ queryKey: ['amazon-scorecard-all'] });
+      toast.success(`Uploaded ${data.weekLabel} Pre Dispute — ${data.matched}/${data.uploaded} matched`);
+      if (data.weekLabel) setSelectedWeek(data.weekLabel);
+      setScorecardView('pre_dispute');
     } catch (err) { toast.error(err?.response?.data?.error || 'PDF upload failed'); }
     finally { setUploadingPdf(false); if (pdfRef.current) pdfRef.current.value = ''; }
   };
@@ -227,17 +218,15 @@ export default function Scorecard() {
         )}
       </div>
 
-      {/* Tab bar — managers only */}
-      {!isDriver && (
-        <div className="flex gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 w-fit">
-          {[['pre_dispute', 'Pre Dispute'], ['final', 'Final Scorecard']].map(([v, l]) => (
-            <button key={v} onClick={() => { setScorecardView(v); setIframeError(false); }}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${scorecardView === v ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
-              {l}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Tab bar */}
+      <div className="flex gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 w-fit">
+        {[['pre_dispute', 'Pre Dispute'], ['final', 'Final Scorecard']].map(([v, l]) => (
+          <button key={v} onClick={() => setScorecardView(v)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${scorecardView === v ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+            {l}
+          </button>
+        ))}
+      </div>
 
       {/* Upload result — managers only, final view */}
       {!isDriver && scorecardView === 'final' && uploadResult && (
@@ -268,40 +257,10 @@ export default function Scorecard() {
       )}
 
       {/* Driver view */}
-      {isDriver && weekLabel && <DriverScoreView weekLabel={weekLabel} currentYear={currentYear} />}
+      {isDriver && weekLabel && <DriverScoreView weekLabel={weekLabel} currentYear={currentYear} scorecardType={scorecardView} />}
 
-      {/* Pre Dispute PDF viewer — managers, pre_dispute tab */}
-      {!isDriver && scorecardView === 'pre_dispute' && weekLabel && (
-        preDisputePdf ? (
-          <div className="w-full rounded-xl overflow-hidden border border-slate-200 shadow-sm">
-            <div className="bg-slate-50 px-4 py-2.5 flex items-center justify-between border-b border-slate-200">
-              <span className="text-sm font-semibold text-slate-700">Pre Dispute Scorecard — {weekLabel}</span>
-              <a href={preDisputePdf.pdf_url} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline font-medium">
-                Open in new tab ↗
-              </a>
-            </div>
-            {iframeError ? (
-              <div className="text-center py-8">
-                <p className="text-slate-500 text-sm mb-3">Unable to preview PDF inline.</p>
-                <a href={preDisputePdf.pdf_url} target="_blank" rel="noopener noreferrer"
-                   className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
-                  Open Pre Dispute Scorecard ↗
-                </a>
-              </div>
-            ) : (
-              <iframe src={getEmbedUrl(preDisputePdf.pdf_url)} className="w-full" style={{ height: '800px' }} title="Pre Dispute Scorecard"
-                onError={() => setIframeError(true)} />
-            )}
-          </div>
-        ) : (
-          <div className="bg-white border border-slate-200 rounded-xl p-4 text-center">
-            <p className="text-sm text-slate-400">No Pre Dispute Scorecard uploaded for {weekLabel}.</p>
-          </div>
-        )
-      )}
-
-      {/* Search + sort — managers only, final view */}
-      {!isDriver && scorecardView === 'final' && drivers.length > 0 && (
+      {/* Search + sort — managers only */}
+      {!isDriver && drivers.length > 0 && (
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative flex-1 min-w-[200px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -317,8 +276,8 @@ export default function Scorecard() {
       )}
 
       {/* Empty / loading */}
-      {!isDriver && scorecardView === 'final' && isLoading && <p className="text-center text-slate-400 py-12">Loading…</p>}
-      {!isDriver && scorecardView === 'final' && !isLoading && rawDrivers.length === 0 && weekLabel && (
+      {!isDriver && isLoading && <p className="text-center text-slate-400 py-12">Loading…</p>}
+      {!isDriver && !isLoading && rawDrivers.length === 0 && weekLabel && (
         <div className="bg-white rounded-xl border py-12 text-center">
           <Award size={36} className="mx-auto text-slate-300 mb-3" />
           <p className="font-semibold text-slate-500">No scorecard data for {weekLabel}</p>
@@ -326,8 +285,8 @@ export default function Scorecard() {
         </div>
       )}
 
-      {/* Leaderboard — managers only, final view */}
-      {!isDriver && scorecardView === 'final' && drivers.length > 0 && (
+      {/* Leaderboard — managers only */}
+      {!isDriver && drivers.length > 0 && (
         <div className="bg-white rounded-xl border overflow-hidden">
           <table className="w-full text-sm">
             <thead>

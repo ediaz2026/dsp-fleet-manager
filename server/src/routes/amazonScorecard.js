@@ -3,6 +3,7 @@ const pool = require('../db/pool');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 const multer = require('multer');
 const XLSX = require('xlsx');
+const pdfParse = require('pdf-parse');
 
 router.use(authMiddleware);
 
@@ -41,6 +42,7 @@ pool.query(`
   )
 `).catch(e => console.error('[amazon-scorecard] Table error:', e.message));
 pool.query(`ALTER TABLE amazon_scorecards ADD COLUMN IF NOT EXISTS transporter_id VARCHAR(50)`).catch(() => {});
+pool.query(`ALTER TABLE amazon_scorecards ADD COLUMN IF NOT EXISTS scorecard_type VARCHAR NOT NULL DEFAULT 'final'`).catch(() => {});
 pool.query(`ALTER TABLE amazon_scorecards ALTER COLUMN packages TYPE INTEGER USING packages::INTEGER`).catch(() => {});
 pool.query(`ALTER TABLE amazon_scorecards ALTER COLUMN rank_position TYPE INTEGER USING rank_position::INTEGER`).catch(() => {});
 // Fix column types if table was created with wrong types
@@ -54,26 +56,54 @@ for (const c of fixCols) {
   const [name, ...type] = c.split(' ');
   pool.query(`ALTER TABLE amazon_scorecards ALTER COLUMN ${name} TYPE ${type.join(' ')} USING ${name}::${type.join(' ')}`).catch(() => {});
 }
-// Drop the problematic partial unique index — we handle dedup via DELETE before INSERT
 pool.query(`DROP INDEX IF EXISTS idx_amazon_sc_week_name`).catch(() => {});
 
-// Scorecard PDF storage table
+// Migrate unique constraint to include scorecard_type
+pool.query(`ALTER TABLE amazon_scorecards DROP CONSTRAINT IF EXISTS amazon_scorecards_week_label_staff_id_key`).catch(() => {});
 pool.query(`
-  CREATE TABLE IF NOT EXISTS scorecard_pdfs (
-    id SERIAL PRIMARY KEY,
-    week_label VARCHAR NOT NULL,
-    amazon_week INTEGER NOT NULL,
-    year INTEGER NOT NULL,
-    scorecard_type VARCHAR NOT NULL DEFAULT 'pre_dispute',
-    pdf_url TEXT NOT NULL,
-    public_id TEXT NOT NULL,
-    uploaded_by INTEGER REFERENCES staff(id),
-    uploaded_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(week_label, year, scorecard_type)
-  )
-`).catch(e => console.error('[scorecard_pdfs] Table error:', e.message));
+  DO $$ BEGIN
+    ALTER TABLE amazon_scorecards ADD CONSTRAINT amazon_scorecards_week_label_staff_id_type_key
+      UNIQUE (week_label, staff_id, scorecard_type);
+  EXCEPTION WHEN duplicate_table THEN NULL; WHEN others THEN NULL;
+  END $$;
+`).catch(() => {});
 
-// POST /api/amazon-scorecard/upload — parse Excel with dynamic header detection
+// Drop legacy PDF table
+pool.query(`DROP TABLE IF EXISTS scorecard_pdfs`).catch(() => {});
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+async function matchDriver(driverName, tid, tidToStaff, nameToStaff) {
+  let staffId = null;
+  if (tid) staffId = tidToStaff[tid.trim().toUpperCase()] || null;
+  if (!staffId) staffId = nameToStaff[driverName.toUpperCase()] || null;
+  if (!staffId) {
+    const parts = driverName.split(/\s+/);
+    const first = parts[0]?.toUpperCase();
+    const last = parts[parts.length - 1]?.toUpperCase();
+    if (first && last) staffId = nameToStaff[`${first} ${last}`] || null;
+  }
+  return staffId;
+}
+
+async function getDriverMaps() {
+  const { rows: driverList } = await pool.query(`
+    SELECT d.staff_id, d.transponder_id, s.first_name, s.last_name, s.employee_id
+    FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE s.role='driver'
+  `);
+  const tidToStaff = {};
+  const nameToStaff = {};
+  for (const d of driverList) {
+    if (d.transponder_id) tidToStaff[d.transponder_id.trim().toUpperCase()] = d.staff_id;
+    if (d.employee_id) tidToStaff[d.employee_id.trim().toUpperCase()] = d.staff_id;
+    nameToStaff[`${d.first_name} ${d.last_name}`.toUpperCase()] = d.staff_id;
+    nameToStaff[`${d.last_name}, ${d.first_name}`.toUpperCase()] = d.staff_id;
+    nameToStaff[`${d.first_name}`.toUpperCase()] = d.staff_id;
+  }
+  return { tidToStaff, nameToStaff };
+}
+
+// ── POST /api/amazon-scorecard/upload — parse Excel (Final Scorecard) ───────
 router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -82,13 +112,11 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
     const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
     if (raw.length < 3) return res.status(400).json({ error: 'File has fewer than 3 rows' });
 
-    // Row 1 col B = week label
     const weekLabel = String(raw[0]?.[1] || '').trim() || 'Unknown';
     const weekMatch = weekLabel.match(/(\d+)/);
     const amazonWeek = weekMatch ? parseInt(weekMatch[1]) : null;
     const year = new Date().getFullYear();
 
-    // Row 2 = headers — find columns dynamically
     const headers = (raw[1] || []).map(h => String(h).trim().toUpperCase());
     const col = (patterns) => {
       for (const p of patterns) {
@@ -98,53 +126,33 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
       return -1;
     };
 
-    // Find columns dynamically, with hardcoded fallbacks matching known layout
     const tidCol = col(['TRANSPORTER ID', 'DA TRANSPORTER', 'TID', 'TRANSPORTER']);
     const COL = {
-      rank:         0,  // Always column A (row number = rank position)
-      name:         col(['DRIVER', 'DELIVERY ASSOCIATE', 'DA NAME', 'NAME']) >= 0 ? col(['DRIVER', 'DELIVERY ASSOCIATE', 'DA NAME', 'NAME']) : 1,
-      tid:          tidCol >= 0 ? tidCol : 2,  // Fallback: column C
-      standing:     col(['OVERALL STANDING', 'STANDING'])   >= 0 ? col(['OVERALL STANDING', 'STANDING'])   : 3,
-      ranking:      col(['FINAL RANKING', 'RANKING'])       >= 0 ? col(['FINAL RANKING', 'RANKING'])       : 4,
-      bonus:        col(['BONUS HOURS', 'BONUS'])           >= 0 ? col(['BONUS HOURS', 'BONUS'])           : 5,
-      safety:       col(['SAFETY', 'SAFETY PASS', 'SAFETY METRIC']) >= 0 ? col(['SAFETY', 'SAFETY PASS', 'SAFETY METRIC']) : 6,
-      dsb:          col(['DSB PASS', 'DSB METRIC', 'DSB'])  >= 0 ? col(['DSB PASS', 'DSB METRIC', 'DSB'])  : 7,
-      packages:     col(['PACKAGES', 'PKG', 'TOTAL PACKAGES']) >= 0 ? col(['PACKAGES', 'PKG', 'TOTAL PACKAGES']) : 8,
-      perfect:      col(['PERFECT INCENTIVE', 'PERFECT'])   >= 0 ? col(['PERFECT INCENTIVE', 'PERFECT'])   : 9,
-      perPkg:       col(['INCENTIVE PER PACKAGE', 'PER PACKAGE', 'PER PKG']) >= 0 ? col(['INCENTIVE PER PACKAGE', 'PER PACKAGE', 'PER PKG']) : 10,
-      speeding:     col(['SPEEDING'])                       >= 0 ? col(['SPEEDING'])      : 11,
-      seatbelt:     col(['SEATBELT', 'SEAT BELT'])          >= 0 ? col(['SEATBELT', 'SEAT BELT']) : 12,
-      distraction:  col(['DISTRACTION'])                    >= 0 ? col(['DISTRACTION'])   : 13,
-      signSignal:   col(['SIGN', 'SIGNAL', 'SIGN/SIGNAL']) >= 0 ? col(['SIGN', 'SIGNAL', 'SIGN/SIGNAL']) : 14,
-      followDist:   col(['FOLLOWING', 'FOLLOW'])            >= 0 ? col(['FOLLOWING', 'FOLLOW']) : 15,
-      cdf:          col(['CDF'])                            >= 0 ? col(['CDF'])           : 16,
-      dcr:          col(['DCR'])                            >= 0 ? col(['DCR'])           : 17,
-      dsbRevised:   col(['DSB REVISED', 'DSB REV'])         >= 0 ? col(['DSB REVISED', 'DSB REV']) : 18,
-      pod:          col(['POD'])                            >= 0 ? col(['POD'])           : 19,
+      rank: 0,
+      name: col(['DRIVER', 'DELIVERY ASSOCIATE', 'DA NAME', 'NAME']) >= 0 ? col(['DRIVER', 'DELIVERY ASSOCIATE', 'DA NAME', 'NAME']) : 1,
+      tid: tidCol >= 0 ? tidCol : 2,
+      standing: col(['OVERALL STANDING', 'STANDING']) >= 0 ? col(['OVERALL STANDING', 'STANDING']) : 3,
+      ranking: col(['FINAL RANKING', 'RANKING']) >= 0 ? col(['FINAL RANKING', 'RANKING']) : 4,
+      bonus: col(['BONUS HOURS', 'BONUS']) >= 0 ? col(['BONUS HOURS', 'BONUS']) : 5,
+      safety: col(['SAFETY', 'SAFETY PASS', 'SAFETY METRIC']) >= 0 ? col(['SAFETY', 'SAFETY PASS', 'SAFETY METRIC']) : 6,
+      dsb: col(['DSB PASS', 'DSB METRIC', 'DSB']) >= 0 ? col(['DSB PASS', 'DSB METRIC', 'DSB']) : 7,
+      packages: col(['PACKAGES', 'PKG', 'TOTAL PACKAGES']) >= 0 ? col(['PACKAGES', 'PKG', 'TOTAL PACKAGES']) : 8,
+      perfect: col(['PERFECT INCENTIVE', 'PERFECT']) >= 0 ? col(['PERFECT INCENTIVE', 'PERFECT']) : 9,
+      perPkg: col(['INCENTIVE PER PACKAGE', 'PER PACKAGE', 'PER PKG']) >= 0 ? col(['INCENTIVE PER PACKAGE', 'PER PACKAGE', 'PER PKG']) : 10,
+      speeding: col(['SPEEDING']) >= 0 ? col(['SPEEDING']) : 11,
+      seatbelt: col(['SEATBELT', 'SEAT BELT']) >= 0 ? col(['SEATBELT', 'SEAT BELT']) : 12,
+      distraction: col(['DISTRACTION']) >= 0 ? col(['DISTRACTION']) : 13,
+      signSignal: col(['SIGN', 'SIGNAL', 'SIGN/SIGNAL']) >= 0 ? col(['SIGN', 'SIGNAL', 'SIGN/SIGNAL']) : 14,
+      followDist: col(['FOLLOWING', 'FOLLOW']) >= 0 ? col(['FOLLOWING', 'FOLLOW']) : 15,
+      cdf: col(['CDF']) >= 0 ? col(['CDF']) : 16,
+      dcr: col(['DCR']) >= 0 ? col(['DCR']) : 17,
+      dsbRevised: col(['DSB REVISED', 'DSB REV']) >= 0 ? col(['DSB REVISED', 'DSB REV']) : 18,
+      pod: col(['POD']) >= 0 ? col(['POD']) : 19,
     };
 
-    console.log('[scorecard] Headers found:', headers.join(' | '));
-    console.log('[scorecard] TID column detected at index:', COL.tid, '(dynamic:', tidCol, ', header:', headers[COL.tid] || 'N/A', ')');
-    console.log('[scorecard] Column mapping:', JSON.stringify(COL));
+    const { tidToStaff, nameToStaff } = await getDriverMaps();
 
-    // Get all drivers for TID + name matching
-    const { rows: driverList } = await pool.query(`
-      SELECT d.staff_id, d.transponder_id, s.first_name, s.last_name, s.employee_id
-      FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE s.role='driver'
-    `);
-    const tidToStaff = {};
-    const nameToStaff = {};
-    for (const d of driverList) {
-      if (d.transponder_id) tidToStaff[d.transponder_id.trim().toUpperCase()] = d.staff_id;
-      if (d.employee_id) tidToStaff[d.employee_id.trim().toUpperCase()] = d.staff_id;
-      nameToStaff[`${d.first_name} ${d.last_name}`.toUpperCase()] = d.staff_id;
-      nameToStaff[`${d.last_name}, ${d.first_name}`.toUpperCase()] = d.staff_id;
-      // First name only match as last resort
-      nameToStaff[`${d.first_name}`.toUpperCase()] = d.staff_id;
-    }
-
-    // Delete existing data for this week (allows clean re-upload)
-    await pool.query(`DELETE FROM amazon_scorecards WHERE week_label = $1`, [weekLabel]);
+    await pool.query(`DELETE FROM amazon_scorecards WHERE week_label = $1 AND scorecard_type = 'final'`, [weekLabel]);
 
     let uploaded = 0, matched = 0;
     const unmatched = [];
@@ -154,40 +162,24 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
 
     for (let i = 2; i < raw.length; i++) {
       const r = raw[i];
-      const nameIdx = COL.name >= 0 ? COL.name : 1;
-      const driverName = String(r[nameIdx] || '').trim();
+      const driverName = String(r[COL.name] || '').trim();
       if (!driverName || /^(rank|#|driver|delivery)/i.test(driverName)) continue;
 
       const tid = COL.tid >= 0 ? String(r[COL.tid] || '').trim().toUpperCase() : '';
-
-      // Match: TID first, then name
-      let staffId = null;
-      if (tid) staffId = tidToStaff[tid] || null;
-      if (!staffId) staffId = nameToStaff[driverName.toUpperCase()] || null;
-      // Try partial: first word of name
-      if (!staffId) {
-        const firstName = driverName.split(/\s+/)[0].toUpperCase();
-        const lastName = driverName.split(/\s+/).slice(-1)[0].toUpperCase();
-        staffId = nameToStaff[`${firstName} ${lastName}`.toUpperCase()] || null;
-      }
+      const staffId = await matchDriver(driverName, tid, tidToStaff, nameToStaff);
 
       const rankVal = parseInt(r[0]);
       const rankToStore = !isNaN(rankVal) ? rankVal : (uploaded + 1);
-      if (!staffId) {
-        unmatched.push(`${driverName}${tid ? ` (${tid})` : ''}`);
-        if (uploaded < 5) console.log(`[scorecard] UNMATCHED: "${driverName}" tid="${tid}" colA="${r[0]}" rank=${rankToStore}`);
-      } else {
-        matched++;
-        if (uploaded < 5) console.log(`[scorecard] MATCHED: "${driverName}" tid="${tid}" → staff_id=${staffId} colA="${r[0]}" rank=${rankToStore}`);
-      }
+      if (!staffId) unmatched.push(`${driverName}${tid ? ` (${tid})` : ''}`);
+      else matched++;
 
       await pool.query(`
         INSERT INTO amazon_scorecards (week_label, amazon_week, year, staff_id, driver_name, transporter_id,
           rank_position, overall_standing, final_ranking, bonus_hours, safety_pass, dsb_pass,
           packages, perfect_incentive, incentive_per_package,
           speeding_score, seatbelt_score, distraction_score, sign_signal_score, following_dist_score,
-          cdf_revised, dcr_score, dsb_revised, pod_rate)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+          cdf_revised, dcr_score, dsb_revised, pod_rate, scorecard_type)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,'final')
       `, [
         weekLabel, amazonWeek, year, staffId, driverName, tid || null,
         rankToStore,
@@ -212,96 +204,202 @@ router.post('/upload', adminOnly, upload.single('file'), async (req, res) => {
       uploaded++;
     }
 
-    res.json({ uploaded, matched, unmatched, weekLabel, columns: COL });
+    res.json({ uploaded, matched, unmatched, weekLabel, scorecard_type: 'final', columns: COL });
   } catch (err) {
     console.error('[amazon-scorecard/upload]', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/amazon-scorecard/weeks — available weeks
-router.get('/weeks', async (req, res) => {
-  const { rows } = await pool.query(`SELECT DISTINCT week_label, amazon_week, year, MIN(created_at) AS uploaded_at FROM amazon_scorecards GROUP BY week_label, amazon_week, year ORDER BY year DESC, amazon_week DESC`);
-  res.json(rows);
-});
-
-// GET /api/amazon-scorecard/mine — driver's own scorecard
-router.get('/mine', async (req, res) => {
-  const { week } = req.query;
-  let row;
-  if (week) {
-    const { rows } = await pool.query(`SELECT * FROM amazon_scorecards WHERE staff_id=$1 AND week_label=$2`, [req.user.id, week]);
-    row = rows[0];
-  } else {
-    const { rows } = await pool.query(`SELECT * FROM amazon_scorecards WHERE staff_id=$1 ORDER BY year DESC, amazon_week DESC LIMIT 1`, [req.user.id]);
-    row = rows[0];
-  }
-  if (row) {
-    console.log(`[scorecard/mine] staff_id=${req.user.id} rank_position=${row.rank_position} final_ranking=${row.final_ranking}`);
-  }
-  res.json(row || null);
-});
-
-// GET /api/amazon-scorecard?week=Week+11 — all drivers for a week (managers)
-router.get('/', async (req, res) => {
-  const { week } = req.query;
-  if (!week) return res.status(400).json({ error: 'week param required' });
-  const { rows } = await pool.query(`SELECT * FROM amazon_scorecards WHERE week_label=$1 ORDER BY rank_position`, [week]);
-  res.json(rows);
-});
-
-// ── Scorecard PDF upload + retrieval ────────────────────────────────────────
-
-const cloudinary = require('../config/cloudinary');
-const { Readable } = require('stream');
-
-// POST /api/amazon-scorecard/upload-pdf
+// ── POST /api/amazon-scorecard/upload-pdf — parse Pre Dispute PDF ───────────
 router.post('/upload-pdf', adminOnly, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const { week_label, year, scorecard_type = 'pre_dispute' } = req.body;
-    if (!week_label || !year) return res.status(400).json({ error: 'week_label and year required' });
 
-    const weekMatch = week_label.match(/(\d+)/);
-    const amazonWeek = weekMatch ? parseInt(weekMatch[1]) : 0;
-    const publicId = `scorecard_${week_label.replace(/\s+/g, '_')}_${year}_${scorecard_type}`;
+    const data = await pdfParse(req.file.buffer);
+    const text = data.text;
 
-    // Upload to Cloudinary via stream
-    const result = await new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { resource_type: 'raw', folder: 'dsp_scorecards', public_id: publicId, format: 'pdf', overwrite: true },
-        (err, result) => err ? reject(err) : resolve(result)
-      );
-      const readable = new Readable();
-      readable.push(req.file.buffer);
-      readable.push(null);
-      readable.pipe(uploadStream);
-    });
+    // Extract week and year
+    const weekMatch = text.match(/Week\s+(\d+)/i);
+    const yearMatch = text.match(/\b(202\d)\b/);
+    if (!weekMatch) return res.status(400).json({ error: 'Could not find week number in PDF' });
 
-    // Upsert into scorecard_pdfs
-    await pool.query(`
-      INSERT INTO scorecard_pdfs (week_label, amazon_week, year, scorecard_type, pdf_url, public_id, uploaded_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (week_label, year, scorecard_type) DO UPDATE SET
-        pdf_url = EXCLUDED.pdf_url, public_id = EXCLUDED.public_id,
-        uploaded_by = EXCLUDED.uploaded_by, uploaded_at = NOW()
-    `, [week_label, amazonWeek, parseInt(year), scorecard_type, result.secure_url, result.public_id, req.user?.id || null]);
+    const amazonWeek = parseInt(weekMatch[1]);
+    const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+    const weekLabel = `Week ${amazonWeek}`;
 
-    res.json({ success: true, pdf_url: result.secure_url, week_label, scorecard_type });
+    console.log(`[scorecard-pdf] Parsing ${weekLabel} ${year}`);
+
+    // Parse driver rows from text
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const tidPattern = /^[A-Z0-9]{10,20}$/;
+    const drivers = [];
+    const parseNum = (v) => {
+      if (!v || v === '-' || /no\s*data/i.test(v)) return null;
+      const cleaned = String(v).replace(/[%,]/g, '').trim();
+      const n = parseFloat(cleaned);
+      return isNaN(n) ? null : n;
+    };
+
+    // Strategy: find lines that start with a number (rank) and try to extract a row
+    // The PDF text typically flows: rank, name, tid, then numeric values
+    // We'll collect all tokens and walk through them
+    const allTokens = [];
+    for (const line of lines) {
+      // Split on whitespace but keep "No Data" as single token
+      const tokens = line.replace(/No\s+Data/gi, 'NoData').split(/\s+/);
+      allTokens.push(...tokens);
+    }
+
+    let idx = 0;
+    while (idx < allTokens.length) {
+      const rankStr = allTokens[idx];
+      const rank = parseInt(rankStr);
+      if (isNaN(rank) || rank < 1 || rank > 200) { idx++; continue; }
+
+      // Collect name tokens until we hit a TID-like pattern
+      let nameTokens = [];
+      let tid = '';
+      let j = idx + 1;
+
+      while (j < allTokens.length) {
+        if (tidPattern.test(allTokens[j])) {
+          tid = allTokens[j];
+          j++;
+          break;
+        }
+        // If we hit a number and already have name tokens, this might be data not a name
+        if (nameTokens.length >= 2 && /^\d+\.?\d*$/.test(allTokens[j])) break;
+        nameTokens.push(allTokens[j]);
+        j++;
+        if (nameTokens.length > 8) break; // safety limit
+      }
+
+      const driverName = nameTokens.join(' ');
+      if (!driverName || nameTokens.length === 0 || !tid) { idx++; continue; }
+
+      // Read numeric values: Delivered, FICO, Seatbelt, Speeding, Distraction, FollowDist, SignSignal, CDF, CED, DCR, DSB, POD, PSB, DSBCount, PODOpps
+      const vals = [];
+      while (j < allTokens.length && vals.length < 17) {
+        const v = allTokens[j];
+        if (/^[A-Z][a-z]/.test(v) && !v.startsWith('No') && vals.length > 3) break; // hit next name
+        if (/^\d{1,3}$/.test(v) && vals.length > 5 && parseInt(v) >= 1 && parseInt(v) <= 200) {
+          // Might be next rank — check if followed by name-like tokens
+          const nextFew = allTokens.slice(j + 1, j + 4).join(' ');
+          if (/[a-z]/i.test(nextFew) && tidPattern.test(allTokens[j + 2] || allTokens[j + 3] || '')) break;
+        }
+        vals.push(v === 'NoData' ? null : v);
+        j++;
+      }
+
+      if (vals.length >= 8) {
+        drivers.push({
+          rank, driverName, tid,
+          packages: parseInt(vals[0]) || null,
+          // vals[1] = FICO (skip)
+          seatbelt: parseNum(vals[2]),
+          speeding: parseNum(vals[3]),
+          distraction: parseNum(vals[4]),
+          followDist: parseNum(vals[5]),
+          signSignal: parseNum(vals[6]),
+          cdf: parseNum(vals[7]),
+          // vals[8] = CED
+          dcr: parseNum(vals[9]),
+          dsb: parseNum(vals[10]),
+          pod: vals[11] ? parseNum(vals[11]) : null,
+        });
+      }
+
+      idx = j;
+    }
+
+    console.log(`[scorecard-pdf] Parsed ${drivers.length} driver rows`);
+
+    if (drivers.length === 0) {
+      return res.status(400).json({ error: 'Could not parse any driver rows from PDF. The PDF format may not be supported.' });
+    }
+
+    const { tidToStaff, nameToStaff } = await getDriverMaps();
+
+    // Delete existing pre_dispute data for this week
+    await pool.query(`DELETE FROM amazon_scorecards WHERE week_label = $1 AND scorecard_type = 'pre_dispute'`, [weekLabel]);
+
+    let uploaded = 0, matched = 0;
+    const unmatchedNames = [];
+
+    for (const d of drivers) {
+      const staffId = await matchDriver(d.driverName, d.tid, tidToStaff, nameToStaff);
+      if (staffId) matched++;
+      else unmatchedNames.push(`${d.driverName} (${d.tid})`);
+
+      // Normalize POD: if > 1, it's a percentage (e.g. 99.5 → 0.995)
+      let podVal = d.pod;
+      if (podVal != null && podVal > 1) podVal = podVal / 100;
+
+      // Normalize DCR: stored as percentage number (e.g. 99.72)
+      const dcrVal = d.dcr;
+
+      await pool.query(`
+        INSERT INTO amazon_scorecards (week_label, amazon_week, year, staff_id, driver_name, transporter_id,
+          rank_position, packages, seatbelt_score, speeding_score, distraction_score,
+          following_dist_score, sign_signal_score, cdf_revised, dcr_score, dsb_revised, pod_rate,
+          scorecard_type)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'pre_dispute')
+      `, [
+        weekLabel, amazonWeek, year, staffId, d.driverName, d.tid,
+        d.rank, d.packages, d.seatbelt, d.speeding, d.distraction,
+        d.followDist, d.signSignal, d.cdf || 0, dcrVal, d.dsb || 0, podVal,
+      ]);
+      uploaded++;
+    }
+
+    console.log(`[scorecard-pdf] Inserted ${uploaded} rows, ${matched} matched, ${unmatchedNames.length} unmatched`);
+    res.json({ uploaded, matched, unmatched: unmatchedNames, weekLabel, scorecard_type: 'pre_dispute' });
   } catch (err) {
     console.error('[amazon-scorecard/upload-pdf]', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/amazon-scorecard/pdfs?week_label=Week+13&year=2026
-router.get('/pdfs', async (req, res) => {
-  const { week_label, year } = req.query;
-  if (!week_label || !year) return res.status(400).json({ error: 'week_label and year required' });
+// ── GET endpoints ───────────────────────────────────────────────────────────
+
+// GET /api/amazon-scorecard/weeks — available weeks (either type)
+router.get('/weeks', async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT DISTINCT week_label, amazon_week, year, MIN(created_at) AS uploaded_at
+    FROM amazon_scorecards GROUP BY week_label, amazon_week, year
+    ORDER BY year DESC, amazon_week DESC
+  `);
+  res.json(rows);
+});
+
+// GET /api/amazon-scorecard/mine — driver's own scorecard
+router.get('/mine', async (req, res) => {
+  const { week, type = 'final' } = req.query;
+  let row;
+  if (week) {
+    const { rows } = await pool.query(
+      `SELECT * FROM amazon_scorecards WHERE staff_id=$1 AND week_label=$2 AND scorecard_type=$3`,
+      [req.user.id, week, type]
+    );
+    row = rows[0];
+  } else {
+    const { rows } = await pool.query(
+      `SELECT * FROM amazon_scorecards WHERE staff_id=$1 AND scorecard_type=$2 ORDER BY year DESC, amazon_week DESC LIMIT 1`,
+      [req.user.id, type]
+    );
+    row = rows[0];
+  }
+  res.json(row || null);
+});
+
+// GET /api/amazon-scorecard?week=Week+11&type=final — all drivers for a week
+router.get('/', async (req, res) => {
+  const { week, type = 'final' } = req.query;
+  if (!week) return res.status(400).json({ error: 'week param required' });
   const { rows } = await pool.query(
-    `SELECT id, week_label, year, scorecard_type, pdf_url, uploaded_at
-     FROM scorecard_pdfs WHERE week_label = $1 AND year = $2 ORDER BY scorecard_type`,
-    [week_label, parseInt(year)]
+    `SELECT * FROM amazon_scorecards WHERE week_label=$1 AND scorecard_type=$2 ORDER BY rank_position`,
+    [week, type]
   );
   res.json(rows);
 });

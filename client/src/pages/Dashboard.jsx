@@ -171,12 +171,14 @@ export default function Dashboard() {
   // ── Weekly schedule published status
   const wkTotal = parseInt(weeklySchedule?.total_shifts || 0);
   const wkPublished = parseInt(weeklySchedule?.published_shifts || 0);
-  const wkUnpublished = parseInt(weeklySchedule?.unpublished_shifts || 0);
+  const wkNewUnpub = parseInt(weeklySchedule?.unpublished_new || 0);
+  const wkModUnpub = parseInt(weeklySchedule?.unpublished_changes || 0);
+  const wkTotalUnpub = wkNewUnpub + wkModUnpub;
   const wkStart = weeklySchedule?.week_start ? new Date(weeklySchedule.week_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
   const wkEnd = weeklySchedule?.week_end ? new Date(weeklySchedule.week_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
   const scheduleStatus = wkTotal === 0 ? 'none'
-    : wkUnpublished === 0 ? 'published'
-    : wkPublished === 0   ? 'unpublished'
+    : wkTotalUnpub === 0 ? 'published'
+    : wkPublished === 0  ? 'unpublished'
     : 'partial';
   const publishedPct = wkTotal === 0 ? null
     : Math.round((wkPublished / wkTotal) * 100);
@@ -281,10 +283,6 @@ export default function Dashboard() {
             unpublished: 'text-red-700',
             none:        'text-slate-400',
           }[scheduleStatus];
-          const statusLabel = scheduleStatus === 'published' ? '✓ All shifts published'
-            : scheduleStatus === 'partial'     ? `⚠ ${wkUnpublished} unpublished shift${wkUnpublished !== 1 ? 's' : ''}`
-            : scheduleStatus === 'unpublished' ? 'Not published'
-            : 'No shifts this week';
           return (
             <div
               className={`col-span-2 md:col-span-4 relative rounded-xl border shadow-sm p-3.5 flex flex-col gap-1.5 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all group ${tintCls}`}
@@ -298,13 +296,21 @@ export default function Dashboard() {
                 <p className={`text-[1.75rem] font-black leading-none ${numColor}`}>
                   {publishedPct !== null ? `${publishedPct}%` : '—'}
                 </p>
-                <p className={`text-[12px] mt-0.5 font-semibold ${numColor}`}>{statusLabel}</p>
+                {wkTotalUnpub === 0 ? (
+                  <p className="text-[12px] mt-0.5 font-semibold text-emerald-700">✓ Fully published</p>
+                ) : (
+                  <div className="mt-0.5 space-y-0.5">
+                    <p className={`text-[12px] font-semibold ${numColor}`}>⚠ {wkTotalUnpub} need publishing</p>
+                    {wkNewUnpub > 0 && <p className="text-[11px] text-amber-600">{wkNewUnpub} new shift{wkNewUnpub !== 1 ? 's' : ''} not published</p>}
+                    {wkModUnpub > 0 && <p className="text-[11px] text-amber-600">{wkModUnpub} shift{wkModUnpub !== 1 ? 's' : ''} modified since last publish</p>}
+                  </div>
+                )}
                 {wkTotal > 0 && (
-                  <p className="text-[11px] text-slate-400 mt-0">{wkPublished} of {wkTotal} shifts{wkStart ? ` · ${wkStart} – ${wkEnd}` : ''}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{wkPublished} of {wkTotal} shifts{wkStart ? ` · ${wkStart} – ${wkEnd}` : ''}</p>
                 )}
               </div>
               <span className="absolute bottom-2.5 right-3 flex items-center gap-0.5 text-[10px] text-slate-400 group-hover:text-blue-500 font-medium transition-colors">
-                {scheduleStatus !== 'published' ? 'Publish' : 'View'} <ChevronRight size={10} />
+                {wkTotalUnpub > 0 ? 'Publish' : 'View'} <ChevronRight size={10} />
               </span>
             </div>
           );

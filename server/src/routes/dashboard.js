@@ -206,7 +206,7 @@ router.get('/', async (req, res) => {
         AND UPPER(shift_type) IN ('EDV','STEP VAN','HELPER','EXTRA','DISPATCH AM','DISPATCH PM')
     `).catch(() => ({ rows: [{ total: 0, edv: 0, step_van: 0, helper: 0, extra: 0, dispatch_am: 0, dispatch_pm: 0 }] })),
 
-    // Weekly schedule status (Sun–Sat Eastern)
+    // Weekly schedule status (Sun–Sat Eastern) — new + modified unpublished
     pool.query(`
       WITH week AS (
         SELECT
@@ -215,13 +215,18 @@ router.get('/', async (req, res) => {
       )
       SELECT
         COUNT(*)::int AS total_shifts,
-        COUNT(*) FILTER (WHERE publish_status = 'published')::int AS published_shifts,
-        COUNT(*) FILTER (WHERE publish_status != 'published' OR publish_status IS NULL)::int AS unpublished_shifts,
+        COUNT(*) FILTER (WHERE publish_status = 'published'
+          AND (has_pending_changes = false OR has_pending_changes IS NULL))::int AS published_shifts,
+        COUNT(*) FILTER (WHERE publish_status != 'published'
+          OR publish_status IS NULL)::int AS unpublished_new,
+        COUNT(*) FILTER (WHERE publish_status = 'published'
+          AND has_pending_changes = true)::int AS unpublished_changes,
         (SELECT ws FROM week) AS week_start,
         (SELECT we FROM week) AS week_end
       FROM shifts, week
       WHERE shift_date BETWEEN week.ws AND week.we
-    `).catch(() => ({ rows: [{ total_shifts: 0, published_shifts: 0, unpublished_shifts: 0 }] })),
+        AND shift_type NOT IN ('SUSPENSION','PTO','UTO')
+    `).catch(() => ({ rows: [{ total_shifts: 0, published_shifts: 0, unpublished_new: 0, unpublished_changes: 0 }] })),
   ]);
 
   res.json({

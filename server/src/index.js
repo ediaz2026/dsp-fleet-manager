@@ -162,19 +162,6 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
-// Temporary diagnostic (remove after use)
-app.get('/api/diag-vehicles', async (req, res) => {
-  const pool = require('./db/pool');
-  const { rows: vCols } = await pool.query(`SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'vehicles' ORDER BY ordinal_position`);
-  const { rows: oaCols } = await pool.query(`SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'ops_assignments' ORDER BY ordinal_position`);
-  let lastUsed = [];
-  try {
-    const { rows } = await pool.query(`SELECT vehicle_id, MAX(plan_date) as last_used FROM ops_assignments WHERE vehicle_id IS NOT NULL GROUP BY vehicle_id ORDER BY last_used ASC LIMIT 10`);
-    lastUsed = rows;
-  } catch (e) { lastUsed = [{ error: e.message }]; }
-  res.json({ vehicleCols: vCols, opsAssignmentCols: oaCols, lastUsed });
-});
-
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

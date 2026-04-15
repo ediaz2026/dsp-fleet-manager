@@ -160,6 +160,12 @@ export default function Dashboard() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const { data: idleVehiclesData } = useQuery({
+    queryKey: ['idle-vehicles-dash'],
+    queryFn: () => api.get('/dashboard/idle-vehicles').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
   if (isLoading) return <LoadingState />;
 
   const {
@@ -404,6 +410,43 @@ export default function Dashboard() {
           tint={fleetAlerts.length > 0 ? 'warning' : 'success'}
           onClick={() => navigate('/vehicles?tab=fleet-alerts')}
         />
+
+        {/* Idle Vehicles */}
+        {(() => {
+          const idle = idleVehiclesData?.vehicles || [];
+          const count = idleVehiclesData?.total_idle || 0;
+          const dayColor = d => d == null ? 'text-slate-400' : d >= 15 ? 'text-red-600' : d >= 8 ? 'text-orange-600' : 'text-amber-600';
+          return (
+            <div className={`col-span-3 rounded-xl border shadow-sm p-3.5 ${count > 0 ? 'bg-amber-50 border-amber-100' : 'bg-white border-slate-200'}`}>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">🚐 Idle Vehicles</p>
+                <span className="text-[10px] text-slate-400">Not used in 4+ days</span>
+              </div>
+              <p className={`text-[1.75rem] font-black leading-none ${count > 0 ? 'text-amber-700' : 'text-slate-800'}`}>{count}</p>
+              {count === 0 ? (
+                <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">All vehicles active</p>
+              ) : (
+                <>
+                  <p className="text-[11px] text-amber-600 mt-0.5">vehicle{count !== 1 ? 's' : ''} idle 4+ days</p>
+                  <div className="space-y-1 mt-2">
+                    {idle.slice(0, 5).map(v => (
+                      <div key={v.id} className="flex items-center gap-2 text-xs">
+                        <span className="font-semibold text-slate-800">{v.vehicle_name}</span>
+                        <span className="text-slate-300">·</span>
+                        <span className={`font-bold ${dayColor(v.days_idle)}`}>{v.days_idle != null ? `${v.days_idle}d idle` : 'Never used'}</span>
+                      </div>
+                    ))}
+                    {count > 5 && (
+                      <button onClick={() => navigate('/vehicles')} className="text-[10px] text-amber-600 hover:text-amber-700 font-medium mt-1">
+                        View all {count} →
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ════════════════════════════════════════════════════════════

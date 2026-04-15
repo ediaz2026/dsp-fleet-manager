@@ -251,6 +251,27 @@ router.get('/', async (req, res) => {
   });
 });
 
+// GET /api/dashboard/idle-vehicles — vehicles not used in 4+ days
+router.get('/idle-vehicles', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT v.id, v.vehicle_name, v.van_status, v.amazon_status,
+        MAX(oa.plan_date)::text AS last_used,
+        (CURRENT_DATE - MAX(oa.plan_date))::int AS days_idle
+      FROM vehicles v
+      LEFT JOIN ops_assignments oa ON oa.vehicle_id = v.id
+      WHERE v.van_status = 'Active'
+        AND (v.amazon_status IS NULL OR v.amazon_status != 'Grounded')
+      GROUP BY v.id, v.vehicle_name, v.van_status, v.amazon_status
+      HAVING MAX(oa.plan_date) IS NULL OR (CURRENT_DATE - MAX(oa.plan_date)) > 4
+      ORDER BY days_idle DESC NULLS FIRST
+    `);
+    res.json({ vehicles: rows, total_idle: rows.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/dashboard/birthdays — upcoming birthdays (next 7 days)
 router.get('/birthdays', async (req, res) => {
   try {

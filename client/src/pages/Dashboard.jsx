@@ -541,13 +541,13 @@ export default function Dashboard() {
           className={`relative rounded-xl border shadow-sm p-3.5 flex flex-col gap-1.5 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all group ${
             conseqList.length > 0 ? 'bg-red-50/60 border-red-100' : 'bg-emerald-50/40 border-emerald-100'
           }`}
-          onClick={() => navigate('/drivers', { state: { section: 'all-drivers' } })}
+          onClick={() => navigate('/attendance?tab=violations')}
         >
           <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${conseqList.length > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
             <Shield size={14} />
           </div>
           <div className="flex-1">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0">Consequence Alerts</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0">Violations</p>
             <p className="text-[1.75rem] font-black text-slate-900 leading-none">{conseqList.length}</p>
             <p className="text-[12px] text-slate-500 mt-0.5">
               {conseqList.length > 0 ? 'drivers flagged (30d)' : 'no violations (30d)'}

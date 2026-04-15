@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { format, subDays, getWeek } from 'date-fns';
 import { Download, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Check, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import api from '../api/client';
@@ -51,7 +52,15 @@ function shiftWeek(ws, delta) {
 export default function Attendance() {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [tab, setTab] = useState('week');
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return t && ['week', 'violations', 'export'].includes(t) ? t : 'week';
+  });
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t && t !== tab && ['week', 'violations', 'export'].includes(t)) setTab(t);
+  }, [searchParams]);
   const [exportStart, setExportStart] = useState(format(subDays(new Date(), 14), 'yyyy-MM-dd'));
   const [exportEnd, setExportEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
 

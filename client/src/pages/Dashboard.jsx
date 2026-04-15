@@ -156,6 +156,7 @@ export default function Dashboard() {
     driverAlerts = { d30: 0, d60: 0, d90: 0 },
     driversScheduled = {},
     hoursSummary = {},
+    weeklySchedule = {},
   } = data || {};
   const upcomingExpirations = Array.isArray(rawExpirations) ? rawExpirations : [];
 
@@ -167,16 +168,18 @@ export default function Dashboard() {
   const unassignedCount  = todayRoutes.filter(r => r.routeCode && !assignedCodes.has(r.routeCode)).length;
   const totalRouteCount  = todayRoutes.length;
 
-  // ── Schedule published status
-  const publishedToday   = todayShifts.filter(s => s.publish_status === 'published').length;
-  const draftToday       = todayShifts.filter(s => s.publish_status !== 'published').length;
-  const totalTodayShifts = todayShifts.length;
-  const scheduleStatus   = totalTodayShifts === 0 ? 'none'
-    : draftToday === 0    ? 'published'
-    : publishedToday === 0 ? 'unpublished'
+  // ── Weekly schedule published status
+  const wkTotal = parseInt(weeklySchedule?.total_shifts || 0);
+  const wkPublished = parseInt(weeklySchedule?.published_shifts || 0);
+  const wkUnpublished = parseInt(weeklySchedule?.unpublished_shifts || 0);
+  const wkStart = weeklySchedule?.week_start ? new Date(weeklySchedule.week_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+  const wkEnd = weeklySchedule?.week_end ? new Date(weeklySchedule.week_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+  const scheduleStatus = wkTotal === 0 ? 'none'
+    : wkUnpublished === 0 ? 'published'
+    : wkPublished === 0   ? 'unpublished'
     : 'partial';
-  const publishedPct = totalTodayShifts === 0 ? null
-    : Math.round((publishedToday / totalTodayShifts) * 100);
+  const publishedPct = wkTotal === 0 ? null
+    : Math.round((wkPublished / wkTotal) * 100);
 
   // ── Weekly attendance (scheduled shift-days as denominator, unexcused NCNS + CO as absent)
   const scheduled_count  = parseInt(hoursSummary?.scheduled_count  || 0, 10);
@@ -278,14 +281,14 @@ export default function Dashboard() {
             unpublished: 'text-red-700',
             none:        'text-slate-400',
           }[scheduleStatus];
-          const statusLabel = scheduleStatus === 'published' ? 'Fully published'
-            : scheduleStatus === 'partial'     ? `${draftToday} shifts pending`
+          const statusLabel = scheduleStatus === 'published' ? '✓ All shifts published'
+            : scheduleStatus === 'partial'     ? `⚠ ${wkUnpublished} unpublished shift${wkUnpublished !== 1 ? 's' : ''}`
             : scheduleStatus === 'unpublished' ? 'Not published'
-            : 'No shifts today';
+            : 'No shifts this week';
           return (
             <div
               className={`col-span-2 md:col-span-4 relative rounded-xl border shadow-sm p-3.5 flex flex-col gap-1.5 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all group ${tintCls}`}
-              onClick={() => navigate('/schedule', { state: { openPublishModal: true } })}
+              onClick={() => navigate('/schedule')}
             >
               <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${iconBg}`}>
                 <CheckCircle size={14} />
@@ -296,8 +299,8 @@ export default function Dashboard() {
                   {publishedPct !== null ? `${publishedPct}%` : '—'}
                 </p>
                 <p className={`text-[12px] mt-0.5 font-semibold ${numColor}`}>{statusLabel}</p>
-                {totalTodayShifts > 0 && (
-                  <p className="text-[11px] text-slate-400 mt-0">{publishedToday} of {totalTodayShifts} shifts</p>
+                {wkTotal > 0 && (
+                  <p className="text-[11px] text-slate-400 mt-0">{wkPublished} of {wkTotal} shifts{wkStart ? ` · ${wkStart} – ${wkEnd}` : ''}</p>
                 )}
               </div>
               <span className="absolute bottom-2.5 right-3 flex items-center gap-0.5 text-[10px] text-slate-400 group-hover:text-blue-500 font-medium transition-colors">

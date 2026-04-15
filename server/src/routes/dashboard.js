@@ -25,6 +25,7 @@ router.get('/', async (req, res) => {
     routesToday,
     driverAlerts,
     driversScheduled,
+    weeklyScheduleStatus,
   ] = await Promise.all([
     // Today's schedule
     pool.query(`
@@ -204,6 +205,23 @@ router.get('/', async (req, res) => {
       WHERE shift_date = CURRENT_DATE
         AND UPPER(shift_type) IN ('EDV','STEP VAN','HELPER','EXTRA','DISPATCH AM','DISPATCH PM')
     `).catch(() => ({ rows: [{ total: 0, edv: 0, step_van: 0, helper: 0, extra: 0, dispatch_am: 0, dispatch_pm: 0 }] })),
+
+    // Weekly schedule status (Sun–Sat Eastern)
+    pool.query(`
+      WITH week AS (
+        SELECT
+          (date_trunc('week', (NOW() AT TIME ZONE 'America/New_York')::date + INTERVAL '1 day') - INTERVAL '1 day')::date AS ws,
+          (date_trunc('week', (NOW() AT TIME ZONE 'America/New_York')::date + INTERVAL '1 day') - INTERVAL '1 day' + INTERVAL '6 days')::date AS we
+      )
+      SELECT
+        COUNT(*)::int AS total_shifts,
+        COUNT(*) FILTER (WHERE publish_status = 'published')::int AS published_shifts,
+        COUNT(*) FILTER (WHERE publish_status != 'published' OR publish_status IS NULL)::int AS unpublished_shifts,
+        (SELECT ws FROM week) AS week_start,
+        (SELECT we FROM week) AS week_end
+      FROM shifts, week
+      WHERE shift_date BETWEEN week.ws AND week.we
+    `).catch(() => ({ rows: [{ total_shifts: 0, published_shifts: 0, unpublished_shifts: 0 }] })),
   ]);
 
   res.json({
@@ -223,6 +241,7 @@ router.get('/', async (req, res) => {
     blocks_today: parseInt(routesToday.rows[0]?.blocks_today || 0, 10),
     driverAlerts: driverAlerts.rows[0] || { d30: 0, d60: 0, d90: 0 },
     driversScheduled: driversScheduled.rows[0] || { total: 0, edv: 0, step_van: 0, helper: 0, extra: 0, dispatch_am: 0, dispatch_pm: 0 },
+    weeklySchedule: weeklyScheduleStatus.rows[0] || { total_shifts: 0, published_shifts: 0, unpublished_shifts: 0 },
     generatedAt: new Date(),
   });
 });

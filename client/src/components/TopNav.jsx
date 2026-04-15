@@ -55,11 +55,12 @@ function NavDropdown({ group }) {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-1 px-2.5 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+        className={`flex items-center gap-1 rounded-md text-sm transition-all duration-150 ${
           isChildActive
-            ? 'bg-[#2563EB] text-white font-semibold'
-            : 'text-white/80 hover:text-white hover:bg-white/10'
+            ? 'bg-white text-[#1a2e4a] font-bold'
+            : 'text-white/95 font-medium hover:text-white hover:bg-white/12'
         }`}
+        style={{ padding: '6px 11px' }}
       >
         {group.label}
         <ChevronDown size={13} className={`transition-transform duration-150 ${open ? 'rotate-180' : ''}`} />
@@ -244,12 +245,13 @@ export default function TopNav() {
                 to={group.to}
                 end={group.exact}
                 className={({ isActive }) =>
-                  `flex items-center gap-1.5 px-2 sm:px-2.5 py-2 rounded-lg text-sm font-medium transition-all duration-150 whitespace-nowrap flex-shrink-0 ${
+                  `flex items-center gap-1.5 rounded-md text-sm transition-all duration-150 whitespace-nowrap flex-shrink-0 ${
                     isActive
-                      ? 'bg-[#2563EB] text-white font-semibold'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                      ? 'bg-white text-[#1a2e4a] font-bold'
+                      : 'text-white/95 font-medium hover:text-white hover:bg-white/12'
                   }`
                 }
+                style={{ padding: '6px 11px' }}
               >
                 {isDriver && Icon && <Icon size={16} className="sm:hidden flex-shrink-0" />}
                 <span className={isDriver ? 'hidden sm:inline' : ''}>{group.label}</span>
@@ -258,29 +260,15 @@ export default function TopNav() {
           })}
         </nav>
 
-        {/* ── Right angled banner ───────────────────────────────── */}
-        <div
-          style={{
-            height: '56px',
-            minWidth: '180px',
-            background: 'white',
-            clipPath: 'polygon(12% 0, 100% 0, 100% 100%, 0 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            paddingLeft: '32px',
-            paddingRight: '16px',
-            flexShrink: 0,
-            marginLeft: 'auto',
-            gap: '8px',
-          }}
-        >
+        {/* ── Right side ──────────────────────────────────────────── */}
+        <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
 
           {/* Driver notification bell — visible for drivers only */}
           {isDriver && (
             <div className="relative" ref={notifRef}>
               <button
                 onClick={() => setShowNotifications(o => !o)}
-                className="relative p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                className="relative p-2 rounded-lg text-white/85 hover:text-white hover:bg-white/10 transition-colors"
                 title="Notifications"
               >
                 <Bell size={17} />
@@ -370,7 +358,7 @@ export default function TopNav() {
             <div className="relative" ref={alertsRef}>
               <button
                 onClick={() => setShowAlerts(o => !o)}
-                className="relative p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                className="relative p-2 rounded-lg text-white/85 hover:text-white hover:bg-white/10 transition-colors"
                 title="Fleet Alerts"
               >
                 <Bell size={17} />
@@ -456,18 +444,18 @@ export default function TopNav() {
           <div className="relative" ref={userMenuRef}>
             <button
               onClick={() => setShowUserMenu(m => !m)}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+              className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
             >
-              <div className="w-7 h-7 rounded-full bg-[#1E3A5F] flex items-center justify-center text-white text-xs font-bold">
+              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-bold">
                 {user?.firstName?.[0]}{user?.lastName?.[0]}
               </div>
               <div className="text-left hidden sm:block">
-                <p className="text-xs font-semibold text-slate-800 leading-tight">{user?.firstName} {user?.lastName}</p>
+                <p className="text-xs font-semibold text-white leading-tight">{user?.firstName} {user?.lastName}</p>
                 <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide ${ROLE_BADGE[user?.role] || ROLE_BADGE.driver}`}>
                   {ROLE_LABEL[user?.role] || user?.role}
                 </span>
               </div>
-              <ChevronDown size={12} className="text-slate-400" />
+              <ChevronDown size={12} className="text-white/50" />
             </button>
 
             {showUserMenu && (

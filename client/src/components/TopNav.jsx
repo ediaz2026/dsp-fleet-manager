@@ -258,15 +258,29 @@ export default function TopNav() {
           })}
         </nav>
 
-        {/* ── Right side ──────────────────────────────────────────── */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        {/* ── Right angled banner ───────────────────────────────── */}
+        <div
+          style={{
+            height: '56px',
+            minWidth: '180px',
+            background: 'white',
+            clipPath: 'polygon(12% 0, 100% 0, 100% 100%, 0 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            paddingLeft: '32px',
+            paddingRight: '16px',
+            flexShrink: 0,
+            marginLeft: 'auto',
+            gap: '8px',
+          }}
+        >
 
           {/* Driver notification bell — visible for drivers only */}
           {isDriver && (
             <div className="relative" ref={notifRef}>
               <button
                 onClick={() => setShowNotifications(o => !o)}
-                className="relative p-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                className="relative p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
                 title="Notifications"
               >
                 <Bell size={17} />
@@ -356,7 +370,7 @@ export default function TopNav() {
             <div className="relative" ref={alertsRef}>
               <button
                 onClick={() => setShowAlerts(o => !o)}
-                className="relative p-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                className="relative p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
                 title="Fleet Alerts"
               >
                 <Bell size={17} />
@@ -442,18 +456,18 @@ export default function TopNav() {
           <div className="relative" ref={userMenuRef}>
             <button
               onClick={() => setShowUserMenu(m => !m)}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
+              className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
             >
-              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-bold">
+              <div className="w-7 h-7 rounded-full bg-[#1E3A5F] flex items-center justify-center text-white text-xs font-bold">
                 {user?.firstName?.[0]}{user?.lastName?.[0]}
               </div>
               <div className="text-left hidden sm:block">
-                <p className="text-xs font-semibold text-white leading-tight">{user?.firstName} {user?.lastName}</p>
+                <p className="text-xs font-semibold text-slate-800 leading-tight">{user?.firstName} {user?.lastName}</p>
                 <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide ${ROLE_BADGE[user?.role] || ROLE_BADGE.driver}`}>
                   {ROLE_LABEL[user?.role] || user?.role}
                 </span>
               </div>
-              <ChevronDown size={12} className="text-white/50" />
+              <ChevronDown size={12} className="text-slate-400" />
             </button>
 
             {showUserMenu && (

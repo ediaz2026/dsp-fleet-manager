@@ -145,6 +145,15 @@ export default function Dashboard() {
     refetchInterval: 60000,
   });
 
+  // ── Attendance toggle state (hooks must be before any early return)
+  const [attendanceView, setAttendanceView] = useState('weekly');
+  const { data: dailyAtt } = useQuery({
+    queryKey: ['attendance-daily'],
+    queryFn: () => api.get('/dashboard/attendance-daily').then(r => r.data),
+    enabled: attendanceView === 'daily',
+    staleTime: 30000,
+  });
+
   if (isLoading) return <LoadingState />;
 
   const {
@@ -182,15 +191,6 @@ export default function Dashboard() {
     : 'partial';
   const publishedPct = wkTotal === 0 ? null
     : Math.round((wkPublished / wkTotal) * 100);
-
-  // ── Attendance toggle state
-  const [attendanceView, setAttendanceView] = useState('weekly');
-  const { data: dailyAtt } = useQuery({
-    queryKey: ['attendance-daily'],
-    queryFn: () => api.get('/dashboard/attendance-daily').then(r => r.data),
-    enabled: attendanceView === 'daily',
-    staleTime: 30000,
-  });
 
   // ── Weekly attendance (scheduled shift-days as denominator, unexcused NCNS + CO as absent)
   const scheduled_count  = parseInt(hoursSummary?.scheduled_count  || 0, 10);

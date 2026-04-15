@@ -178,12 +178,14 @@ export default function Dashboard() {
   const publishedPct = totalTodayShifts === 0 ? null
     : Math.round((publishedToday / totalTodayShifts) * 100);
 
-  // ── Weekly attendance (scheduled drivers as denominator, NCNS + CO as absent)
+  // ── Weekly attendance (scheduled shift-days as denominator, unexcused NCNS + CO as absent)
   const scheduled_count  = parseInt(hoursSummary?.scheduled_count  || 0, 10);
   const ncns_count       = parseInt(hoursSummary?.ncns_count       || 0, 10);
   const called_out_count = parseInt(hoursSummary?.called_out_count || 0, 10);
   const late_count       = parseInt(hoursSummary?.late_count       || 0, 10);
   const sent_home_count  = parseInt(hoursSummary?.sent_home_count  || 0, 10);
+  const attWeekStart     = hoursSummary?.week_start ? new Date(hoursSummary.week_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+  const attWeekEnd       = hoursSummary?.week_end   ? new Date(hoursSummary.week_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
   const absent = ncns_count + called_out_count;
   const attendRate = scheduled_count > 0 ? Math.round(((scheduled_count - absent) / scheduled_count) * 100) : null;
   const attendExtra = scheduled_count > 0 ? (
@@ -399,7 +401,7 @@ export default function Dashboard() {
         <StatCard
           title="Weekly Attendance"
           value={attendRate !== null ? `${attendRate}%` : '—'}
-          subtitle={scheduled_count > 0 ? `${scheduled_count - absent} of ${scheduled_count} drivers present` : 'no shifts yet this week'}
+          subtitle={scheduled_count > 0 ? `${scheduled_count - absent} of ${scheduled_count} shift-days${attWeekStart ? ` · ${attWeekStart} – ${attWeekEnd}` : ''}` : 'no shifts yet this week'}
           icon={Users}
           tint={attendRate === null ? 'neutral' : attendRate >= 95 ? 'success' : attendRate >= 88 ? 'warning' : 'danger'}
           extra={attendExtra}

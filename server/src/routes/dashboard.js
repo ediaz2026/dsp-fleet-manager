@@ -57,21 +57,26 @@ router.get('/', async (req, res) => {
       ORDER BY a.attendance_date DESC LIMIT 10
     `),
 
-    // Weekly attendance: scheduled drivers as denominator, NCNS + called_out as absent
+    // Weekly attendance: Sun–Sat, scheduled shift-days as denominator, unexcused NCNS + CO as absent
     pool.query(`
+      WITH week AS (
+        SELECT
+          (date_trunc('week', (NOW() AT TIME ZONE 'America/New_York')::date + INTERVAL '1 day') - INTERVAL '1 day')::date AS ws,
+          (date_trunc('week', (NOW() AT TIME ZONE 'America/New_York')::date + INTERVAL '1 day') - INTERVAL '1 day' + INTERVAL '6 days')::date AS we
+      )
       SELECT
-        (SELECT COUNT(DISTINCT staff_id) FROM shifts
-         WHERE shift_date >= date_trunc('week', CURRENT_DATE + INTERVAL '1 day') - INTERVAL '1 day'
-           AND shift_date <= CURRENT_DATE
+        (SELECT COUNT(*) FROM shifts, week
+         WHERE shift_date BETWEEN week.ws AND week.we
            AND shift_type NOT IN ('ON CALL','UTO','PTO','SUSPENSION','TRAINING','TRAINER','DISPATCH AM','DISPATCH PM')
         ) as scheduled_count,
-        COUNT(*) FILTER (WHERE status = 'ncns') as ncns_count,
-        COUNT(*) FILTER (WHERE status = 'called_out') as called_out_count,
-        COUNT(*) FILTER (WHERE status = 'late') as late_count,
-        COUNT(*) FILTER (WHERE status = 'sent_home') as sent_home_count
-      FROM attendance
-      WHERE attendance_date >= date_trunc('week', CURRENT_DATE + INTERVAL '1 day') - INTERVAL '1 day'
-        AND attendance_date <= CURRENT_DATE
+        COUNT(*) FILTER (WHERE a.status = 'ncns'       AND (a.excused IS NOT TRUE)) as ncns_count,
+        COUNT(*) FILTER (WHERE a.status = 'called_out'  AND (a.excused IS NOT TRUE)) as called_out_count,
+        COUNT(*) FILTER (WHERE a.status = 'late') as late_count,
+        COUNT(*) FILTER (WHERE a.status = 'sent_home') as sent_home_count,
+        (SELECT ws FROM week) as week_start,
+        (SELECT we FROM week) as week_end
+      FROM attendance a, week
+      WHERE a.attendance_date BETWEEN week.ws AND week.we
     `),
 
     // AI-flagged inspections

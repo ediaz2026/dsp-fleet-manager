@@ -97,6 +97,7 @@ export default function TopNav() {
   const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const userMenuRef = useRef();
   const alertsRef = useRef();
 
@@ -208,7 +209,83 @@ export default function TopNav() {
 
   return (
     <header className="bg-[#1E3A5F] sticky top-0 z-40 flex-shrink-0 shadow-md">
-      <div className="max-w-screen-2xl mx-auto pr-4 h-14 flex items-center justify-between gap-4">
+
+      {/* ═══ MOBILE NAV BAR — admin/manager/dispatcher only, hidden on desktop ═══ */}
+      {isMgmt && (
+        <div className="flex md:hidden items-center justify-between w-full h-14 px-4">
+          <button onClick={() => setMobileMenuOpen(true)} className="flex flex-col gap-1.5 p-2">
+            <span className="block w-5 h-0.5 bg-white rounded" />
+            <span className="block w-5 h-0.5 bg-white rounded" />
+            <span className="block w-5 h-0.5 bg-white rounded" />
+          </button>
+          <NavLink to="/">
+            <img src="https://res.cloudinary.com/dbplnigog/image/upload/v1776289023/Screenshot_2026-04-15_at_5.29.06_PM_weocsl.png"
+              alt="Last Mile DSP" style={{ height: '44px', width: 'auto', objectFit: 'contain' }} />
+          </NavLink>
+          <div className="flex items-center gap-2">
+            <div className="relative" ref={alertsRef}>
+              <button onClick={() => setShowAlerts(o => !o)}
+                className="relative p-2 rounded-lg text-white/85 hover:text-white hover:bg-white/10 transition-colors">
+                <Bell size={17} />
+                {unackedCount > 0 && (
+                  <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold leading-none">
+                    {unackedCount > 9 ? '9+' : unackedCount}
+                  </span>
+                )}
+              </button>
+            </div>
+            <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-bold">
+              {user?.firstName?.[0]}{user?.lastName?.[0]}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MOBILE FULL SCREEN MENU OVERLAY ═══ */}
+      {mobileMenuOpen && isMgmt && (
+        <div className="fixed inset-0 z-50 bg-[#1a2e4a] flex flex-col md:hidden">
+          <div className="flex items-center justify-between px-4 h-14 border-b border-white/10">
+            <img src="https://res.cloudinary.com/dbplnigog/image/upload/v1776289023/Screenshot_2026-04-15_at_5.29.06_PM_weocsl.png"
+              alt="Last Mile DSP" style={{ height: '40px', width: 'auto', objectFit: 'contain' }} />
+            <button onClick={() => setMobileMenuOpen(false)} className="text-white text-2xl font-light p-2">✕</button>
+          </div>
+          <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10">
+            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm">
+              {user?.firstName?.[0]}{user?.lastName?.[0]}
+            </div>
+            <div>
+              <div className="text-white font-semibold text-sm">{user?.firstName} {user?.lastName}</div>
+              <div className="text-white/50 text-xs uppercase tracking-wide">{ROLE_LABEL[user?.role] || user?.role} · DMF5</div>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto py-2">
+            {visibleNavGroups.map(group => {
+              const Icon = group.icon;
+              return (
+                <NavLink key={group.to} to={group.to} end={group.exact}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-6 py-3.5 text-base font-medium transition-colors ${
+                      isActive ? 'bg-white/10 text-white border-l-4 border-white' : 'text-white/80 hover:text-white hover:bg-white/5 border-l-4 border-transparent'
+                    }`
+                  }>
+                  {Icon && <Icon size={18} />}
+                  {group.label}
+                </NavLink>
+              );
+            })}
+          </div>
+          <div className="border-t border-white/10 px-6 py-4">
+            <button onClick={() => { logout(); navigate('/login'); setMobileMenuOpen(false); }}
+              className="flex items-center gap-2 text-white/60 text-sm hover:text-white/80 transition-colors">
+              <LogOut size={14} /> Sign out
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ DESKTOP NAV — hidden on mobile for mgmt, always shown for drivers ═══ */}
+      <div className={`max-w-screen-2xl mx-auto pr-4 h-14 items-center justify-between gap-4 ${isMgmt ? 'hidden md:flex' : 'flex'}`}>
 
         {/* ── Angled logo banner ──────────────────────────────────── */}
         <NavLink

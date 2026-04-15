@@ -852,7 +852,7 @@ function RescueWorkloadTab() {
 const TABS = [
   { id: 'volume',        label: 'Volume Share',        icon: BarChart2      },
   { id: 'routes',        label: 'Route Intelligence',  icon: TrendingUp     },
-  { id: 'performance',   label: 'Driver Performance',  icon: Users          },
+  { id: 'performance',   label: 'Driver Workload',     icon: Users          },
   { id: 'rescue',        label: 'Rescue',              icon: AlertTriangle  },
   { id: 'daily-summary', label: 'Daily Routes Summary', icon: ClipboardList },
 ];

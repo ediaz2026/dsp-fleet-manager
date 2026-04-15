@@ -348,6 +348,21 @@ export default function Dashboard() {
             View all <ChevronRight size={10} />
           </span>
         </div>
+
+        {/* Dispatchers */}
+        {(() => {
+          const initials = s => `${s.first_name?.[0] || ''}${s.last_name?.[0] || ''}`;
+          const am = todayShifts.filter(s => s.shift_type === 'DISPATCH AM');
+          const pm = todayShifts.filter(s => s.shift_type === 'DISPATCH PM');
+          const total = am.length + pm.length;
+          const extra = `AM: ${am.map(initials).join('/') || '—'}  PM: ${pm.map(initials).join('/') || '—'}`;
+          return (
+            <div className="col-span-2 md:col-span-2">
+              <StatCard title="Dispatchers" value={total} subtitle="on duty today" icon={Users}
+                tint={total > 0 ? 'success' : 'neutral'} extra={extra} onClick={() => navigate('/schedule')} />
+            </div>
+          );
+        })()}
       </div>
 
       {/* ════════════════════════════════════════════════════════════
@@ -389,7 +404,7 @@ export default function Dashboard() {
           GROUP 3 — PEOPLE
       ════════════════════════════════════════════════════════════ */}
       <GroupHeader label="People" />
-      <div className="grid grid-cols-4 gap-2.5">
+      <div className="grid grid-cols-3 gap-2.5">
 
         {/* Rostered */}
         {(() => {
@@ -402,17 +417,6 @@ export default function Dashboard() {
           if (parseInt(ds.extra||0)) parts.push(`Extra: ${ds.extra}`);
           return <StatCard title="Rostered" value={rostered} subtitle="rostered today" icon={Users}
             tint={rostered > 0 ? 'success' : 'neutral'} extra={parts.join(' | ') || null} onClick={() => navigate('/schedule')} />;
-        })()}
-
-        {/* Dispatchers */}
-        {(() => {
-          const initials = s => `${s.first_name?.[0] || ''}${s.last_name?.[0] || ''}`;
-          const am = todayShifts.filter(s => s.shift_type === 'DISPATCH AM');
-          const pm = todayShifts.filter(s => s.shift_type === 'DISPATCH PM');
-          const total = am.length + pm.length;
-          const extra = `AM: ${am.map(initials).join('/') || '—'}  PM: ${pm.map(initials).join('/') || '—'}`;
-          return <StatCard title="Dispatchers" value={total} subtitle="on duty today" icon={Users}
-            tint={total > 0 ? 'success' : 'neutral'} extra={extra} onClick={() => navigate('/schedule')} />;
         })()}
 
         {/* Attendance — Weekly/Daily toggle */}

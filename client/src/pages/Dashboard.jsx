@@ -312,7 +312,7 @@ export default function Dashboard() {
           className={`col-span-2 md:col-span-2 relative rounded-xl border shadow-sm p-3.5 flex flex-col gap-1.5 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all group ${
             rescuesToday.length > 0 ? 'bg-orange-50/60 border-orange-100' : 'bg-emerald-50/40 border-emerald-100'
           }`}
-          onClick={() => navigate('/analytics?tab=performance')}
+          onClick={() => navigate('/analytics?tab=rescue')}
         >
           <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
             rescuesToday.length > 0 ? 'bg-orange-100 text-orange-600' : 'bg-emerald-100 text-emerald-600'

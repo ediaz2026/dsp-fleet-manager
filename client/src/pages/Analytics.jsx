@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -889,7 +890,16 @@ function getSundayStr() {
 
 export default function Analytics() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState('volume');
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return t && ['volume', 'routes', 'performance', 'rescue', 'daily-summary'].includes(t) ? t : 'volume';
+  });
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t && t !== tab && ['volume', 'routes', 'performance', 'rescue', 'daily-summary'].includes(t)) setTab(t);
+  }, [searchParams]);
 
   // Daily Routes Summary state
   const [summaryWeekStart, setSummaryWeekStart] = useState(getSundayStr);

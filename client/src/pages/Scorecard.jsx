@@ -321,7 +321,7 @@ export default function Scorecard() {
                       {d.driver_name}
                       {!d.staff_id && <span className="ml-1 text-[9px] text-red-400">(unmatched)</span>}
                     </td>
-                    <td className="px-3 py-2 text-center font-bold">{isPD ? (d.dcr_score != null ? `${fmt(d.dcr_score)}%` : '—') : fmt(d.final_ranking)}</td>
+                    <td className="px-3 py-2 text-center font-bold">{isPD ? '—' : fmt(d.final_ranking)}</td>
                     <td className="px-3 py-2 text-center">{pkgs(d.packages)}</td>
                     <td className="px-3 py-2 text-center">{isPD ? <Badge pass={pdSafetyPass(d)} /> : <Badge pass={d.safety_pass} />}</td>
                     <td className="px-3 py-2 text-center">{isPD ? <Badge pass={pdDsbPass(d)} /> : <Badge pass={d.dsb_pass} />}</td>

@@ -183,6 +183,15 @@ export default function Dashboard() {
   const publishedPct = wkTotal === 0 ? null
     : Math.round((wkPublished / wkTotal) * 100);
 
+  // ── Attendance toggle state
+  const [attendanceView, setAttendanceView] = useState('weekly');
+  const { data: dailyAtt } = useQuery({
+    queryKey: ['attendance-daily'],
+    queryFn: () => api.get('/dashboard/attendance-daily').then(r => r.data),
+    enabled: attendanceView === 'daily',
+    staleTime: 30000,
+  });
+
   // ── Weekly attendance (scheduled shift-days as denominator, unexcused NCNS + CO as absent)
   const scheduled_count  = parseInt(hoursSummary?.scheduled_count  || 0, 10);
   const ncns_count       = parseInt(hoursSummary?.ncns_count       || 0, 10);
@@ -406,16 +415,73 @@ export default function Dashboard() {
             tint={total > 0 ? 'success' : 'neutral'} extra={extra} onClick={() => navigate('/schedule')} />;
         })()}
 
-        {/* Weekly Attendance */}
-        <StatCard
-          title="Weekly Attendance"
-          value={attendRate !== null ? `${attendRate}%` : '—'}
-          subtitle={scheduled_count > 0 ? `${scheduled_count - absent} of ${scheduled_count} shift-days${attWeekStart ? ` · ${attWeekStart} – ${attWeekEnd}` : ''}` : 'no shifts yet this week'}
-          icon={Users}
-          tint={attendRate === null ? 'neutral' : attendRate >= 95 ? 'success' : attendRate >= 88 ? 'warning' : 'danger'}
-          extra={attendExtra}
-          onClick={() => navigate('/attendance')}
-        />
+        {/* Attendance — Weekly/Daily toggle */}
+        {(() => {
+          const isDaily = attendanceView === 'daily';
+          const dRate = dailyAtt?.attendance_rate;
+          const dSched = parseInt(dailyAtt?.scheduled || 0);
+          const dNcns = parseInt(dailyAtt?.ncns || 0);
+          const dCo = parseInt(dailyAtt?.call_out || 0);
+          const dLate = parseInt(dailyAtt?.late || 0);
+          const dSh = parseInt(dailyAtt?.sent_home || 0);
+          const dAbsent = dNcns + dCo;
+          const showRate = isDaily ? dRate : attendRate;
+          const tint = showRate === null ? 'neutral' : showRate >= 95 ? 'success' : showRate >= 88 ? 'warning' : 'danger';
+          const tintBg = { success: 'bg-emerald-50/60 border-emerald-100', warning: 'bg-amber-50/60 border-amber-100', danger: 'bg-red-50/60 border-red-100', neutral: 'bg-white border-slate-200' }[tint];
+          return (
+            <div className={`relative rounded-xl border shadow-sm p-3.5 flex flex-col gap-1.5 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all group ${tintBg}`}
+              onClick={() => navigate('/attendance')}>
+              <div className="flex items-center justify-between">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${tint === 'success' ? 'bg-emerald-100 text-emerald-600' : tint === 'warning' ? 'bg-amber-100 text-amber-600' : tint === 'danger' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'}`}>
+                  <Users size={14} />
+                </div>
+                <div className="flex rounded-full bg-slate-100 p-0.5" onClick={e => e.stopPropagation()}>
+                  {['weekly', 'daily'].map(v => (
+                    <button key={v} onClick={() => setAttendanceView(v)}
+                      className={`px-3 py-1 text-[10px] font-semibold rounded-full transition-all ${attendanceView === v ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-600'}`}>
+                      {v === 'weekly' ? 'Weekly' : 'Daily'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0">Attendance</p>
+                <p className="text-[1.75rem] font-black text-slate-900 leading-none">
+                  {showRate !== null && showRate !== undefined ? `${Math.round(showRate)}%` : '—'}
+                </p>
+                {isDaily ? (
+                  <>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {dSched > 0 ? `${dSched - dAbsent} of ${dSched} today` : 'no shifts today'}
+                      {dailyAtt?.today_label ? ` · ${dailyAtt.today_label}` : ''}
+                    </p>
+                    {dSched > 0 && (dNcns + dCo + dLate + dSh) === 0 && (
+                      <p className="text-[10px] text-emerald-600 font-semibold mt-1">✓ No issues today</p>
+                    )}
+                    {(dNcns + dCo + dLate + dSh) > 0 && (
+                      <div className="flex gap-1.5 flex-wrap mt-1">
+                        {dNcns > 0 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700">NCNS: {dNcns}</span>}
+                        {dCo > 0   && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">CO: {dCo}</span>}
+                        {dLate > 0 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Late: {dLate}</span>}
+                        {dSh > 0   && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">SH: {dSh}</span>}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {scheduled_count > 0 ? `${scheduled_count - absent} of ${scheduled_count} shift-days${attWeekStart ? ` · ${attWeekStart} – ${attWeekEnd}` : ''}` : 'no shifts yet this week'}
+                    </p>
+                    {attendExtra}
+                  </>
+                )}
+              </div>
+              <span className="absolute bottom-2.5 right-3 flex items-center gap-0.5 text-[10px] text-slate-400 group-hover:text-blue-500 font-medium transition-colors">
+                View <ChevronRight size={10} />
+              </span>
+            </div>
+          );
+        })()}
 
         {/* Consequence Alerts */}
         <div

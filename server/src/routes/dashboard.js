@@ -251,6 +251,33 @@ router.get('/', async (req, res) => {
   });
 });
 
+// GET /api/dashboard/attendance-daily — today's attendance counts
+router.get('/attendance-daily', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM shifts
+         WHERE shift_date = (NOW() AT TIME ZONE 'America/New_York')::date
+           AND shift_type NOT IN ('SUSPENSION','PTO','UTO','ON CALL','TRAINING','TRAINER','DISPATCH AM','DISPATCH PM')
+        )::int AS scheduled,
+        COUNT(*) FILTER (WHERE a.status = 'ncns'       AND (a.excused IS NOT TRUE))::int AS ncns,
+        COUNT(*) FILTER (WHERE a.status = 'called_out'  AND (a.excused IS NOT TRUE))::int AS call_out,
+        COUNT(*) FILTER (WHERE a.status = 'late'        AND (a.excused IS NOT TRUE))::int AS late,
+        COUNT(*) FILTER (WHERE a.status = 'sent_home'   AND (a.excused IS NOT TRUE))::int AS sent_home,
+        TO_CHAR((NOW() AT TIME ZONE 'America/New_York')::date, 'Dy Mon DD') AS today_label
+      FROM attendance a
+      WHERE a.attendance_date = (NOW() AT TIME ZONE 'America/New_York')::date
+    `);
+    const r = rows[0] || {};
+    const scheduled = parseInt(r.scheduled || 0);
+    const absent = parseInt(r.ncns || 0) + parseInt(r.call_out || 0);
+    const rate = scheduled > 0 ? Math.round(((scheduled - absent) / scheduled) * 1000) / 10 : null;
+    res.json({ ...r, attendance_rate: rate });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/dashboard/wipe-reimport  (admin only)
 router.post('/wipe-reimport', async (req, res) => {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });

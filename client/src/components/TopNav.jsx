@@ -207,22 +207,32 @@ export default function TopNav() {
 
   return (
     <header className="bg-[#1E3A5F] sticky top-0 z-40 flex-shrink-0 shadow-md">
-      <div className="max-w-screen-2xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
+      <div className="max-w-screen-2xl mx-auto pr-4 h-14 flex items-center justify-between gap-4">
 
-        {/* ── Brand ───────────────────────────────────────────────── */}
+        {/* ── Angled logo banner ──────────────────────────────────── */}
         <NavLink
           to={isDriver ? '/today' : '/'}
-          className="flex items-center flex-shrink-0"
+          style={{
+            height: '56px',
+            minWidth: '220px',
+            background: 'white',
+            clipPath: 'polygon(0 0, 100% 0, 88% 100%, 0 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            paddingLeft: '8px',
+            paddingRight: '44px',
+            flexShrink: 0,
+          }}
         >
           <img
-            src={companyLogo}
+            src="https://res.cloudinary.com/dbplnigog/image/upload/v1776289023/Screenshot_2026-04-15_at_5.29.06_PM_weocsl.png"
             alt="Last Mile DSP"
-            className="h-8 sm:h-10 w-auto object-contain"
+            style={{ height: '52px', width: 'auto', objectFit: 'contain', display: 'block' }}
           />
         </NavLink>
 
         {/* ── Nav items ───────────────────────────────────────────── */}
-        <nav className="flex items-center gap-0.5 flex-1 justify-center overflow-x-auto scrollbar-hide">
+        <nav className="flex items-center gap-0.5 flex-1 justify-center overflow-x-auto scrollbar-hide" style={{ marginLeft: '16px' }}>
           {activeNavItems.map((group, i) => {
             if (group.children) {
               return <NavDropdown key={i} group={group} />;

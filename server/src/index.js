@@ -162,20 +162,6 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
-// Temporary diagnostic (remove after use)
-app.get('/api/diag-dob', async (req, res) => {
-  const pool = require('./db/pool');
-  const { rows: staffCols } = await pool.query(`
-    SELECT column_name, data_type FROM information_schema.columns
-    WHERE table_name = 'staff' AND (column_name ILIKE '%birth%' OR column_name ILIKE '%dob%' OR column_name ILIKE '%birthday%')
-  `);
-  const { rows: driverCols } = await pool.query(`
-    SELECT column_name, data_type FROM information_schema.columns
-    WHERE table_name = 'drivers' AND (column_name ILIKE '%birth%' OR column_name ILIKE '%dob%' OR column_name ILIKE '%birthday%')
-  `);
-  res.json({ staff: staffCols, drivers: driverCols });
-});
-
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

@@ -154,6 +154,12 @@ export default function Dashboard() {
     staleTime: 30000,
   });
 
+  const { data: birthdays = [] } = useQuery({
+    queryKey: ['birthdays'],
+    queryFn: () => api.get('/dashboard/birthdays').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
   if (isLoading) return <LoadingState />;
 
   const {
@@ -514,6 +520,39 @@ export default function Dashboard() {
           <span className="absolute bottom-2.5 right-3 flex items-center gap-0.5 text-[10px] text-slate-400 group-hover:text-blue-500 font-medium transition-colors">
             View <ChevronRight size={10} />
           </span>
+        </div>
+
+        {/* Birthdays */}
+        <div className="col-span-3 bg-indigo-50 border border-indigo-100 rounded-xl shadow-sm p-3.5">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400">🎂 Birthdays</p>
+            <span className="text-[10px] text-slate-400">Next 7 days</span>
+          </div>
+          {birthdays.length === 0 ? (
+            <p className="text-xs text-slate-400 py-2">No upcoming birthdays</p>
+          ) : (
+            <div className="space-y-1.5">
+              {birthdays.slice(0, 5).map((b, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  <span className="text-sm">🎂</span>
+                  <span className="font-semibold text-slate-800">{b.first_name} {b.last_name}</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-500">{b.birthday_display}</span>
+                  <span className="text-slate-400">·</span>
+                  {b.days_until === 0 ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Today 🎉</span>
+                  ) : b.days_until === 1 ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Tomorrow</span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">In {b.days_until} days</span>
+                  )}
+                </div>
+              ))}
+              {birthdays.length > 5 && (
+                <p className="text-[10px] text-indigo-500 font-medium mt-1">+{birthdays.length - 5} more</p>
+              )}
+            </div>
+          )}
         </div>
 
       </div>

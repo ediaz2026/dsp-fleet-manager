@@ -251,6 +251,32 @@ router.get('/', async (req, res) => {
   });
 });
 
+// GET /api/dashboard/birthdays — upcoming birthdays (next 7 days)
+router.get('/birthdays', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT s.first_name, s.last_name,
+        TO_CHAR(d.dob, 'Mon DD') AS birthday_display,
+        CASE
+          WHEN TO_CHAR(d.dob, 'MMDD') = TO_CHAR(CURRENT_DATE, 'MMDD') THEN 0
+          WHEN TO_CHAR(d.dob, 'MMDD') > TO_CHAR(CURRENT_DATE, 'MMDD')
+            THEN (TO_DATE(TO_CHAR(CURRENT_DATE, 'YYYY') || TO_CHAR(d.dob, 'MMDD'), 'YYYYMMDD') - CURRENT_DATE)::int
+          ELSE (TO_DATE(TO_CHAR(CURRENT_DATE, 'YYYY') || TO_CHAR(d.dob, 'MMDD'), 'YYYYMMDD') + INTERVAL '1 year' - CURRENT_DATE)::int
+        END AS days_until
+      FROM drivers d
+      JOIN staff s ON s.id = d.staff_id
+      WHERE d.dob IS NOT NULL AND s.status NOT IN ('terminated','deleted')
+      ORDER BY
+        CASE WHEN TO_CHAR(d.dob, 'MMDD') >= TO_CHAR(CURRENT_DATE, 'MMDD')
+          THEN TO_CHAR(d.dob, 'MMDD') ELSE 'Z' || TO_CHAR(d.dob, 'MMDD') END
+    `);
+    const upcoming = rows.filter(r => r.days_until >= 0 && r.days_until <= 7);
+    res.json(upcoming);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/dashboard/attendance-daily — today's attendance counts
 router.get('/attendance-daily', async (req, res) => {
   try {

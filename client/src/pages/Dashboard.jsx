@@ -465,7 +465,7 @@ export default function Dashboard() {
           if (parseInt(ds.helper||0)) parts.push(`Helper: ${ds.helper}`);
           if (parseInt(ds.extra||0)) parts.push(`Extra: ${ds.extra}`);
           return <StatCard title="Rostered" value={rostered} subtitle="rostered today" icon={Users}
-            tint={rostered > 0 ? 'success' : 'neutral'} extra={parts.join(' | ') || null} onClick={() => navigate('/schedule')} />;
+            tint={rostered > 0 ? 'success' : 'neutral'} extra={parts.join(' | ') || null} onClick={() => navigate('/schedule?tab=daily')} />;
         })()}
 
         {/* Attendance — Weekly/Daily toggle */}

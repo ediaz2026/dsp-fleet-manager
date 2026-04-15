@@ -261,6 +261,7 @@ router.get('/idle-vehicles', async (req, res) => {
       FROM vehicles v
       LEFT JOIN ops_assignments oa ON oa.vehicle_id = v.id
       WHERE v.van_status = 'Active'
+        AND v.van_status NOT IN ('Grounded', 'Out of Service')
         AND (v.amazon_status IS NULL OR v.amazon_status != 'Grounded')
       GROUP BY v.id, v.vehicle_name, v.van_status, v.amazon_status
       HAVING MAX(oa.plan_date) IS NULL OR (CURRENT_DATE - MAX(oa.plan_date)) > 4

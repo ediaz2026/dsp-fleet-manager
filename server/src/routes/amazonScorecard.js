@@ -229,90 +229,72 @@ router.post('/upload-pdf', adminOnly, upload.single('file'), async (req, res) =>
 
     console.log(`[scorecard-pdf] Parsing ${weekLabel} ${year}`);
 
-    // Parse driver rows from text
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const tidPattern = /^[A-Z0-9]{10,20}$/;
+    // Parse driver rows using TID as anchor point
+    const fullText = text.replace(/\n/g, ' ').replace(/\s+/g, ' ');
+    const tidPattern = /\b([A-Z][A-Z0-9]{10,14})\b/g;
+    const tidMatches = [...fullText.matchAll(tidPattern)];
     const drivers = [];
+
     const parseNum = (v) => {
-      if (!v || v === '-' || /no\s*data/i.test(v)) return null;
-      const cleaned = String(v).replace(/[%,]/g, '').trim();
-      const n = parseFloat(cleaned);
+      if (!v) return null;
+      const n = parseFloat(String(v).replace('%', ''));
       return isNaN(n) ? null : n;
     };
 
-    // Strategy: find lines that start with a number (rank) and try to extract a row
-    // The PDF text typically flows: rank, name, tid, then numeric values
-    // We'll collect all tokens and walk through them
-    const allTokens = [];
-    for (const line of lines) {
-      // Split on whitespace but keep "No Data" as single token
-      const tokens = line.replace(/No\s+Data/gi, 'NoData').split(/\s+/);
-      allTokens.push(...tokens);
-    }
+    tidMatches.forEach((tidMatch, i) => {
+      const tid = tidMatch[1];
+      const tidPos = tidMatch.index;
 
-    let idx = 0;
-    while (idx < allTokens.length) {
-      const rankStr = allTokens[idx];
-      const rank = parseInt(rankStr);
-      if (isNaN(rank) || rank < 1 || rank > 200) { idx++; continue; }
+      // Get text BEFORE this TID (back to previous TID end or start)
+      const prevEnd = i > 0 ? tidMatches[i - 1].index + tidMatches[i - 1][0].length : 0;
+      const beforeTid = fullText.slice(prevEnd, tidPos).trim();
 
-      // Collect name tokens until we hit a TID-like pattern
-      let nameTokens = [];
-      let tid = '';
-      let j = idx + 1;
+      // Get text AFTER this TID (up to next TID or end)
+      const nextStart = i < tidMatches.length - 1 ? tidMatches[i + 1].index : fullText.length;
+      const afterTid = fullText.slice(tidPos + tid.length, nextStart).trim();
 
-      while (j < allTokens.length) {
-        if (tidPattern.test(allTokens[j])) {
-          tid = allTokens[j];
-          j++;
-          break;
-        }
-        // If we hit a number and already have name tokens, this might be data not a name
-        if (nameTokens.length >= 2 && /^\d+\.?\d*$/.test(allTokens[j])) break;
-        nameTokens.push(allTokens[j]);
-        j++;
-        if (nameTokens.length > 8) break; // safety limit
+      // Extract rank (1-2 digit number) and name from the end of beforeTid
+      const rankNameMatch = beforeTid.match(/\b(\d{1,3})\s+([A-Za-z][A-Za-z\s'-]+?)\s*$/);
+      if (!rankNameMatch) return;
+
+      const rank = parseInt(rankNameMatch[1]);
+      const name = rankNameMatch[2].trim();
+      if (rank < 1 || rank > 150 || name.length < 3) return;
+
+      // Parse numeric values from afterTid
+      const tokens = afterTid.replace(/No\s*Data/gi, 'NoData').split(/\s+/);
+      const nums = [];
+      for (const t of tokens) {
+        if (t === 'NoData') { nums.push(null); continue; }
+        const n = parseFloat(t.replace('%', '').replace(',', ''));
+        if (!isNaN(n)) nums.push(n);
+        // Stop if we hit what looks like a name (next driver row's rank+name area)
+        if (/^[A-Za-z]{3,}/.test(t) && nums.length > 5) break;
       }
 
-      const driverName = nameTokens.join(' ');
-      if (!driverName || nameTokens.length === 0 || !tid) { idx++; continue; }
-
-      // Read numeric values: Delivered, FICO, Seatbelt, Speeding, Distraction, FollowDist, SignSignal, CDF, CED, DCR, DSB, POD, PSB, DSBCount, PODOpps
-      const vals = [];
-      while (j < allTokens.length && vals.length < 17) {
-        const v = allTokens[j];
-        if (/^[A-Z][a-z]/.test(v) && !v.startsWith('No') && vals.length > 3) break; // hit next name
-        if (/^\d{1,3}$/.test(v) && vals.length > 5 && parseInt(v) >= 1 && parseInt(v) <= 200) {
-          // Might be next rank — check if followed by name-like tokens
-          const nextFew = allTokens.slice(j + 1, j + 4).join(' ');
-          if (/[a-z]/i.test(nextFew) && tidPattern.test(allTokens[j + 2] || allTokens[j + 3] || '')) break;
-        }
-        vals.push(v === 'NoData' ? null : v);
-        j++;
-      }
-
-      if (vals.length >= 8) {
-        drivers.push({
-          rank, driverName, tid,
-          packages: parseInt(vals[0]) || null,
-          // vals[1] = FICO (skip)
-          seatbelt: parseNum(vals[2]),
-          speeding: parseNum(vals[3]),
-          distraction: parseNum(vals[4]),
-          followDist: parseNum(vals[5]),
-          signSignal: parseNum(vals[6]),
-          cdf: parseNum(vals[7]),
-          // vals[8] = CED
-          dcr: parseNum(vals[9]),
-          dsb: parseNum(vals[10]),
-          pod: vals[11] ? parseNum(vals[11]) : null,
-        });
-      }
-
-      idx = j;
-    }
+      // Column order after TID: Delivered, FICO, Seatbelt, Speeding, Distraction,
+      // FollowDist, SignSignal, CDF_DPMO, CED, DCR, DSB, POD, ...
+      drivers.push({
+        rank, driverName: name, tid,
+        packages: nums[0] != null ? Math.round(nums[0]) : null,
+        // nums[1] = FICO (skip)
+        seatbelt: nums[2] ?? null,
+        speeding: nums[3] ?? null,
+        distraction: nums[4] ?? null,
+        followDist: nums[5] ?? null,
+        signSignal: nums[6] ?? null,
+        cdf: nums[7] != null ? Math.round(nums[7]) : 0,
+        // nums[8] = CED (skip)
+        dcr: nums[9] ?? null,
+        dsb: nums[10] != null ? Math.round(nums[10]) : 0,
+        pod: nums[11] ?? null,
+      });
+    });
 
     console.log(`[scorecard-pdf] Parsed ${drivers.length} driver rows`);
+    if (drivers.length > 0) {
+      console.log('[scorecard-pdf] Sample rows:', JSON.stringify(drivers.slice(0, 5), null, 2));
+    }
 
     if (drivers.length === 0) {
       return res.status(400).json({ error: 'Could not parse any driver rows from PDF. The PDF format may not be supported.' });

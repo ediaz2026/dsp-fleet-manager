@@ -162,15 +162,6 @@ app.use('/api/audit-log',     require('./routes/auditLog'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/van-affinity', require('./routes/vanAffinity'));
 
-// Temporary diagnostic (remove after use)
-app.get('/api/diag-shifts-schema', async (req, res) => {
-  const pool = require('./db/pool');
-  const { rows: cols } = await pool.query(`SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'shifts' ORDER BY ordinal_position`);
-  const { rows: tables } = await pool.query(`SELECT table_name FROM information_schema.tables WHERE table_name ILIKE '%shift%' OR table_name ILIKE '%audit%' OR table_name ILIKE '%log%' ORDER BY table_name`);
-  const { rows: sample } = await pool.query(`SELECT * FROM shifts WHERE publish_status = 'published' LIMIT 3`);
-  res.json({ columns: cols, relatedTables: tables.map(t => t.table_name), samplePublished: sample });
-});
-
 // Health check
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',

@@ -24,8 +24,27 @@ function MetricCell({ value, good, suffix = '' }) {
   return <span className={`font-semibold ${isGood ? 'text-green-700' : 'text-red-600'}`}>{fmt(value)}{suffix}</span>;
 }
 
-function SafetyCard({ label, value }) {
+// Final Scorecard safety display: 0/null → "100" green; anything else → raw value in red.
+// Only used when scorecardView === 'final'. Pre Dispute keeps its raw 0.0 events/100 trips view.
+function getFinalSafetyDisplay(value) {
   const v = parseFloat(value);
+  if (value === null || value === undefined || value === 0 || (typeof value === 'string' && value.trim() === '') || (!isNaN(v) && v === 0)) {
+    return { display: '100', color: 'text-green-600' };
+  }
+  return { display: isNaN(v) ? value : v, color: 'text-red-600' };
+}
+
+function SafetyCard({ label, value, isPD = true }) {
+  const v = parseFloat(value);
+  if (!isPD) {
+    const { display, color } = getFinalSafetyDisplay(value);
+    return (
+      <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">{label}</p>
+        <p className={`text-lg font-bold ${color}`}>{display}</p>
+      </div>
+    );
+  }
   const color = value == null || isNaN(v) ? 'text-slate-400' : v === 0 ? 'text-green-600' : v <= 1 ? 'text-amber-600' : 'text-red-600';
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
@@ -92,11 +111,11 @@ function DriverScoreView({ weekLabel, currentYear, scorecardType = 'final' }) {
       <div>
         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Safety Metrics</p>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <SafetyCard label="Seatbelt Off Rate" value={sc.seatbelt_score} />
-          <SafetyCard label="Speeding Event Rate" value={sc.speeding_score} />
-          <SafetyCard label="Distractions Rate" value={sc.distraction_score} />
-          <SafetyCard label="Following Distance" value={sc.following_dist_score} />
-          <SafetyCard label="Sign/Signal Violations" value={sc.sign_signal_score} />
+          <SafetyCard label="Seatbelt Off Rate"       value={sc.seatbelt_score}       isPD={scorecardType === 'pre_dispute'} />
+          <SafetyCard label="Speeding Event Rate"     value={sc.speeding_score}       isPD={scorecardType === 'pre_dispute'} />
+          <SafetyCard label="Distractions Rate"       value={sc.distraction_score}    isPD={scorecardType === 'pre_dispute'} />
+          <SafetyCard label="Following Distance"      value={sc.following_dist_score} isPD={scorecardType === 'pre_dispute'} />
+          <SafetyCard label="Sign/Signal Violations"  value={sc.sign_signal_score}    isPD={scorecardType === 'pre_dispute'} />
         </div>
       </div>
     </div>
@@ -355,6 +374,17 @@ export default function Scorecard() {
                                 ['Following Distance Rate', d.following_dist_score],
                                 ['Sign/Signal Violations Rate', d.sign_signal_score],
                               ].map(([label, val]) => {
+                                if (!isPD) {
+                                  // Final Scorecard: score-out-of-100 view
+                                  const { display, color } = getFinalSafetyDisplay(val);
+                                  return (
+                                    <div key={label} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                                      <span className="text-xs text-slate-600">{label}</span>
+                                      <span className={`text-xs font-bold ${color}`}>{display}</span>
+                                    </div>
+                                  );
+                                }
+                                // Pre Dispute: raw events/100 trips view
                                 const v = parseFloat(val);
                                 const color = val == null || isNaN(v) ? 'text-slate-400' : v === 0 ? 'text-green-600' : v <= 1 ? 'text-amber-600' : 'text-red-600';
                                 return (

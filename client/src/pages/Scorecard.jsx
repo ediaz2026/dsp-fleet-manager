@@ -72,31 +72,36 @@ function DriverScoreView({ weekLabel, currentYear, scorecardType = 'final', auto
   if (isLoading) return <div className="h-32 bg-slate-100 rounded-xl animate-pulse" />;
   if (!sc) return <div className="text-center text-slate-400 py-16">No scorecard data available for this week.</div>;
 
-  // The actual type the backend resolved — used for display label + safety format.
-  const resolvedType = sc.scorecard_type || scorecardType;
+  // The actual type from the DB row — defaults to 'pre_dispute' so drivers
+  // never accidentally see Final-only features when the field is missing.
+  const resolvedType = sc.scorecard_type || 'pre_dispute';
+  const isFinal = resolvedType === 'final';
 
   const fmtMoney = v => v != null ? `$${parseFloat(v).toFixed(2)}` : '—';
   const fmtPct = v => v != null ? `${parseFloat(v).toFixed(1)}%` : '—';
 
   return (
     <div className="space-y-4">
-      {/* Scorecard type label — only shown in auto-resolve (driver) mode */}
-      {autoResolve && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-slate-500">{weekLabel} · {currentYear}</p>
-          <span className={`text-[13px] font-bold ${resolvedType === 'final' ? 'text-green-600' : 'text-amber-600'}`}>
-            {resolvedType === 'final' ? 'Final Scorecard' : 'Pre Dispute'}
-          </span>
+      {/* Scorecard type label — always visible when data exists */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-500">{weekLabel} · {currentYear}</p>
+        <div style={{
+          fontSize: '14px',
+          fontWeight: 800,
+          color: isFinal ? '#16a34a' : '#d97706',
+          letterSpacing: '0.01em',
+        }}>
+          {isFinal ? 'Final Scorecard' : 'Pre Dispute'}
         </div>
-      )}
+      </div>
 
       {/* Summary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {/* Rank — hidden for drivers viewing Pre Dispute (autoResolve + pre_dispute) */}
-        {!(autoResolve && resolvedType === 'pre_dispute') && (
+        {/* Rank — only show on Final Scorecard, never on Pre Dispute */}
+        {isFinal && sc.rank_position != null && (
           <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center">
             <p className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wide">Rank</p>
-            <p className="text-2xl font-black text-indigo-700">#{sc.rank_position || '—'}</p>
+            <p className="text-2xl font-black text-indigo-700">#{sc.rank_position}</p>
           </div>
         )}
         <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">

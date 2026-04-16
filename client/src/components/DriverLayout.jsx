@@ -16,23 +16,26 @@ export default function DriverLayout() {
   return (
     <div className="min-h-screen bg-[#F1F5F9] flex flex-col">
       {/* Content — no top nav, scrollable */}
-      <main className="flex-1 pb-20">
+      <main className="flex-1 pb-24">
         <Outlet />
       </main>
 
       {/* Bottom tab bar — always visible */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 px-2 pb-[env(safe-area-inset-bottom)]">
-        <div className="flex justify-around max-w-lg mx-auto">
+      <div
+        className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 px-2"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}
+      >
+        <div className="flex justify-around max-w-lg mx-auto" style={{ minHeight: '80px' }}>
           {TABS.map(t => {
             const active = location.pathname === t.to;
             return (
               <button
                 key={t.to}
                 onClick={() => navigate(t.to)}
-                className={`flex flex-col items-center gap-0.5 py-2 px-3 min-w-[60px] transition-colors ${active ? 'text-[#1a3a5c]' : 'text-slate-400'}`}
+                className={`flex flex-col items-center justify-center gap-1 py-3 px-3 min-w-[64px] transition-colors ${active ? 'text-[#1a3a5c]' : 'text-slate-400'}`}
               >
-                <t.icon size={20} strokeWidth={active ? 2.5 : 1.5} />
-                <span className={`text-[10px] font-semibold ${active ? 'text-[#1a3a5c]' : 'text-slate-400'}`}>{t.label}</span>
+                <t.icon size={26} strokeWidth={active ? 2.5 : 1.5} />
+                <span className={`text-[13px] font-semibold ${active ? 'text-[#1a3a5c]' : 'text-slate-400'}`}>{t.label}</span>
               </button>
             );
           })}

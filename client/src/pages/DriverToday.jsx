@@ -89,8 +89,19 @@ export default function DriverToday() {
       <div className="bg-[#F1F5F9]" style={{ paddingTop: 0, marginTop: 0 }}>
         {/* ── Header — flush to top, no gap ───────────────────────────── */}
         <div className="bg-[#1a3a5c] text-white px-5 pt-[max(env(safe-area-inset-top),20px)] pb-8 rounded-b-3xl">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-blue-200 font-medium">{format(new Date(), 'EEEE, MMMM d')}</p>
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', background: 'white',
+                clipPath: 'polygon(0 0, 100% 0, 92% 100%, 0 100%)',
+                paddingLeft: '8px', paddingRight: '32px', paddingTop: '4px', paddingBottom: '4px',
+                marginBottom: '8px',
+              }}>
+                <img src="https://res.cloudinary.com/dbplnigog/image/upload/v1776289023/Screenshot_2026-04-15_at_5.29.06_PM_weocsl.png"
+                  alt="Last Mile DSP" style={{ height: '36px', width: 'auto', objectFit: 'contain' }} />
+              </div>
+              <p className="text-sm text-blue-200 font-medium">{format(new Date(), 'EEEE, MMMM d')}</p>
+            </div>
             <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold">
               {initials}
             </div>

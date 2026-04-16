@@ -139,11 +139,11 @@ export default function Management() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  // Redirect legacy links for sections that have moved to the Drivers page
+  // Redirect legacy links for sections that have moved (or been removed)
   useEffect(() => {
     const fromUrl = searchParams.get('section');
-    if (fromUrl === 'users')             { navigate('/drivers?tab=user-management', { replace: true }); return; }
-    if (fromUrl === 'send-invitations')  { navigate('/drivers?tab=invitations',     { replace: true }); return; }
+    if (fromUrl === 'users')             { navigate('/drivers',                  { replace: true }); return; }
+    if (fromUrl === 'send-invitations')  { navigate('/drivers?tab=invitations',  { replace: true }); return; }
   }, [searchParams, navigate]);
 
   const [activeSection, setActiveSection] = useState(
@@ -641,7 +641,7 @@ export default function Management() {
             </div>
             <div className={CARD}>
               <p className="text-sm text-slate-500">
-                Select a staff member and enter their driver details. Staff members can be created via User Management (SYSTEM).
+                Select a staff member and enter their driver details.
               </p>
               <form className="space-y-4" onSubmit={e => { e.preventDefault(); addDriverMutation.mutate(addDriverForm); }}>
                 <div>

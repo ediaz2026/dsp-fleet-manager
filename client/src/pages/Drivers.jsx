@@ -12,7 +12,6 @@ import { useSort } from '../hooks/useSort';
 import { format, differenceInDays, parseISO, isValid } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import UserManagementPanel from '../components/UserManagementPanel';
 import InvitationsPanel from '../components/InvitationsPanel';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1445,7 +1444,7 @@ export default function Drivers() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [section, setSection] = useState(() => {
     const tabParam = searchParams.get('tab');
-    if (tabParam === 'user-management' || tabParam === 'invitations') return tabParam;
+    if (tabParam === 'invitations') return tabParam;
     if (location.state?.section) return location.state.section;
     return localStorage.getItem('drivers_section') || 'all-drivers';
   });
@@ -1455,7 +1454,7 @@ export default function Drivers() {
   // Sync ?tab= URL param (deep links from Management redirects)
   useEffect(() => {
     const tabParam = searchParams.get('tab');
-    if (tabParam === 'user-management' || tabParam === 'invitations') {
+    if (tabParam === 'invitations') {
       setSection(tabParam);
     }
   }, [searchParams]);
@@ -1537,18 +1536,6 @@ export default function Drivers() {
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-3 pb-1">People Ops</p>
 
           <button
-            onClick={() => saveSection('user-management')}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-              section === 'user-management'
-                ? 'bg-blue-600 text-white'
-                : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
-            }`}
-          >
-            <Users size={15} className="flex-shrink-0" />
-            <span className="flex-1 text-left">User Management</span>
-          </button>
-
-          <button
             onClick={() => saveSection('invitations')}
             className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
               section === 'invitations'
@@ -1570,7 +1557,6 @@ export default function Drivers() {
         {section === 'all-drivers'     && <AllDriversSection onOpenProfile={openProfile} initialStatus={initialStatus} />}
         {section === 'recurring'       && <RecurringSection onOpenProfile={openProfile} />}
         {section === 'alerts'          && <AlertsSection onOpenProfile={openProfile} />}
-        {section === 'user-management' && <div className="space-y-5"><UserManagementPanel enabled={section === 'user-management'} /></div>}
         {section === 'invitations'     && <div className="space-y-5"><InvitationsPanel enabled={section === 'invitations'} /></div>}
       </div>
 

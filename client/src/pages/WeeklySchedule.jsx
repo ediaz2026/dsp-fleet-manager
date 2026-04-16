@@ -183,8 +183,9 @@ export default function WeeklySchedule() {
   // overflow clipping. Coordinates are recomputed from the search wrapper's
   // bounding rect on open / query change / scroll / resize.
   const [dropdownPos, setDropdownPos]           = useState({ top: 0, left: 0, width: 0 });
-  const chipInputRef     = useRef();
-  const chipContainerRef = useRef();
+  const chipInputRef     = useRef();   // the <input> element (focus target)
+  const chipInputRowRef  = useRef();   // the search-input row (used to anchor the dropdown below the input, not below chips)
+  const chipContainerRef = useRef();   // the full wrapper card (used for outside-click)
 
   // Per-day column filter (sort by route, shift type, or start time)
   const [dayColFilter, setDayColFilter]         = useState(null);  // { dateStr, mode } | null
@@ -1215,10 +1216,12 @@ export default function WeeklySchedule() {
   }, [rotatingPromptOpen]); // eslint-disable-line
 
   // ── Driver-search dropdown position (position: fixed, viewport coords) ────
+  // Anchors to the INPUT row, not the whole card — so adding chips (which
+  // grow the card downward) doesn't push the dropdown below the chips.
   useEffect(() => {
     if (!chipDropOpen || chipInput.trim().length < 2) return;
     const updatePos = () => {
-      const el = chipContainerRef.current;
+      const el = chipInputRowRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
       setDropdownPos({
@@ -1234,7 +1237,7 @@ export default function WeeklySchedule() {
       window.removeEventListener('scroll', updatePos, true);
       window.removeEventListener('resize', updatePos);
     };
-  }, [chipDropOpen, chipInput, driverChips.length]);
+  }, [chipDropOpen, chipInput]);
 
   // ── Outside click handlers ─────────────────────────────────────────────────
   useEffect(() => {
@@ -1574,7 +1577,7 @@ export default function WeeklySchedule() {
           {/* Driver chip search */}
           <div ref={chipContainerRef} className="relative bg-white border border-card-border rounded-r-xl shadow-sm">
             {/* Search input */}
-            <div className="px-2 pt-2 pb-2 flex items-center gap-1 cursor-text" onClick={() => chipInputRef.current?.focus()}>
+            <div ref={chipInputRowRef} className="px-2 pt-2 pb-2 flex items-center gap-1 cursor-text" onClick={() => chipInputRef.current?.focus()}>
               <Search size={11} className="text-slate-400 flex-shrink-0" />
               <input
                 ref={chipInputRef}

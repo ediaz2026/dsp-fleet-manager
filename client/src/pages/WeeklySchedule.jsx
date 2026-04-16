@@ -50,6 +50,26 @@ function getAmazonWeek(date) {
   return getWeek(date, { weekStartsOn: 0, firstWeekContainsDate: 1 });
 }
 
+// ─── Driver chip helpers (avatar color, initials, highlight) ─────────────────
+const AVATAR_PALETTE = ['#2563eb','#16a34a','#7c3aed','#d97706','#e11d48','#0891b2','#65a30d'];
+function avatarColor(id) {
+  const n = typeof id === 'number' ? id : Number(id) || 0;
+  return AVATAR_PALETTE[Math.abs(n) % AVATAR_PALETTE.length];
+}
+function initials(firstName, lastName) {
+  const f = (firstName || '').trim().charAt(0).toUpperCase();
+  const l = (lastName  || '').trim().charAt(0).toUpperCase();
+  return `${f}${l}` || '?';
+}
+// Split a name into [prefix, match, suffix] for the first case-insensitive
+// occurrence of `query`. If not found, returns [name, '', ''].
+function highlightParts(name, query) {
+  if (!query) return [name, '', ''];
+  const idx = name.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return [name, '', ''];
+  return [name.slice(0, idx), name.slice(idx, idx + query.length), name.slice(idx + query.length)];
+}
+
 function getSunday(date) {
   return startOfWeek(date, { weekStartsOn: 0 });
 }
@@ -399,13 +419,31 @@ export default function WeeklySchedule() {
   }, [driverHours]);
 
   // ── Chip suggestions ───────────────────────────────────────────────────────
+  // Rank: first-name starts-with (0) → first-name contains (1) → last-name
+  // starts-with (2) → last-name contains (3). Excludes non-matches.
   const chipSuggestions = useMemo(() => {
     if (!chipInput.trim()) return [];
     const q = chipInput.toLowerCase();
-    return staff
-      .filter(s => !driverChips.some(c => c.id === s.id))
-      .filter(s => `${s.first_name} ${s.last_name}`.toLowerCase().includes(q))
-      .slice(0, 8);
+    const ranked = [];
+    for (const s of staff) {
+      if (driverChips.some(c => c.id === s.id)) continue;
+      const first = (s.first_name || '').toLowerCase();
+      const last  = (s.last_name  || '').toLowerCase();
+      let rank = -1;
+      if      (first.startsWith(q)) rank = 0;
+      else if (first.includes(q))   rank = 1;
+      else if (last.startsWith(q))  rank = 2;
+      else if (last.includes(q))    rank = 3;
+      if (rank === -1) continue;
+      ranked.push({ s, rank });
+    }
+    ranked.sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      const af = `${a.s.first_name || ''} ${a.s.last_name || ''}`.toLowerCase();
+      const bf = `${b.s.first_name || ''} ${b.s.last_name || ''}`.toLowerCase();
+      return af.localeCompare(bf);
+    });
+    return ranked.slice(0, 8).map(r => r.s);
   }, [staff, driverChips, chipInput]);
 
   // ── Filtered Drivers ───────────────────────────────────────────────────────
@@ -415,7 +453,11 @@ export default function WeeklySchedule() {
       list = list.filter(s => driverChips.some(c => c.id === s.id));
     } else if (chipInput.trim()) {
       const q = chipInput.toLowerCase();
-      list = list.filter(s => `${s.first_name} ${s.last_name}`.toLowerCase().includes(q));
+      list = list.filter(s => {
+        const first = (s.first_name || '').toLowerCase();
+        const last  = (s.last_name  || '').toLowerCase();
+        return first.includes(q) || last.includes(q);
+      });
     }
     if (!showUnscheduled) {
       list = list.filter(s => weekDays.some(d => shiftMap[`${s.id}-${format(d, 'yyyy-MM-dd')}`]?.length > 0));
@@ -1497,28 +1539,27 @@ export default function WeeklySchedule() {
         <div className="w-52 flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
 
           {/* Driver chip search */}
-          <div ref={chipContainerRef} className="relative bg-white border border-card-border rounded-r-xl shadow-sm cursor-text" onClick={() => chipInputRef.current?.focus()}>
-            <div className="px-2 pt-2 pb-1 flex items-center gap-1">
+          <div ref={chipContainerRef} className="relative bg-white border border-card-border rounded-r-xl shadow-sm">
+            {/* Search input */}
+            <div className="px-2 pt-2 pb-2 flex items-center gap-1 cursor-text" onClick={() => chipInputRef.current?.focus()}>
               <Search size={11} className="text-slate-400 flex-shrink-0" />
               <input
                 ref={chipInputRef}
                 className="flex-1 min-w-0 text-xs bg-transparent outline-none placeholder-content-subtle text-content"
-                placeholder="Search drivers…"
+                placeholder="Search by first name..."
                 value={chipInput}
                 onChange={e => {
                   setChipInput(e.target.value);
-                  // Only open chip-suggestion dropdown when there's text; close when cleared
-                  if (e.target.value.trim()) setChipDropOpen(true);
+                  if (e.target.value.trim().length >= 2) setChipDropOpen(true);
                   else setChipDropOpen(false);
                 }}
-                onFocus={() => { if (chipInput.trim()) setChipDropOpen(true); }}
+                onFocus={() => { if (chipInput.trim().length >= 2) setChipDropOpen(true); }}
                 onKeyDown={e => {
                   if (e.key === 'Escape') { setChipDropOpen(false); setChipInput(''); }
                   if (e.key === 'Backspace' && !chipInput && driverChips.length > 0) setDriverChips(prev => prev.slice(0, -1));
                 }}
               />
-              {/* Clear button — visible when search text is present and no chips pinned */}
-              {chipInput && driverChips.length === 0 && (
+              {chipInput && (
                 <button
                   onMouseDown={e => { e.preventDefault(); setChipInput(''); setChipDropOpen(false); chipInputRef.current?.focus(); }}
                   className="flex-shrink-0 text-slate-400 hover:text-slate-600 transition-colors"
@@ -1528,24 +1569,111 @@ export default function WeeklySchedule() {
                 </button>
               )}
             </div>
+
+            {/* Selected driver chips */}
             {driverChips.length > 0 && (
-              <div className="px-2 pb-2 flex flex-col gap-1 border-t border-slate-100 pt-1.5">
-                {driverChips.map(c => (
-                  <span key={c.id} className="flex items-center justify-between bg-[#2563EB] text-white text-[11px] font-medium px-2 py-1 rounded-lg w-full">
-                    <span className="break-words leading-tight mr-1">{c.name}</span>
-                    <button onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setDriverChips(prev => prev.filter(x => x.id !== c.id)); }} className="hover:opacity-70 transition-opacity leading-none flex-shrink-0"><X size={10} /></button>
-                  </span>
-                ))}
-                <button onMouseDown={e => { e.preventDefault(); setDriverChips([]); setChipInput(''); }} className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-600 transition-colors mt-0.5 self-start"><X size={9} /> Clear all</button>
+              <div className="px-2 pb-2 border-t border-slate-100 pt-2">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '6px' }}>
+                  {driverChips.map(c => (
+                    <div
+                      key={c.id}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        background: '#1f2937',
+                        border: '1px solid #374151',
+                        borderRadius: '20px',
+                        padding: '3px 8px 3px 4px',
+                      }}
+                    >
+                      <div style={{
+                        width: '20px', height: '20px', borderRadius: '50%',
+                        background: avatarColor(c.id),
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '8px', fontWeight: 700, color: 'white', flexShrink: 0,
+                        letterSpacing: '0.5px',
+                      }}>
+                        {initials(c.first_name, c.last_name)}
+                      </div>
+                      <span style={{ color: '#e2e8f0', fontSize: '11px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                        {c.first_name}{c.last_name ? ` ${c.last_name.charAt(0)}.` : ''}
+                      </span>
+                      <svg
+                        onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setDriverChips(prev => prev.filter(x => x.id !== c.id)); }}
+                        width="10" height="10" viewBox="0 0 24 24" fill="none"
+                        style={{ cursor: 'pointer', flexShrink: 0 }}
+                      >
+                        <path d="M18 6L6 18M6 6l12 12" stroke="#9ca3af" strokeWidth="2.5" strokeLinecap="round" />
+                      </svg>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onMouseDown={e => { e.preventDefault(); setDriverChips([]); setChipInput(''); }}
+                  className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-600 transition-colors self-start"
+                >
+                  <X size={9} /> Clear all
+                </button>
               </div>
             )}
-            {chipDropOpen && chipSuggestions.length > 0 && (
-              <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-card-border rounded-xl shadow-lg w-full max-h-48 overflow-y-auto">
-                {chipSuggestions.map(s => (
-                  <button key={s.id} onMouseDown={e => { e.preventDefault(); setDriverChips(prev => [...prev, { id: s.id, name: `${s.first_name} ${s.last_name}` }]); setChipInput(''); chipInputRef.current?.focus(); }} className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 text-content transition-colors">
-                    {s.first_name} {s.last_name}
-                  </button>
-                ))}
+
+            {/* Typeahead dropdown (only while typing 2+ chars) */}
+            {chipDropOpen && chipInput.trim().length >= 2 && (
+              <div
+                className="absolute left-0 top-full mt-1 z-50 rounded-lg shadow-xl w-full max-h-60 overflow-y-auto"
+                style={{ background: '#1f2937', border: '1px solid #374151' }}
+              >
+                {chipSuggestions.length === 0 ? (
+                  <div style={{ padding: '10px 12px', color: '#9ca3af', fontSize: '12px' }}>
+                    No drivers found
+                  </div>
+                ) : chipSuggestions.map((s, idx) => {
+                  const [fp, fm, fs] = highlightParts(s.first_name || '', chipInput);
+                  const [lp, lm, ls] = highlightParts(s.last_name  || '', chipInput);
+                  return (
+                    <div
+                      key={s.id}
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        setDriverChips(prev => [...prev, { id: s.id, first_name: s.first_name || '', last_name: s.last_name || '' }]);
+                        setChipInput('');
+                        setChipDropOpen(false);
+                        chipInputRef.current?.focus();
+                      }}
+                      style={{
+                        padding: '7px 10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        cursor: 'pointer',
+                        borderBottom: idx < chipSuggestions.length - 1 ? '1px solid rgba(255,255,255,0.07)' : 'none',
+                        background: 'transparent',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#374151'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <div style={{
+                        width: '24px', height: '24px', borderRadius: '50%',
+                        background: avatarColor(s.id),
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '9px', fontWeight: 700, color: 'white', flexShrink: 0,
+                        letterSpacing: '0.5px',
+                      }}>
+                        {initials(s.first_name, s.last_name)}
+                      </div>
+                      <div style={{ color: 'white', fontSize: '12px', fontWeight: 500, lineHeight: 1.2 }}>
+                        <span>{fp}</span>
+                        {fm && <span style={{ color: '#60a5fa', fontWeight: 700 }}>{fm}</span>}
+                        <span>{fs}</span>
+                        {s.last_name && <span> </span>}
+                        <span>{lp}</span>
+                        {lm && <span style={{ color: '#60a5fa', fontWeight: 700 }}>{lm}</span>}
+                        <span>{ls}</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1588,8 +1716,12 @@ export default function WeeklySchedule() {
 
           {/* Driver count */}
           <div className="bg-white border border-card-border rounded-r-xl px-3 py-2 shadow-sm text-center">
-            <p className="text-xl font-bold text-primary">{filteredStaff.length}</p>
-            <p className="text-[10px] text-content-muted">drivers</p>
+            <p className="text-xl font-bold text-primary">{driverChips.length > 0 ? driverChips.length : filteredStaff.length}</p>
+            <p className="text-[10px] text-content-muted">
+              {driverChips.length > 0
+                ? `driver${driverChips.length === 1 ? '' : 's'} selected`
+                : `driver${filteredStaff.length === 1 ? '' : 's'}`}
+            </p>
           </div>
         </div>
 

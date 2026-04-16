@@ -694,7 +694,7 @@ export default function Dashboard() {
           title="Expirations"
           icon={Calendar}
           iconClass="bg-amber-100 text-amber-600"
-          to="/drivers"
+          onNavigate={() => navigate('/drivers?filter=license')}
           tint={upcomingExpirations.length > 0 ? 'warning' : 'neutral'}
         >
           {upcomingExpirations.length === 0 ? (
@@ -706,8 +706,11 @@ export default function Dashboard() {
             const d = parseInt(item?.days_remaining) || 0;
             const badgeClass = d < 0 ? 'bg-red-100 text-red-700' : d <= 14 ? 'bg-red-100 text-red-700' : d <= 30 ? 'bg-orange-100 text-orange-700' : 'bg-yellow-100 text-yellow-700';
             const badgeText = d < 0 ? `${Math.abs(d)}d ago` : `${d}d`;
+            const goTo = item.type === 'driver' ? '/drivers?filter=license' : '/vehicles';
             return (
-              <div key={i} className="flex items-center gap-1.5 py-1 border-b border-slate-50 last:border-0">
+              <div key={i}
+                onClick={() => navigate(goTo)}
+                className="flex items-center gap-1.5 py-1 border-b border-slate-50 last:border-0 cursor-pointer hover:bg-slate-50 -mx-1 px-1 rounded">
                 <span className="text-[11px] flex-shrink-0">{item.type === 'driver' ? '🪪' : '🚐'}</span>
                 <p className="text-xs text-slate-700 truncate flex-1">{item.name}</p>
                 <span className="text-[10px] text-slate-400 flex-shrink-0">{item.document}</span>

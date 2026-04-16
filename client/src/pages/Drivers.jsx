@@ -11,7 +11,7 @@ import toast from 'react-hot-toast';
 import { useSort } from '../hooks/useSort';
 import { format, differenceInDays, parseISO, isValid } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SIDEBAR = [
@@ -901,6 +901,11 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
   const [statusFilter, setStatusFilter] = useState(() => initialStatus || localStorage.getItem('drivers_status') || 'active');
   const [search, setSearch] = useState('');
   const [licenseFilter, setLicenseFilter] = useState('all');
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const filter = searchParams.get('filter');
+    if (filter === 'license') setLicenseFilter('expiring');
+  }, []);
   const [scheduleFilter, setScheduleFilter] = useState('all');
   const [addOpen, setAddOpen] = useState(false);
 

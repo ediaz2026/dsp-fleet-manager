@@ -906,12 +906,11 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
     const filter = searchParams.get('filter');
     if (filter === 'license') setLicenseFilter('expiring');
   }, []);
-  const [scheduleFilter, setScheduleFilter] = useState('all');
   const [addOpen, setAddOpen] = useState(false);
 
   const saveFilter = (s) => { setStatusFilter(s); localStorage.setItem('drivers_status', s); };
-  const hasActiveFilters = licenseFilter !== 'all' || scheduleFilter !== 'all';
-  const clearFilters = () => { setLicenseFilter('all'); setScheduleFilter('all'); };
+  const hasActiveFilters = licenseFilter !== 'all';
+  const clearFilters = () => { setLicenseFilter('all'); };
 
   const sendInviteMutation = useMutation({
     mutationFn: (staffId) => api.post(`/auth/resend-invitation/${staffId}`),
@@ -955,12 +954,6 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
       if (licenseFilter === 'expired') return days < 0;
       if (licenseFilter === 'expiring') return days >= 0 && days <= 60;
       return true;
-    })
-    .filter(d => {
-      if (scheduleFilter === 'all') return true;
-      if (scheduleFilter === 'configured') return d.has_recurring === 1;
-      if (scheduleFilter === 'not-set') return d.has_recurring === 0;
-      return true;
     });
 
   const { sorted: displayedDrivers, sortKey, sortDir, toggle, setSortKey, setSortDir } = useSort(filtered, 'last_name', 'asc');
@@ -980,17 +973,6 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
       }`}
     >{label}</button>
   );
-  const SchedulePill = ({ val, label }) => (
-    <button
-      onClick={() => setScheduleFilter(val)}
-      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all border ${
-        scheduleFilter === val
-          ? 'bg-blue-600 text-white border-blue-600'
-          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-      }`}
-    >{label}</button>
-  );
-
   return (
     <div className="h-full flex flex-col">
       {/* Top bar */}
@@ -1030,13 +1012,6 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
         <LicensePill val="all" label="All" />
         <LicensePill val="expiring" label="Expiring Soon" />
         <LicensePill val="expired" label="Expired" />
-
-        <span className="w-px h-4 bg-slate-200" />
-
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Schedule</span>
-        <SchedulePill val="all" label="All" />
-        <SchedulePill val="configured" label="Configured" />
-        <SchedulePill val="not-set" label="Not Set" />
 
         <span className="w-px h-4 bg-slate-200" />
 

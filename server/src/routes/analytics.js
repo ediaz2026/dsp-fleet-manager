@@ -352,59 +352,6 @@ router.get('/driver-workload', async (req, res) => {
   }
 });
 
-// ── TEMP DIAGNOSTIC — remove after use ──────────────────────────────────────
-router.get('/diag-routes-schema', async (req, res) => {
-  try {
-    // 1. Full route object from latest date
-    const q1 = await pool.query(`
-      SELECT jsonb_pretty(routes->0) AS first_route
-      FROM ops_daily_routes
-      WHERE plan_date = (SELECT MAX(plan_date) FROM ops_daily_routes)
-      LIMIT 1
-    `);
-
-    // 2. All distinct keys across route objects (last 3 days)
-    const q2 = await pool.query(`
-      SELECT DISTINCT jsonb_object_keys(route.value) AS key
-      FROM ops_daily_routes,
-           jsonb_array_elements(routes) AS route(value)
-      WHERE plan_date >= CURRENT_DATE - INTERVAL '3 days'
-      ORDER BY key
-    `);
-
-    // 3. Check for time-related fields
-    const timeFields = ['eft','estimatedFinishTime','endTime','plannedEndTime',
-      'expectedEndTime','finishTime','completionTime','expectedReturnTime',
-      'estimatedEnd','EFT','estimatedFinishingTime','end_time','eft_time'];
-    const q3 = await pool.query(`
-      SELECT key, COUNT(*)::int AS cnt
-      FROM ops_daily_routes,
-           jsonb_array_elements(routes) AS route(value),
-           jsonb_object_keys(route.value) AS key
-      WHERE plan_date >= CURRENT_DATE - INTERVAL '3 days'
-      GROUP BY key
-      ORDER BY key
-    `);
-
-    // 4. All ops_assignments columns
-    const q4 = await pool.query(`
-      SELECT column_name, data_type, udt_name
-      FROM information_schema.columns
-      WHERE table_name = 'ops_assignments'
-      ORDER BY ordinal_position
-    `);
-
-    res.json({
-      full_route_object: q1.rows[0]?.first_route,
-      all_route_keys: q2.rows.map(r => r.key),
-      key_counts: q3.rows,
-      ops_assignments_columns: q4.rows,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message, stack: err.stack });
-  }
-});
-
 // ── Full Rescue Log (with filters) ───────────────────────────────────────────
 
 // GET /api/analytics/rescue-log?start=&end=&driver=&route=&reason=

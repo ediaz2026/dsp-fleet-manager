@@ -179,6 +179,10 @@ export default function WeeklySchedule() {
   const [chipInput, setChipInput]               = useState('');
   const [chipDropOpen, setChipDropOpen]         = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  // Dropdown is rendered with position: fixed so it can escape any ancestor
+  // overflow clipping. Coordinates are recomputed from the search wrapper's
+  // bounding rect on open / query change / scroll / resize.
+  const [dropdownPos, setDropdownPos]           = useState({ top: 0, left: 0, width: 0 });
   const chipInputRef     = useRef();
   const chipContainerRef = useRef();
 
@@ -1210,6 +1214,28 @@ export default function WeeklySchedule() {
     return () => document.removeEventListener('keydown', handler, { capture: true });
   }, [rotatingPromptOpen]); // eslint-disable-line
 
+  // ── Driver-search dropdown position (position: fixed, viewport coords) ────
+  useEffect(() => {
+    if (!chipDropOpen || chipInput.trim().length < 2) return;
+    const updatePos = () => {
+      const el = chipContainerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setDropdownPos({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+    updatePos();
+    window.addEventListener('scroll', updatePos, true); // capture — catches ancestor scrolls
+    window.addEventListener('resize', updatePos);
+    return () => {
+      window.removeEventListener('scroll', updatePos, true);
+      window.removeEventListener('resize', updatePos);
+    };
+  }, [chipDropOpen, chipInput, driverChips.length]);
+
   // ── Outside click handlers ─────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e) => {
@@ -1656,20 +1682,20 @@ export default function WeeklySchedule() {
             )}
 
             {/* Typeahead dropdown (only while typing 2+ chars) */}
+            {/* position: fixed + computed coords so the dropdown escapes every
+                ancestor's overflow:hidden and floats above all page chrome. */}
             {chipDropOpen && chipInput.trim().length >= 2 && (
               <div
                 className="shadow-xl"
                 style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  right: 0,
+                  position: 'fixed',
+                  top: dropdownPos.top,
+                  left: dropdownPos.left,
+                  width: dropdownPos.width,
                   zIndex: 9999,
                   background: '#1f2937',
                   border: '1px solid #374151',
                   borderRadius: '8px',
-                  overflow: 'hidden',
-                  marginTop: '4px',
                   maxHeight: '240px',
                   overflowY: 'auto',
                 }}

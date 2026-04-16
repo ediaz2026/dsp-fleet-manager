@@ -87,27 +87,48 @@ export default function DriverToday() {
 
   return (
       <div className="bg-[#F1F5F9]" style={{ paddingTop: 0, marginTop: 0 }}>
-        {/* ── Header — flush to top, no gap ───────────────────────────── */}
-        <div className="bg-[#1a3a5c] text-white px-5 pt-[max(env(safe-area-inset-top),20px)] pb-8 rounded-b-3xl">
-          {/* Logo banner — flush against top and left edge */}
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', background: 'white',
-            clipPath: 'polygon(0 0, 100% 0, 88% 100%, 0 100%)',
-            paddingLeft: '16px', paddingRight: '52px', paddingTop: '8px', paddingBottom: '8px',
-            marginLeft: '-20px',
-            marginTop: 'calc(-1 * max(env(safe-area-inset-top), 20px))',
-            marginBottom: '12px',
-          }}>
-            <img src="https://res.cloudinary.com/dbplnigog/image/upload/v1776289023/Screenshot_2026-04-15_at_5.29.06_PM_weocsl.png"
-              alt="Last Mile DSP" style={{ height: '52px', width: 'auto', objectFit: 'contain' }} />
-          </div>
-          <div className="flex items-start justify-between mb-4">
-            <p className="text-sm text-blue-200 font-medium">{format(new Date(), 'EEEE, MMMM d')}</p>
-            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold">
-              {initials}
+        {/* ── HEADER ────────────────────────────────── */}
+        <div style={{
+          background: '#1a2e4a',
+          paddingTop: 'max(env(safe-area-inset-top), 0px)',
+          paddingBottom: '20px',
+          marginBottom: '20px',
+          borderBottomLeftRadius: '24px',
+          borderBottomRightRadius: '24px',
+        }}>
+          {/* Row 1: Logo banner (left) + Avatar (right) */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{
+              background: 'white',
+              clipPath: 'polygon(0 0, 100% 0, 85% 100%, 0 100%)',
+              paddingLeft: '16px', paddingRight: '48px',
+              paddingTop: '10px', paddingBottom: '10px',
+              display: 'inline-flex', alignItems: 'center',
+            }}>
+              <img src="https://res.cloudinary.com/dbplnigog/image/upload/v1776289023/Screenshot_2026-04-15_at_5.29.06_PM_weocsl.png"
+                alt="Last Mile DSP" style={{ height: '44px', width: 'auto', objectFit: 'contain' }} />
+            </div>
+            <div style={{ paddingRight: '16px' }}>
+              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold text-white">
+                {initials}
+              </div>
             </div>
           </div>
-          <h1 className="text-2xl font-bold">{getGreeting()}, {titleCase(user?.firstName)}!</h1>
+
+          {/* Row 2: Date — two lines */}
+          <div style={{ paddingLeft: '16px', paddingTop: '12px' }}>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px', fontWeight: '400', lineHeight: '1.3' }}>
+              {format(new Date(), 'EEEE')}
+            </div>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px', fontWeight: '400', lineHeight: '1.3' }}>
+              {format(new Date(), 'MMMM d')}
+            </div>
+          </div>
+
+          {/* Row 3: Good morning message */}
+          <div style={{ paddingLeft: '16px', paddingTop: '12px' }}>
+            <h1 className="text-2xl font-bold text-white">{getGreeting()}, {titleCase(user?.firstName)}!</h1>
+          </div>
         </div>
 
         <div className="px-4 -mt-4 space-y-4">

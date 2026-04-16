@@ -192,16 +192,31 @@ function DriverScorecardInner() {
 
       {sc && (
         <div className="px-4 -mt-3 space-y-4 pb-8">
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-white rounded-xl p-3 text-center shadow-sm">
-              <p className="text-2xl font-bold text-[#111827]">#{Math.round(Number(sc.rank_position) || 0)}</p>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase">Rank</p>
+          {/* Scorecard type label */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+            <div style={{
+              fontSize: '14px',
+              fontWeight: 800,
+              color: sc.scorecard_type === 'final' ? '#16a34a' : '#d97706',
+            }}>
+              {sc.scorecard_type === 'final' ? 'Final Scorecard' : 'Pre Dispute'}
             </div>
-            <div className="bg-white rounded-xl p-3 text-center shadow-sm">
-              <p className="text-2xl font-bold text-[#111827]">{fmt(sc.final_ranking)}</p>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase">Score</p>
-            </div>
+          </div>
+
+          {/* Stats — Rank and Score only shown for Final Scorecard */}
+          <div className={`grid gap-3 ${sc.scorecard_type === 'final' ? 'grid-cols-3' : 'grid-cols-1'}`}>
+            {sc.scorecard_type === 'final' && sc.rank_position != null && (
+              <div className="bg-white rounded-xl p-3 text-center shadow-sm">
+                <p className="text-2xl font-bold text-[#111827]">#{Math.round(Number(sc.rank_position) || 0)}</p>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase">Rank</p>
+              </div>
+            )}
+            {sc.scorecard_type === 'final' && (
+              <div className="bg-white rounded-xl p-3 text-center shadow-sm">
+                <p className="text-2xl font-bold text-[#111827]">{fmt(sc.final_ranking)}</p>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase">Score</p>
+              </div>
+            )}
             <div className="bg-white rounded-xl p-3 text-center shadow-sm">
               <p className="text-2xl font-bold text-[#111827]">{Math.round(Number(sc.packages) || 0)}</p>
               <p className="text-[10px] font-semibold text-slate-400 uppercase">Packages</p>

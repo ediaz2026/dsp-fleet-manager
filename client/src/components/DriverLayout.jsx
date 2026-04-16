@@ -2,11 +2,11 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { CalendarDays, Calendar, ClipboardCheck, Star, User } from 'lucide-react';
 
 const TABS = [
-  { to: '/today', icon: CalendarDays, label: 'Today' },
-  { to: '/my-schedule', icon: Calendar, label: 'Schedule' },
-  { to: '/my-attendance', icon: ClipboardCheck, label: 'Attendance' },
-  { to: '/my-scorecard', icon: Star, label: 'Scorecard' },
-  { to: '/my-profile', icon: User, label: 'Profile' },
+  { to: '/today',         icon: CalendarDays,   label: 'Today',      color: '#2563eb', bg: '#eff6ff' },
+  { to: '/my-schedule',   icon: Calendar,       label: 'Schedule',   color: '#16a34a', bg: '#f0fdf4' },
+  { to: '/my-attendance', icon: ClipboardCheck, label: 'Attendance', color: '#d97706', bg: '#fef3c7' },
+  { to: '/my-scorecard',  icon: Star,           label: 'Scorecard',  color: '#7c3aed', bg: '#f5f3ff' },
+  { to: '/my-profile',    icon: User,           label: 'Profile',    color: '#e11d48', bg: '#fff1f2' },
 ];
 
 export default function DriverLayout() {
@@ -32,10 +32,28 @@ export default function DriverLayout() {
               <button
                 key={t.to}
                 onClick={() => navigate(t.to)}
-                className={`flex flex-col items-center justify-center gap-1 py-3 px-3 min-w-[64px] transition-colors ${active ? 'text-[#1a3a5c]' : 'text-slate-400'}`}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  justifyContent: 'center', gap: '3px', minWidth: '64px',
+                  padding: active ? '6px 12px' : '6px 10px',
+                  background: active ? t.bg : 'transparent',
+                  borderRadius: active ? '12px' : 0,
+                  transition: 'background 0.15s',
+                }}
               >
-                <t.icon size={26} strokeWidth={active ? 2.5 : 1.5} />
-                <span className={`text-[13px] font-semibold ${active ? 'text-[#1a3a5c]' : 'text-slate-400'}`}>{t.label}</span>
+                <t.icon
+                  size={26}
+                  strokeWidth={active ? 2 : 1.8}
+                  color={active ? t.color : '#1a1a1a'}
+                  fill={active ? t.color : 'none'}
+                />
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: active ? 700 : 500,
+                  color: active ? t.color : '#1a1a1a',
+                }}>
+                  {t.label}
+                </span>
               </button>
             );
           })}

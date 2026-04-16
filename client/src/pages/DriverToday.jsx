@@ -96,37 +96,34 @@ export default function DriverToday() {
           borderBottomLeftRadius: '24px',
           borderBottomRightRadius: '24px',
         }}>
-          {/* Row 1: Logo banner (left) + Avatar (right) */}
+          {/* Single row: Logo | Date | Avatar */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{
               background: 'white',
-              clipPath: 'polygon(0 0, 100% 0, 85% 100%, 0 100%)',
-              paddingLeft: '16px', paddingRight: '48px',
+              clipPath: 'polygon(0 0, 100% 0, 82% 100%, 0 100%)',
+              paddingLeft: '14px', paddingRight: '52px',
               paddingTop: '10px', paddingBottom: '10px',
-              display: 'inline-flex', alignItems: 'center',
+              display: 'inline-flex', alignItems: 'center', flexShrink: 0,
             }}>
               <img src="https://res.cloudinary.com/dbplnigog/image/upload/v1776289023/Screenshot_2026-04-15_at_5.29.06_PM_weocsl.png"
                 alt="Last Mile DSP" style={{ height: '44px', width: 'auto', objectFit: 'contain' }} />
             </div>
-            <div style={{ paddingRight: '16px' }}>
+            <div style={{ flex: 1, textAlign: 'center', padding: '0 8px' }}>
+              <span style={{
+                color: 'rgba(255,255,255,0.9)', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap',
+              }}>
+                {format(new Date(), 'EEEE, MMMM d')}
+              </span>
+            </div>
+            <div style={{ paddingRight: '14px', flexShrink: 0 }}>
               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold text-white">
                 {initials}
               </div>
             </div>
           </div>
 
-          {/* Row 2: Date — two lines */}
-          <div style={{ paddingLeft: '16px', paddingTop: '12px' }}>
-            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px', fontWeight: '400', lineHeight: '1.3' }}>
-              {format(new Date(), 'EEEE')}
-            </div>
-            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px', fontWeight: '400', lineHeight: '1.3' }}>
-              {format(new Date(), 'MMMM d')}
-            </div>
-          </div>
-
-          {/* Row 3: Good morning message */}
-          <div style={{ paddingLeft: '16px', paddingTop: '12px' }}>
+          {/* Good morning message */}
+          <div style={{ paddingLeft: '16px', paddingTop: '14px' }}>
             <h1 className="text-2xl font-bold text-white">{getGreeting()}, {titleCase(user?.firstName)}!</h1>
           </div>
         </div>

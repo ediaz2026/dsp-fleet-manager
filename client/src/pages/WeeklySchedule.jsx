@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useRef, useMemo, useEffect, useLayoutEffect, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
   format, addDays, startOfWeek, endOfWeek, getWeek, parseISO, isToday, addWeeks, subWeeks,
 } from 'date-fns';
@@ -147,6 +147,11 @@ export default function WeeklySchedule() {
 
   // Filter state
   const [filterShiftTypes, setFilterShiftTypes] = useState([]);
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const shiftType = searchParams.get('shiftType');
+    if (shiftType === 'DISPATCH') setFilterShiftTypes(['DISPATCH AM', 'DISPATCH PM']);
+  }, []);
   const [showUnscheduled, setShowUnscheduled] = useState(false);
 
   // Multi-driver chip search

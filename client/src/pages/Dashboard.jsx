@@ -371,7 +371,7 @@ export default function Dashboard() {
           return (
             <div className="col-span-2 md:col-span-2">
               <StatCard title="Dispatchers" value={total} subtitle="on duty today" icon={Users}
-                tint={total > 0 ? 'success' : 'neutral'} extra={extra} onClick={() => navigate('/schedule')} />
+                tint={total > 0 ? 'success' : 'neutral'} extra={extra} onClick={() => navigate('/schedule?shiftType=DISPATCH')} />
             </div>
           );
         })()}

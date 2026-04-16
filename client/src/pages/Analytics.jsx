@@ -571,97 +571,140 @@ function RouteIntelligenceTab() {
   );
 }
 
-// ══ SUB-SECTION 3: DRIVER PERFORMANCE ══════════════════════════════════════
-function DriverPerformanceTab() {
-  const rangeState = useRange();
-  const { range, setRange, cStart, setCStart, cEnd, setCEnd, start, end } = rangeState;
-  const enabled = !!(start && end);
+// ══ SUB-SECTION 3: DRIVER WORKLOAD (EFT heatmap grid) ═══════════════════════
+const CELL_COLORS = {
+  green:  { bg: '#dcfce7', border: '#22c55e', text: '#15803d' },
+  orange: { bg: '#ffedd5', border: '#f97316', text: '#c2410c' },
+  yellow: { bg: '#fef9c3', border: '#eab308', text: '#a16207' },
+  red:    { bg: '#fee2e2', border: '#ef4444', text: '#b91c1c' },
+  none:   { bg: '#f1f5f9', border: '#e2e8f0', text: '#94a3b8' },
+};
+const LEGEND_ITEMS = [
+  { color: '#22c55e', bg: '#f0fdf4', label: 'Easy', sub: 'Before 3 PM' },
+  { color: '#f97316', bg: '#fff7ed', label: 'Slightly Heavy', sub: '3–5 PM' },
+  { color: '#eab308', bg: '#fefce8', label: 'Moderate', sub: '5–7 PM' },
+  { color: '#ef4444', bg: '#fef2f2', label: 'Heavy', sub: 'After 7 PM' },
+  { color: '#e2e8f0', bg: '#f8fafc', label: 'Off / No Route', sub: '' },
+];
+function fmt12h(t) {
+  if (!t) return '—';
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  return `${((h % 12) || 12)}:${String(m).padStart(2, '0')} ${ampm}`;
+}
 
-  const { data: workload = [], isLoading: wlLoading } = useQuery({
-    queryKey: ['driver-workload', start, end],
-    queryFn: () => api.get(`/analytics/driver-workload?start=${start}&end=${end}`).then(r => r.data),
-    enabled,
+function DriverPerformanceTab() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['driver-workload-grid'],
+    queryFn: () => api.get('/analytics/driver-workload').then(r => r.data),
   });
 
-  const chartData = workload.slice(0, 20).map(d => ({ name: d.name.split(' ').slice(-1)[0], full: d.name, avg: d.avg_difficulty, days: d.days_assigned }));
+  const dateRange = data?.dateRange || [];
+  const drivers   = data?.drivers   || [];
+  const todayStr  = new Date().toISOString().slice(0, 10);
 
   const handleExport = () => {
-    if (!workload.length) return;
-    const ws = XLSX.utils.json_to_sheet(workload.map(d => ({
-      'Driver': d.name, 'Days Assigned': d.days_assigned, 'Avg Difficulty': d.avg_difficulty,
-    })));
-    ws['!cols'] = [{ wch: 26 }, { wch: 14 }, { wch: 16 }];
+    if (!drivers.length) return;
+    const rows = drivers.map(d => {
+      const row = { Driver: d.name };
+      for (const dt of dateRange) {
+        const day = d.days[dt];
+        row[dt] = day ? `${day.route} (${fmt12h(day.eft)})` : '';
+      }
+      row['Red'] = d.summary.red; row['Yellow'] = d.summary.yellow;
+      row['Orange'] = d.summary.orange; row['Green'] = d.summary.green;
+      return row;
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Driver Workload');
-    XLSX.writeFile(wb, `DriverWorkload_${start}_to_${end}.xlsx`); toast.success('Exported');
+    XLSX.writeFile(wb, `DriverWorkload_${dateRange[0]}_to_${dateRange[dateRange.length - 1]}.xlsx`);
+    toast.success('Exported');
   };
 
   return (
     <div className="space-y-4">
-      <RangeBar range={range} setRange={setRange} cStart={cStart} setCStart={setCStart} cEnd={cEnd} setCEnd={setCEnd} start={start} end={end} />
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '12px 0', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>Route Difficulty (EFT):</span>
+        {LEGEND_ITEMS.map(item => (
+          <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ width: '14px', height: '14px', background: item.bg, border: `2px solid ${item.color}`, borderRadius: '3px' }} />
+            <span style={{ fontSize: '12px', color: '#374151' }}>{item.label}</span>
+            {item.sub && <span style={{ fontSize: '11px', color: '#9ca3af' }}>{item.sub}</span>}
+          </div>
+        ))}
+      </div>
 
-      {/* Workload distribution chart */}
-      <Card title="Workload Distribution — Avg Route Difficulty per Driver" icon={BarChart2} action={<ExportBtn onClick={handleExport} disabled={!workload.length} />}>
-        {wlLoading && <p className="text-center text-content-muted py-6">Loading…</p>}
-        {!wlLoading && !workload.length && <p className="text-center text-content-muted py-6">No assignment data in this range</p>}
-        {!wlLoading && workload.length > 0 && (
-          <>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 30 }}>
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={0} />
-                <YAxis domain={[0, 5]} tick={{ fontSize: 10 }} ticks={[1,2,3,4,5]} />
-                <Tooltip formatter={(v, _, p) => [`${v} avg difficulty`, p.payload.full]} />
-                <ReferenceLine y={2.5} stroke="#64748b" strokeDasharray="4 2" label={{ value: 'Ideal 2.5', position: 'right', fontSize: 9, fill: '#64748b' }} />
-                <Bar dataKey="avg" name="Avg Difficulty" radius={[3,3,0,0]}>
-                  {chartData.map((d, i) => (
-                    <Cell key={i} fill={d.avg > 3.5 ? '#EF4444' : d.avg < 1.5 ? '#10B981' : '#3B82F6'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-            <div className="flex gap-3 text-[10px] justify-center mt-2">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-400 inline-block"/> &gt;3.5 Heavy load</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-blue-400 inline-block"/> Balanced</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block"/> &lt;1.5 Light load</span>
-            </div>
-          </>
-        )}
-      </Card>
-
-      {/* Workload table */}
-      {!wlLoading && workload.length > 0 && (
-        <Card title="Driver Workload Table" icon={Users}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+      <Card title="Driver Workload — 14 Day EFT Grid" icon={Users} action={<ExportBtn onClick={handleExport} disabled={!drivers.length} />}>
+        {isLoading && <p className="text-center text-content-muted py-6">Loading…</p>}
+        {!isLoading && !drivers.length && <p className="text-center text-content-muted py-6">No assignment data in this range</p>}
+        {!isLoading && drivers.length > 0 && (
+          <div style={{ overflowX: 'auto', maxHeight: '70vh', overflowY: 'auto' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '900px' }}>
               <thead>
-                <tr className="border-b border-slate-100 text-[10px] font-semibold text-content-muted uppercase">
-                  <th className="pb-2 text-left">Driver</th>
-                  <th className="pb-2 text-center">Days</th>
-                  <th className="pb-2 text-center">Avg Difficulty</th>
-                  <th className="pb-2 text-center">Balance Flag</th>
+                <tr>
+                  <th style={{ position: 'sticky', left: 0, background: 'white', zIndex: 2, padding: '8px 12px', textAlign: 'left', fontSize: '12px', fontWeight: 600, borderBottom: '2px solid #e2e8f0', minWidth: '180px' }}>
+                    Driver
+                  </th>
+                  {dateRange.map(date => {
+                    const d = new Date(date + 'T12:00:00');
+                    const isToday = date === todayStr;
+                    return (
+                      <th key={date} style={{
+                        padding: '6px 2px', textAlign: 'center', fontSize: '11px', fontWeight: 600,
+                        borderBottom: '2px solid #e2e8f0', minWidth: '52px',
+                        background: isToday ? '#eff6ff' : 'white', color: isToday ? '#2563eb' : '#374151',
+                      }}>
+                        <div>{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]}</div>
+                        <div style={{ fontWeight: 400, color: isToday ? '#2563eb' : '#9ca3af' }}>
+                          {d.getMonth() + 1}/{d.getDate()}
+                        </div>
+                      </th>
+                    );
+                  })}
+                  <th style={{ padding: '6px 8px', fontSize: '11px', fontWeight: 600, borderBottom: '2px solid #e2e8f0', minWidth: '100px' }}>
+                    Summary
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
-                {workload.map((d, i) => (
-                  <tr key={d.staff_id} className={i % 2 === 1 ? 'bg-slate-50/50' : ''}>
-                    <td className="py-2 font-semibold text-content">{d.name}</td>
-                    <td className="py-2 text-center text-content-muted">{d.days_assigned}</td>
-                    <td className="py-2 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${d.avg_difficulty > 3.5 ? 'bg-red-100 text-red-700' : d.avg_difficulty < 1.5 ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {d.avg_difficulty}
-                      </span>
+              <tbody>
+                {drivers.map((drv, i) => (
+                  <tr key={drv.staff_id}>
+                    <td style={{ position: 'sticky', left: 0, background: i % 2 ? '#f8fafc' : 'white', zIndex: 1, padding: '6px 12px', fontSize: '13px', fontWeight: 500, borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                      {drv.name}
                     </td>
-                    <td className="py-2 text-center text-xs">
-                      {d.avg_difficulty > 3.5 ? <span className="text-red-600 font-semibold">⚠️ Heavy load</span>
-                       : d.avg_difficulty < 1.5 ? <span className="text-emerald-600 font-semibold">💤 Underutilized</span>
-                       : <span className="text-slate-400">✓ Balanced</span>}
+                    {dateRange.map(date => {
+                      const dayData = drv.days[date];
+                      const colors = dayData ? CELL_COLORS[dayData.color] || CELL_COLORS.none : CELL_COLORS.none;
+                      const isToday = date === todayStr;
+                      return (
+                        <td
+                          key={date}
+                          title={dayData ? `${dayData.route} — EFT: ${fmt12h(dayData.eft)} (${dayData.duration ? Math.round(dayData.duration / 60 * 10) / 10 : 0}h)` : 'No route'}
+                          style={{
+                            background: isToday && !dayData ? '#eff6ff' : colors.bg,
+                            borderBottom: `3px solid ${colors.border}`,
+                            color: colors.text, fontSize: '11px', fontWeight: 600,
+                            textAlign: 'center', padding: '4px 2px', minWidth: '52px', cursor: 'default',
+                          }}
+                        >
+                          {dayData ? fmt12h(dayData.eft) : '—'}
+                        </td>
+                      );
+                    })}
+                    <td style={{ padding: '4px 8px', fontSize: '11px', whiteSpace: 'nowrap', borderBottom: '1px solid #f1f5f9' }}>
+                      {drv.summary.red > 0 && <span style={{ color: '#ef4444', marginRight: '4px' }}>🔴{drv.summary.red}</span>}
+                      {drv.summary.yellow > 0 && <span style={{ color: '#ca8a04', marginRight: '4px' }}>🟡{drv.summary.yellow}</span>}
+                      {drv.summary.orange > 0 && <span style={{ color: '#ea580c', marginRight: '4px' }}>🟠{drv.summary.orange}</span>}
+                      {drv.summary.green > 0 && <span style={{ color: '#16a34a' }}>🟢{drv.summary.green}</span>}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </Card>
-      )}
+        )}
+      </Card>
     </div>
   );
 }

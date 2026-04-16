@@ -290,62 +290,140 @@ router.patch('/route-profiles/:code', authMiddleware, async (req, res) => {
 
 // ── Driver Workload ───────────────────────────────────────────────────────────
 
+// ── Driver Workload helpers ──────────────────────────────────────────────────
+function parseDurationToMinutes(dur) {
+  if (!dur) return 0;
+  const s = String(dur).trim();
+  if (!s) return 0;
+  if (s.includes(':')) {
+    const parts = s.split(':');
+    return (parseInt(parts[0]) || 0) * 60 + (parseInt(parts[1]) || 0);
+  }
+  const n = parseFloat(s);
+  if (isNaN(n)) return 0;
+  return n < 24 ? Math.round(n * 60) : Math.round(n);
+}
+
+function addMinutesToTime(timeStr, minutes) {
+  if (!timeStr) return null;
+  const parts = timeStr.split(':');
+  const h = parseInt(parts[0]) || 0;
+  const m = parseInt(parts[1]) || 0;
+  const total = h * 60 + m + minutes;
+  const hh = Math.floor(total / 60) % 24;
+  const mm = total % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+function classifyEft(eftStr) {
+  if (!eftStr) return 'none';
+  const [h, m] = eftStr.split(':').map(Number);
+  const totalMin = h * 60 + m;
+  if (totalMin < 15 * 60) return 'green';   // Before 3:00 PM
+  if (totalMin < 17 * 60) return 'orange';  // 3:00 – 5:00 PM
+  if (totalMin < 19 * 60) return 'yellow';  // 5:00 – 7:00 PM
+  return 'red';                              // After 7:00 PM
+}
+
+function fmtDate(d) {
+  // Ensure we get YYYY-MM-DD string from a Date or string
+  if (typeof d === 'string') return d.slice(0, 10);
+  return d.toISOString().slice(0, 10);
+}
+
 // GET /api/analytics/driver-workload?start=YYYY-MM-DD&end=YYYY-MM-DD
+// Defaults to a 14-day rolling window (today − 13 … today) in Eastern time.
 router.get('/driver-workload', async (req, res) => {
   try {
-    const { start, end } = req.query;
-    if (!start || !end) return res.status(400).json({ error: 'start and end required' });
+    // Date range — default 14-day rolling window
+    const todayRow = await pool.query(`SELECT (NOW() AT TIME ZONE 'America/New_York')::date AS d`);
+    const today = fmtDate(todayRow.rows[0].d);
+    const start = req.query.start || fmtDate(new Date(new Date(today + 'T12:00:00').getTime() - 13 * 86400000));
+    const end   = req.query.end   || today;
 
-    // Pre-compute rescue counts per route for difficulty
-    const rescueCounts = await pool.query(
-      `SELECT rescued_route, COUNT(*)::int AS cnt FROM ops_rescues WHERE rescued_route IS NOT NULL GROUP BY rescued_route`
-    );
-    const rescueByRoute = {};
-    for (const r of rescueCounts.rows) rescueByRoute[r.rescued_route] = r.cnt;
+    // Build the full date range array
+    const dateRange = [];
+    for (let d = new Date(start + 'T12:00:00'); d <= new Date(end + 'T12:00:00'); d.setDate(d.getDate() + 1)) {
+      dateRange.push(fmtDate(d));
+    }
 
-    // Manual score overrides
-    const overrides = await pool.query(`SELECT route_code, score_override FROM route_profiles WHERE score_override IS NOT NULL`);
-    const ovScore = {};
-    for (const r of overrides.rows) ovScore[r.route_code] = r.score_override;
-
-    // Assignments in range with driver info
+    // 1. Assignments with driver info
     const asgns = await pool.query(`
-      SELECT oa.plan_date, oa.route_code, oa.staff_id,
-             oa.finish_time, oa.rts_time,
+      SELECT oa.plan_date, oa.route_code, oa.staff_id, oa.shift_type,
              s.first_name || ' ' || s.last_name AS driver_name
       FROM ops_assignments oa
       JOIN staff s ON s.id = oa.staff_id
       WHERE oa.plan_date BETWEEN $1 AND $2
         AND oa.route_code IS NOT NULL
+        AND oa.removed_from_ops IS NOT TRUE
       ORDER BY oa.plan_date
     `, [start, end]);
 
-    const driverMap = {};
-    for (const a of asgns.rows) {
-      if (!driverMap[a.staff_id]) {
-        driverMap[a.staff_id] = {
-          staff_id: a.staff_id, name: a.driver_name,
-          assignments: [], total_difficulty: 0,
-        };
+    // 2. Route durations from ops_daily_routes JSONB
+    const drRows = await pool.query(
+      `SELECT plan_date, routes FROM ops_daily_routes WHERE plan_date BETWEEN $1 AND $2`, [start, end]
+    );
+    const durationMap = {}; // { "YYYY-MM-DD": { "CX148": 539 } }
+    for (const row of drRows.rows) {
+      const key = fmtDate(row.plan_date);
+      durationMap[key] = {};
+      for (const r of (row.routes || [])) {
+        if (r.routeCode && r.duration) {
+          durationMap[key][r.routeCode] = parseDurationToMinutes(r.duration);
+        }
       }
-      const rescues = rescueByRoute[a.route_code] || 0;
-      let score = ovScore[a.route_code] || (rescues >= 3 ? 5 : rescues >= 2 ? 4 : rescues >= 1 ? 2 : 1);
-      driverMap[a.staff_id].assignments.push({
-        plan_date: a.plan_date, route_code: a.route_code,
-        difficulty: score, rts_time: a.rts_time, finish_time: a.finish_time,
-      });
-      driverMap[a.staff_id].total_difficulty += score;
     }
 
-    const result = Object.values(driverMap).map(d => ({
-      staff_id:       d.staff_id,
-      name:           d.name,
-      days_assigned:  d.assignments.length,
-      avg_difficulty: d.assignments.length > 0 ? +(d.total_difficulty / d.assignments.length).toFixed(2) : 0,
-      assignments:    d.assignments,
-    })).sort((a, b) => b.avg_difficulty - a.avg_difficulty);
+    // 3. Wave times from ops_loadout JSONB
+    const loRows = await pool.query(
+      `SELECT plan_date, loadout FROM ops_loadout WHERE plan_date BETWEEN $1 AND $2`, [start, end]
+    );
+    const waveMap = {}; // { "YYYY-MM-DD": { "CX148": "10:10" } }
+    for (const row of loRows.rows) {
+      const key = fmtDate(row.plan_date);
+      waveMap[key] = {};
+      for (const entry of (row.loadout || [])) {
+        if (entry.routeCode && entry.waveTime) {
+          waveMap[key][entry.routeCode] = entry.waveTime;
+        }
+      }
+    }
 
-    res.json(result);
+    // 4. Build per-driver, per-day grid
+    const driverMap = {};
+    for (const a of asgns.rows) {
+      const dateKey = fmtDate(a.plan_date);
+      const rc = a.route_code;
+      if (!driverMap[a.staff_id]) {
+        driverMap[a.staff_id] = { staff_id: a.staff_id, name: a.driver_name, days: {} };
+      }
+
+      const waveTime    = waveMap[dateKey]?.[rc] || null;
+      const durationMin = durationMap[dateKey]?.[rc] || 0;
+      const departTime  = waveTime ? addMinutesToTime(waveTime, 30) : null;
+      const eft         = departTime && durationMin ? addMinutesToTime(departTime, durationMin) : null;
+      const color       = classifyEft(eft);
+
+      driverMap[a.staff_id].days[dateKey] = {
+        color, eft, route: rc, duration: durationMin, wave: waveTime,
+      };
+    }
+
+    // 5. Compute summaries and sort by red count desc
+    const drivers = Object.values(driverMap).map(d => {
+      const summary = { green: 0, orange: 0, yellow: 0, red: 0, none: 0 };
+      for (const dateKey of dateRange) {
+        const day = d.days[dateKey];
+        if (day) summary[day.color] = (summary[day.color] || 0) + 1;
+      }
+      return { ...d, summary };
+    }).sort((a, b) => {
+      const diff = b.summary.red - a.summary.red;
+      if (diff !== 0) return diff;
+      return b.summary.yellow - a.summary.yellow;
+    });
+
+    res.json({ dateRange, drivers });
   } catch (err) {
     console.error('[analytics/driver-workload]', err);
     res.status(500).json({ error: err.message });

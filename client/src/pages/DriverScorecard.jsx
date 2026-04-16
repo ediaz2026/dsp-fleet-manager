@@ -25,9 +25,18 @@ function Badge({ pass, label }) {
     : <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600"><XCircle size={10} /> {label || 'Fail'}</span>;
 }
 
-function MetricRow({ label, value, suffix, passThreshold, invert }) {
+function MetricRow({ label, value, suffix, passThreshold, invert, scorecardType }) {
   const numVal = parseFloat(value);
-  const pass = isNaN(numVal) ? false : invert ? numVal === 0 : numVal >= (passThreshold || 100);
+  let pass;
+  if (scorecardType === 'pre_dispute' && invert) {
+    // Pre Dispute safety: 0 or null = no infractions = Pass
+    pass = isNaN(numVal) || numVal === 0;
+  } else if (invert) {
+    // Final safety: 0 or 100 = Pass
+    pass = isNaN(numVal) || numVal === 0 || numVal === 100;
+  } else {
+    pass = isNaN(numVal) ? false : numVal >= (passThreshold || 100);
+  }
   return (
     <div className="flex items-center justify-between py-2.5 border-b border-slate-100 last:border-0">
       <span className="text-sm text-slate-600">{label}</span>
@@ -176,6 +185,18 @@ function DriverScorecardInner() {
           <span className="font-semibold text-sm">{weekParam || '—'}</span>
           <button disabled={!nextWeek} onClick={() => setSelectedWeek(nextWeek)} className="p-1.5 rounded-lg bg-white/10 disabled:opacity-30"><ChevronRight size={18} /></button>
         </div>
+        {/* Scorecard type label — inside header, right-aligned */}
+        {sc && (
+          <div style={{ textAlign: 'right', marginTop: '6px' }}>
+            <span style={{
+              fontSize: '14px',
+              fontWeight: 800,
+              color: sc.scorecard_type === 'final' ? '#16a34a' : '#d97706',
+            }}>
+              {sc.scorecard_type === 'final' ? 'Final Scorecard' : 'Pre Dispute'}
+            </span>
+          </div>
+        )}
       </div>
 
       {isLoading && <p className="text-center text-slate-400 py-12">Loading...</p>}
@@ -192,17 +213,6 @@ function DriverScorecardInner() {
 
       {sc && (
         <div className="px-4 -mt-3 space-y-4 pb-8">
-          {/* Scorecard type label */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-            <div style={{
-              fontSize: '14px',
-              fontWeight: 800,
-              color: sc.scorecard_type === 'final' ? '#16a34a' : '#d97706',
-            }}>
-              {sc.scorecard_type === 'final' ? 'Final Scorecard' : 'Pre Dispute'}
-            </div>
-          </div>
-
           {/* Stats — Rank and Score only shown for Final Scorecard */}
           <div className={`grid gap-3 ${sc.scorecard_type === 'final' ? 'grid-cols-3' : 'grid-cols-1'}`}>
             {sc.scorecard_type === 'final' && sc.rank_position != null && (
@@ -230,8 +240,17 @@ function DriverScorecardInner() {
               <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Bonus Hours</span><Badge pass={!!sc.bonus_hours} label={sc.bonus_hours ? 'Earned' : 'Not eligible'} /></div>
               <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Perfect Incentive</span>{sc.perfect_incentive > 0 ? <span className="font-bold text-green-700 text-sm">{fmtMoney(sc.perfect_incentive)}</span> : <span className="text-xs text-slate-400">Not eligible</span>}</div>
               <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Per Package</span><span className="font-bold text-sm text-slate-700">{fmtMoney(sc.incentive_per_package)}</span></div>
-              <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Safety</span><Badge pass={!!sc.safety_pass} /></div>
-              <div className="flex justify-between items-center"><span className="text-sm text-slate-600">DSB</span><Badge pass={!!sc.dsb_pass} /></div>
+              <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Safety</span><Badge pass={
+                sc.scorecard_type === 'pre_dispute'
+                  ? [sc.speeding_score, sc.seatbelt_score, sc.distraction_score, sc.sign_signal_score, sc.following_dist_score]
+                      .every(v => v == null || parseFloat(v) === 0)
+                  : !!sc.safety_pass
+              } /></div>
+              <div className="flex justify-between items-center"><span className="text-sm text-slate-600">DSB</span><Badge pass={
+                sc.scorecard_type === 'pre_dispute'
+                  ? sc.dsb_revised == null || parseFloat(sc.dsb_revised) === 0
+                  : !!sc.dsb_pass
+              } /></div>
             </div>
           </div>
 
@@ -250,11 +269,11 @@ function DriverScorecardInner() {
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="bg-[#374151] px-4 py-2.5"><p className="text-white font-bold text-sm">Safety Metrics</p></div>
             <div className="px-4">
-              <MetricRow label="Speeding" value={sc.speeding_score} />
-              <MetricRow label="Seatbelt" value={sc.seatbelt_score} />
-              <MetricRow label="Distraction" value={sc.distraction_score} />
-              <MetricRow label="Sign/Signal" value={sc.sign_signal_score} />
-              <MetricRow label="Following Distance" value={sc.following_dist_score} />
+              <MetricRow label="Speeding" value={sc.speeding_score} invert scorecardType={sc.scorecard_type} />
+              <MetricRow label="Seatbelt" value={sc.seatbelt_score} invert scorecardType={sc.scorecard_type} />
+              <MetricRow label="Distraction" value={sc.distraction_score} invert scorecardType={sc.scorecard_type} />
+              <MetricRow label="Sign/Signal" value={sc.sign_signal_score} invert scorecardType={sc.scorecard_type} />
+              <MetricRow label="Following Distance" value={sc.following_dist_score} invert scorecardType={sc.scorecard_type} />
             </div>
           </div>
         </div>

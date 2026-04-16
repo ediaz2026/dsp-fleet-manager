@@ -352,6 +352,49 @@ router.get('/driver-workload', async (req, res) => {
   }
 });
 
+// ── TEMP DIAGNOSTIC — remove after use ──────────────────────────────────────
+router.get('/diag-workload', async (req, res) => {
+  try {
+    const q1 = await pool.query(`
+      SELECT oa.id, oa.plan_date, oa.staff_id, oa.shift_type, oa.route_code,
+             oa.rts_time, oa.finish_time, s.first_name, s.last_name
+      FROM ops_assignments oa
+      JOIN staff s ON s.id = oa.staff_id
+      WHERE oa.plan_date >= CURRENT_DATE - INTERVAL '14 days'
+        AND oa.rts_time IS NOT NULL
+      LIMIT 10
+    `);
+
+    const q2 = await pool.query(`
+      SELECT column_name, data_type, udt_name
+      FROM information_schema.columns
+      WHERE table_name = 'ops_assignments'
+        AND column_name IN ('rts_time','finish_time')
+    `);
+
+    const q3 = await pool.query(`SELECT COUNT(*)::int AS cnt FROM ops_assignments WHERE plan_date >= CURRENT_DATE - INTERVAL '14 days'`);
+    const q4 = await pool.query(`SELECT COUNT(DISTINCT staff_id)::int AS cnt FROM ops_assignments WHERE plan_date >= CURRENT_DATE - INTERVAL '14 days'`);
+
+    const q6 = await pool.query(`
+      SELECT plan_date, jsonb_array_length(routes) as route_count,
+             routes->0 as first_route
+      FROM ops_daily_routes
+      WHERE plan_date >= CURRENT_DATE - INTERVAL '3 days'
+      LIMIT 5
+    `);
+
+    res.json({
+      sample_with_rts: q1.rows,
+      column_types: q2.rows,
+      total_assignments_14d: q3.rows[0].cnt,
+      distinct_drivers_14d: q4.rows[0].cnt,
+      daily_routes_sample: q6.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
 // ── Full Rescue Log (with filters) ───────────────────────────────────────────
 
 // GET /api/analytics/rescue-log?start=&end=&driver=&route=&reason=

@@ -446,10 +446,6 @@ function DriverScheduleInner() {
         </div>
       )}
 
-      {/* ── Today's Pick List ───────────────────────────────────────────────── */}
-      {weekOffset === 0 && hasTodayShift && (
-        <TodaysPickList userId={user?.id} />
-      )}
     </div>
   );
 }

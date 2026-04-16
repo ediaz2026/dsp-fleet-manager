@@ -115,6 +115,14 @@ router.post('/auto-assign', managerOnly, async (req, res) => {
     `, [date]);
     console.log(`[auto-assign] Found ${drivers.length} scheduled drivers`);
 
+    // Only EDV and STEP VAN drivers get vehicle assignments.
+    // EXTRA / HELPER roles are on the schedule but don't need a van.
+    const eligibleDrivers = drivers.filter(d =>
+      !['EXTRA', 'HELPER'].includes((d.shift_type || '').toUpperCase())
+    );
+    const excludedCount = drivers.length - eligibleDrivers.length;
+    console.log(`[auto-assign] ${eligibleDrivers.length} eligible, ${excludedCount} skipped (EXTRA/HELPER)`);
+
     // STEP 2 — Get all active vehicles
     const { rows: vehicles } = await pool.query(`
       SELECT id, vehicle_name, service_type FROM vehicles
@@ -131,7 +139,7 @@ router.post('/auto-assign', managerOnly, async (req, res) => {
     const assignedVehicleIds = new Set();
     const results = [];
 
-    for (const driver of drivers) {
+    for (const driver of eligibleDrivers) {
       const isStepVan = driver.shift_type === 'STEP VAN';
 
       // Filter vehicles by type
@@ -203,8 +211,8 @@ router.post('/auto-assign', managerOnly, async (req, res) => {
 
     const assigned = results.filter(r => r.vehicle).length;
     const skipped = results.filter(r => !r.vehicle).length;
-    console.log(`[auto-assign] Done: ${assigned} assigned, ${skipped} skipped out of ${drivers.length}`);
-    res.json({ assigned, skipped, details: results });
+    console.log(`[auto-assign] Done: ${assigned} assigned, ${skipped} skipped out of ${eligibleDrivers.length} eligible (${excludedCount} EXTRA/HELPER excluded)`);
+    res.json({ assigned, skipped, excluded: excludedCount, details: results });
   } catch (err) {
     console.error('[van-affinity/auto-assign]', err);
     res.status(500).json({ error: err.message });

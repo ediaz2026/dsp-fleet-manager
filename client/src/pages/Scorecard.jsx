@@ -83,22 +83,28 @@ function DriverScoreView({ weekLabel, currentYear, scorecardType = 'final', auto
   return (
     <div className="space-y-4">
       {/* Scorecard type label — always visible when data exists */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">{weekLabel} · {currentYear}</p>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '16px',
+      }}>
+        <div style={{ fontSize: '14px', color: '#64748b' }}>
+          {weekLabel} · {currentYear}
+        </div>
         <div style={{
           fontSize: '14px',
           fontWeight: 800,
-          color: isFinal ? '#16a34a' : '#d97706',
-          letterSpacing: '0.01em',
+          color: sc.scorecard_type === 'final' ? '#16a34a' : '#d97706',
         }}>
-          {isFinal ? 'Final Scorecard' : 'Pre Dispute'}
+          {sc.scorecard_type === 'final' ? 'Final Scorecard' : 'Pre Dispute'}
         </div>
       </div>
 
       {/* Summary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {/* Rank — only show on Final Scorecard, never on Pre Dispute */}
-        {isFinal && sc.rank_position != null && (
+        {sc.scorecard_type === 'final' && sc.rank_position != null && (
           <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center">
             <p className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wide">Rank</p>
             <p className="text-2xl font-black text-indigo-700">#{sc.rank_position}</p>

@@ -268,8 +268,9 @@ export default function Scorecard() {
       {/* Driver view */}
       {isDriver && weekLabel && <DriverScoreView weekLabel={weekLabel} currentYear={currentYear} scorecardType={scorecardView} />}
 
-      {/* Search + sort — managers only */}
-      {!isDriver && drivers.length > 0 && (
+      {/* Search + sort — managers only. Gated on rawDrivers (the full list)
+          so the input stays visible even when the filter returns 0 matches. */}
+      {!isDriver && rawDrivers.length > 0 && (
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative flex-1 min-w-[200px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -291,6 +292,14 @@ export default function Scorecard() {
           <Award size={36} className="mx-auto text-slate-300 mb-3" />
           <p className="font-semibold text-slate-500">No scorecard data for {weekLabel}</p>
           <p className="text-xs text-slate-400 mt-1">Upload a scorecard Excel file to get started</p>
+        </div>
+      )}
+
+      {/* No-match empty state — when there's data but the search filter
+          excludes everything. */}
+      {!isDriver && !isLoading && rawDrivers.length > 0 && drivers.length === 0 && search && (
+        <div className="bg-white rounded-xl border py-8 text-center">
+          <p className="text-sm text-slate-500">No drivers found for “{search}”.</p>
         </div>
       )}
 

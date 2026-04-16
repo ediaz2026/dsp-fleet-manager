@@ -249,10 +249,15 @@ router.post('/accept-invitation', async (req, res) => {
 // ─── User Management (admin only) ──────────────────────────────────────────
 
 // GET /api/auth/users
+// Hides terminated / inactive / deleted drivers so they don't appear in the
+// Invitations list. Non-driver roles are unaffected (admin/manager/dispatcher
+// with inactive status still return — relevant for other admin views).
 router.get('/users', authMiddleware, adminOnly, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, employee_id, first_name, last_name, email, role, status, last_login, must_change_password, invitation_sent_at
      FROM staff
+     WHERE role <> 'driver'
+        OR status NOT IN ('terminated', 'inactive', 'deleted')
      ORDER BY first_name, last_name`
   );
   res.json(rows);

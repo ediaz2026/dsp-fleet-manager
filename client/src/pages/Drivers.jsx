@@ -1463,7 +1463,12 @@ export default function Drivers() {
     queryKey: ['drivers'],
     queryFn: () => api.get('/drivers').then(r => r.data),
   });
-  const notSentCount = allDrivers.filter(d => !d.invitation_sent_at && !d.last_login).length;
+  // Exclude terminated / inactive / deleted drivers so the badge matches the Invitations list
+  const notSentCount = allDrivers.filter(d =>
+    !d.invitation_sent_at &&
+    !d.last_login &&
+    !['terminated', 'inactive', 'deleted'].includes(d.employment_status)
+  ).length;
 
   const saveSection = (s) => {
     setSection(s);

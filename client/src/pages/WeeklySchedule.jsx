@@ -1213,7 +1213,11 @@ export default function WeeklySchedule() {
   // ── Outside click handlers ─────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e) => {
-      if (chipContainerRef.current && !chipContainerRef.current.contains(e.target)) setChipDropOpen(false);
+      if (chipContainerRef.current && !chipContainerRef.current.contains(e.target)) {
+        setChipDropOpen(false);
+        setChipInput('');
+        setHighlightedIndex(-1);
+      }
       if (filterDropRef.current && !filterDropRef.current.contains(e.target)) setFilterDropOpen(false);
       setDayFilterDropOpen(null);
     };
@@ -1537,7 +1541,9 @@ export default function WeeklySchedule() {
       <div className="flex gap-2 flex-1 min-h-0 -ml-6 overflow-hidden">
 
         {/* ── Left filter panel ───────────────────────────────────────────── */}
-        <div className="w-52 flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
+        {/* overflow-visible so the driver-search dropdown can float above the
+            filter cards below without being clipped. */}
+        <div className="w-52 flex-shrink-0 flex flex-col gap-2 overflow-visible">
 
           {/* Driver chip search */}
           <div ref={chipContainerRef} className="relative bg-white border border-card-border rounded-r-xl shadow-sm">
@@ -1652,8 +1658,21 @@ export default function WeeklySchedule() {
             {/* Typeahead dropdown (only while typing 2+ chars) */}
             {chipDropOpen && chipInput.trim().length >= 2 && (
               <div
-                className="absolute left-0 top-full mt-1 z-50 rounded-lg shadow-xl w-full max-h-60 overflow-y-auto"
-                style={{ background: '#1f2937', border: '1px solid #374151' }}
+                className="shadow-xl"
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 9999,
+                  background: '#1f2937',
+                  border: '1px solid #374151',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  marginTop: '4px',
+                  maxHeight: '240px',
+                  overflowY: 'auto',
+                }}
               >
                 {chipSuggestions.length === 0 ? (
                   <div style={{ padding: '10px 12px', color: '#9ca3af', fontSize: '12px' }}>
@@ -1682,7 +1701,7 @@ export default function WeeklySchedule() {
                         gap: '8px',
                         cursor: 'pointer',
                         borderBottom: idx < chipSuggestions.length - 1 ? '1px solid rgba(255,255,255,0.07)' : 'none',
-                        background: isHighlighted ? '#374151' : 'transparent',
+                        background: isHighlighted ? 'rgba(255,255,255,0.06)' : 'transparent',
                       }}
                     >
                       <div style={{

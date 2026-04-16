@@ -285,21 +285,22 @@ export default function TopNav() {
       )}
 
       {/* ═══ DESKTOP NAV — hidden on mobile for mgmt, always shown for drivers ═══ */}
-      <div className={`max-w-screen-2xl mx-auto pr-4 h-14 items-center justify-between gap-4 ${isMgmt ? 'hidden md:flex' : 'flex'}`}>
+      <div className={`w-full h-14 items-center gap-4 pr-4 ${isMgmt ? 'hidden md:flex' : 'flex'}`}>
 
-        {/* ── Angled logo banner ──────────────────────────────────── */}
+        {/* ── Angled logo banner — flush left, no max-width container ── */}
         <NavLink
           to={isDriver ? '/today' : '/'}
           style={{
             height: '56px',
-            minWidth: '220px',
+            minWidth: '240px',
             background: 'white',
             clipPath: 'polygon(0 0, 100% 0, 88% 100%, 0 100%)',
             display: 'flex',
             alignItems: 'center',
             paddingLeft: '8px',
-            paddingRight: '44px',
+            paddingRight: '48px',
             flexShrink: 0,
+            marginLeft: 0,
           }}
         >
           <img

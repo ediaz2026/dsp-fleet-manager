@@ -175,9 +175,10 @@ export default function WeeklySchedule() {
   const [showUnscheduled, setShowUnscheduled] = useState(false);
 
   // Multi-driver chip search
-  const [driverChips, setDriverChips]     = useState([]);
-  const [chipInput, setChipInput]         = useState('');
-  const [chipDropOpen, setChipDropOpen]   = useState(false);
+  const [driverChips, setDriverChips]           = useState([]);
+  const [chipInput, setChipInput]               = useState('');
+  const [chipDropOpen, setChipDropOpen]         = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const chipInputRef     = useRef();
   const chipContainerRef = useRef();
 
@@ -1550,13 +1551,43 @@ export default function WeeklySchedule() {
                 value={chipInput}
                 onChange={e => {
                   setChipInput(e.target.value);
+                  setHighlightedIndex(-1); // reset when the query changes
                   if (e.target.value.trim().length >= 2) setChipDropOpen(true);
                   else setChipDropOpen(false);
                 }}
                 onFocus={() => { if (chipInput.trim().length >= 2) setChipDropOpen(true); }}
                 onKeyDown={e => {
-                  if (e.key === 'Escape') { setChipDropOpen(false); setChipInput(''); }
-                  if (e.key === 'Backspace' && !chipInput && driverChips.length > 0) setDriverChips(prev => prev.slice(0, -1));
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (chipSuggestions.length === 0) return;
+                    setChipDropOpen(true);
+                    setHighlightedIndex(i => Math.min(i + 1, chipSuggestions.length - 1));
+                    return;
+                  }
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (chipSuggestions.length === 0) return;
+                    setHighlightedIndex(i => Math.max(i - 1, 0));
+                    return;
+                  }
+                  if (e.key === 'Enter' && highlightedIndex >= 0 && chipSuggestions[highlightedIndex]) {
+                    e.preventDefault();
+                    const s = chipSuggestions[highlightedIndex];
+                    setDriverChips(prev => [...prev, { id: s.id, first_name: s.first_name || '', last_name: s.last_name || '' }]);
+                    setChipInput('');
+                    setHighlightedIndex(-1);
+                    setChipDropOpen(false);
+                    return;
+                  }
+                  if (e.key === 'Escape') {
+                    setChipDropOpen(false);
+                    setChipInput('');
+                    setHighlightedIndex(-1);
+                    return;
+                  }
+                  if (e.key === 'Backspace' && !chipInput && driverChips.length > 0) {
+                    setDriverChips(prev => prev.slice(0, -1));
+                  }
                 }}
               />
               {chipInput && (
@@ -1631,6 +1662,7 @@ export default function WeeklySchedule() {
                 ) : chipSuggestions.map((s, idx) => {
                   const [fp, fm, fs] = highlightParts(s.first_name || '', chipInput);
                   const [lp, lm, ls] = highlightParts(s.last_name  || '', chipInput);
+                  const isHighlighted = idx === highlightedIndex;
                   return (
                     <div
                       key={s.id}
@@ -1638,9 +1670,11 @@ export default function WeeklySchedule() {
                         e.preventDefault();
                         setDriverChips(prev => [...prev, { id: s.id, first_name: s.first_name || '', last_name: s.last_name || '' }]);
                         setChipInput('');
+                        setHighlightedIndex(-1);
                         setChipDropOpen(false);
                         chipInputRef.current?.focus();
                       }}
+                      onMouseEnter={() => setHighlightedIndex(idx)}
                       style={{
                         padding: '7px 10px',
                         display: 'flex',
@@ -1648,10 +1682,8 @@ export default function WeeklySchedule() {
                         gap: '8px',
                         cursor: 'pointer',
                         borderBottom: idx < chipSuggestions.length - 1 ? '1px solid rgba(255,255,255,0.07)' : 'none',
-                        background: 'transparent',
+                        background: isHighlighted ? '#374151' : 'transparent',
                       }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#374151'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
                       <div style={{
                         width: '24px', height: '24px', borderRadius: '50%',

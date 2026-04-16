@@ -55,21 +55,38 @@ function SafetyCard({ label, value, isPD = true }) {
   );
 }
 
-function DriverScoreView({ weekLabel, currentYear, scorecardType = 'final' }) {
+function DriverScoreView({ weekLabel, currentYear, scorecardType = 'final', autoResolve = false }) {
+  // When autoResolve is true (driver self-view), the backend picks the best
+  // available type automatically — no `type` param is sent.
   const { data: sc, isLoading } = useQuery({
-    queryKey: ['my-scorecard', weekLabel, currentYear, scorecardType],
-    queryFn: () => api.get('/amazon-scorecard/mine', { params: { week: weekLabel, type: scorecardType } }).then(r => r.data),
+    queryKey: ['my-scorecard', weekLabel, currentYear, autoResolve ? 'auto' : scorecardType],
+    queryFn: () => api.get('/amazon-scorecard/mine', {
+      params: autoResolve ? { week: weekLabel } : { week: weekLabel, type: scorecardType },
+    }).then(r => r.data),
     enabled: !!weekLabel,
   });
 
   if (isLoading) return <div className="h-32 bg-slate-100 rounded-xl animate-pulse" />;
   if (!sc) return <div className="text-center text-slate-400 py-16">No scorecard data available for this week.</div>;
 
+  // The actual type the backend resolved — used for display label + safety format.
+  const resolvedType = sc.scorecard_type || scorecardType;
+
   const fmtMoney = v => v != null ? `$${parseFloat(v).toFixed(2)}` : '—';
   const fmtPct = v => v != null ? `${parseFloat(v).toFixed(1)}%` : '—';
 
   return (
     <div className="space-y-4">
+      {/* Scorecard type label — only shown in auto-resolve (driver) mode */}
+      {autoResolve && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-slate-500">{weekLabel} · {currentYear}</p>
+          <span className={`text-[13px] font-bold ${resolvedType === 'final' ? 'text-green-600' : 'text-amber-600'}`}>
+            {resolvedType === 'final' ? 'Final Scorecard' : 'Pre Dispute'}
+          </span>
+        </div>
+      )}
+
       {/* Summary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center">
@@ -111,11 +128,11 @@ function DriverScoreView({ weekLabel, currentYear, scorecardType = 'final' }) {
       <div>
         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Safety Metrics</p>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <SafetyCard label="Seatbelt Off Rate"       value={sc.seatbelt_score}       isPD={scorecardType === 'pre_dispute'} />
-          <SafetyCard label="Speeding Event Rate"     value={sc.speeding_score}       isPD={scorecardType === 'pre_dispute'} />
-          <SafetyCard label="Distractions Rate"       value={sc.distraction_score}    isPD={scorecardType === 'pre_dispute'} />
-          <SafetyCard label="Following Distance"      value={sc.following_dist_score} isPD={scorecardType === 'pre_dispute'} />
-          <SafetyCard label="Sign/Signal Violations"  value={sc.sign_signal_score}    isPD={scorecardType === 'pre_dispute'} />
+          <SafetyCard label="Seatbelt Off Rate"       value={sc.seatbelt_score}       isPD={resolvedType === 'pre_dispute'} />
+          <SafetyCard label="Speeding Event Rate"     value={sc.speeding_score}       isPD={resolvedType === 'pre_dispute'} />
+          <SafetyCard label="Distractions Rate"       value={sc.distraction_score}    isPD={resolvedType === 'pre_dispute'} />
+          <SafetyCard label="Following Distance"      value={sc.following_dist_score} isPD={resolvedType === 'pre_dispute'} />
+          <SafetyCard label="Sign/Signal Violations"  value={sc.sign_signal_score}    isPD={resolvedType === 'pre_dispute'} />
         </div>
       </div>
     </div>
@@ -246,15 +263,17 @@ export default function Scorecard() {
         )}
       </div>
 
-      {/* Tab bar */}
-      <div className="flex gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 w-fit">
-        {[['pre_dispute', 'Pre Dispute'], ['final', 'Final Scorecard']].map(([v, l]) => (
-          <button key={v} onClick={() => setScorecardView(v)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${scorecardView === v ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
-            {l}
-          </button>
-        ))}
-      </div>
+      {/* Tab bar — admin/manager/dispatcher only; drivers see auto-resolved view */}
+      {!isDriver && (
+        <div className="flex gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 w-fit">
+          {[['pre_dispute', 'Pre Dispute'], ['final', 'Final Scorecard']].map(([v, l]) => (
+            <button key={v} onClick={() => setScorecardView(v)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${scorecardView === v ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Upload result — managers only, final view */}
       {!isDriver && scorecardView === 'final' && uploadResult && (
@@ -285,7 +304,7 @@ export default function Scorecard() {
       )}
 
       {/* Driver view */}
-      {isDriver && weekLabel && <DriverScoreView weekLabel={weekLabel} currentYear={currentYear} scorecardType={scorecardView} />}
+      {isDriver && weekLabel && <DriverScoreView weekLabel={weekLabel} currentYear={currentYear} autoResolve />}
 
       {/* Search + sort — managers only. Gated on rawDrivers (the full list)
           so the input stays visible even when the filter returns 0 matches. */}

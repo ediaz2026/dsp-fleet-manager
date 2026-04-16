@@ -355,22 +355,47 @@ router.get('/weeks', async (req, res) => {
 });
 
 // GET /api/amazon-scorecard/mine — driver's own scorecard
+// If `type` is supplied (admin/manager using driver-view), honour it.
+// Otherwise auto-resolve: try Final first, fall back to Pre Dispute.
 router.get('/mine', async (req, res) => {
-  const { week, type = 'final' } = req.query;
-  let row;
-  if (week) {
-    const { rows } = await pool.query(
-      `SELECT * FROM amazon_scorecards WHERE staff_id=$1 AND week_label=$2 AND scorecard_type=$3`,
-      [req.user.id, week, type]
-    );
-    row = rows[0];
-  } else {
+  const { week, type } = req.query;
+
+  // When an explicit type is given, use it directly (admin/manager path)
+  if (type) {
+    let row;
+    if (week) {
+      const { rows } = await pool.query(
+        `SELECT * FROM amazon_scorecards WHERE staff_id=$1 AND week_label=$2 AND scorecard_type=$3`,
+        [req.user.id, week, type]
+      );
+      row = rows[0];
+    } else {
+      const { rows } = await pool.query(
+        `SELECT * FROM amazon_scorecards WHERE staff_id=$1 AND scorecard_type=$2 ORDER BY year DESC, amazon_week DESC LIMIT 1`,
+        [req.user.id, type]
+      );
+      row = rows[0];
+    }
+    return res.json(row || null);
+  }
+
+  // Auto-resolve: Final first, then Pre Dispute
+  const tryType = async (t) => {
+    if (week) {
+      const { rows } = await pool.query(
+        `SELECT * FROM amazon_scorecards WHERE staff_id=$1 AND week_label=$2 AND scorecard_type=$3`,
+        [req.user.id, week, t]
+      );
+      return rows[0] || null;
+    }
     const { rows } = await pool.query(
       `SELECT * FROM amazon_scorecards WHERE staff_id=$1 AND scorecard_type=$2 ORDER BY year DESC, amazon_week DESC LIMIT 1`,
-      [req.user.id, type]
+      [req.user.id, t]
     );
-    row = rows[0];
-  }
+    return rows[0] || null;
+  };
+
+  const row = await tryType('final') || await tryType('pre_dispute');
   res.json(row || null);
 });
 

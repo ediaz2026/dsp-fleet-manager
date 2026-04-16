@@ -28,7 +28,10 @@ function MetricCell({ value, good, suffix = '' }) {
 // Only used when scorecardView === 'final'. Pre Dispute keeps its raw 0.0 events/100 trips view.
 function getFinalSafetyDisplay(value) {
   const v = parseFloat(value);
-  if (value === null || value === undefined || value === 0 || (typeof value === 'string' && value.trim() === '') || (!isNaN(v) && v === 0)) {
+  if (value === null || value === undefined || value === 0
+      || (typeof value === 'string' && value.trim() === '')
+      || (!isNaN(v) && v === 0)
+      || (!isNaN(v) && v === 100)) {
     return { display: '100', color: 'text-green-600' };
   }
   return { display: isNaN(v) ? value : v, color: 'text-red-600' };
@@ -89,10 +92,13 @@ function DriverScoreView({ weekLabel, currentYear, scorecardType = 'final', auto
 
       {/* Summary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center">
-          <p className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wide">Rank</p>
-          <p className="text-2xl font-black text-indigo-700">#{sc.rank_position || '—'}</p>
-        </div>
+        {/* Rank — hidden for drivers viewing Pre Dispute (autoResolve + pre_dispute) */}
+        {!(autoResolve && resolvedType === 'pre_dispute') && (
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center">
+            <p className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wide">Rank</p>
+            <p className="text-2xl font-black text-indigo-700">#{sc.rank_position || '—'}</p>
+          </div>
+        )}
         <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Packages</p>
           <p className="text-2xl font-black text-slate-800">{sc.packages != null ? Math.round(sc.packages) : '—'}</p>

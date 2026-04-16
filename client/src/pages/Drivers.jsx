@@ -1530,7 +1530,6 @@ export default function Drivers() {
           ))}
 
           <div className="my-2 border-t border-slate-700/50" />
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-3 pb-1">People Ops</p>
 
           <button
             onClick={() => saveSection('invitations')}

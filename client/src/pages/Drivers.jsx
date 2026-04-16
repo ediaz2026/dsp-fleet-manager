@@ -11,7 +11,9 @@ import toast from 'react-hot-toast';
 import { useSort } from '../hooks/useSort';
 import { format, differenceInDays, parseISO, isValid } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import UserManagementPanel from '../components/UserManagementPanel';
+import InvitationsPanel from '../components/InvitationsPanel';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SIDEBAR = [
@@ -1440,13 +1442,23 @@ function AlertsSection({ onOpenProfile }) {
 export default function Drivers() {
   const qc = useQueryClient();
   const location = useLocation();
-  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [section, setSection] = useState(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'user-management' || tabParam === 'invitations') return tabParam;
     if (location.state?.section) return location.state.section;
     return localStorage.getItem('drivers_section') || 'all-drivers';
   });
   const [profileDriver, setProfileDriver] = useState(null);
   const initialStatus = location.state?.status || null;
+
+  // Sync ?tab= URL param (deep links from Management redirects)
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'user-management' || tabParam === 'invitations') {
+      setSection(tabParam);
+    }
+  }, [searchParams]);
 
   const { data: allDrivers = [] } = useQuery({
     queryKey: ['drivers'],
@@ -1454,7 +1466,17 @@ export default function Drivers() {
   });
   const notSentCount = allDrivers.filter(d => !d.invitation_sent_at && !d.last_login).length;
 
-  const saveSection = (s) => { setSection(s); localStorage.setItem('drivers_section', s); };
+  const saveSection = (s) => {
+    setSection(s);
+    // Only persist the three core driver sections in localStorage
+    if (s === 'all-drivers' || s === 'recurring' || s === 'alerts') {
+      localStorage.setItem('drivers_section', s);
+    }
+    // Clear any ?tab= param when switching sections manually
+    if (searchParams.get('tab')) {
+      setSearchParams({}, { replace: true });
+    }
+  };
 
   const statusMut = useMutation({
     mutationFn: ({ staffId, status }) => api.put(`/drivers/${staffId}/status`, { status }),
@@ -1515,16 +1537,24 @@ export default function Drivers() {
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-3 pb-1">People Ops</p>
 
           <button
-            onClick={() => navigate('/management?section=users')}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-700/60 transition-all"
+            onClick={() => saveSection('user-management')}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              section === 'user-management'
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
+            }`}
           >
             <Users size={15} className="flex-shrink-0" />
             <span className="flex-1 text-left">User Management</span>
           </button>
 
           <button
-            onClick={() => navigate('/management?section=send-invitations')}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-700/60 transition-all"
+            onClick={() => saveSection('invitations')}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              section === 'invitations'
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
+            }`}
           >
             <Mail size={15} className="flex-shrink-0" />
             <span className="flex-1 text-left">Invitations</span>
@@ -1537,9 +1567,11 @@ export default function Drivers() {
 
       {/* ── Main Content ── */}
       <div className="flex-1 overflow-auto bg-slate-50 p-6">
-        {section === 'all-drivers' && <AllDriversSection onOpenProfile={openProfile} initialStatus={initialStatus} />}
-        {section === 'recurring'   && <RecurringSection onOpenProfile={openProfile} />}
-        {section === 'alerts'      && <AlertsSection onOpenProfile={openProfile} />}
+        {section === 'all-drivers'     && <AllDriversSection onOpenProfile={openProfile} initialStatus={initialStatus} />}
+        {section === 'recurring'       && <RecurringSection onOpenProfile={openProfile} />}
+        {section === 'alerts'          && <AlertsSection onOpenProfile={openProfile} />}
+        {section === 'user-management' && <div className="space-y-5"><UserManagementPanel enabled={section === 'user-management'} /></div>}
+        {section === 'invitations'     && <div className="space-y-5"><InvitationsPanel enabled={section === 'invitations'} /></div>}
       </div>
 
       {/* ── Driver Profile Modal ── */}

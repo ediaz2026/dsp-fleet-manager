@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Save, Plus, Trash2, Shield, Bell, Cpu, DollarSign, Cloud, ToggleLeft, ToggleRight,
-  Tag, RepeatIcon, X, ChevronDown, ChevronUp, Search, Users, UserPlus, RefreshCw,
+  Tag, RepeatIcon, X, ChevronDown, ChevronUp, Search, Users, RefreshCw,
   Settings, Calendar, Upload, CheckCircle, AlertCircle, ChevronRight, GripVertical,
   Download, FileSpreadsheet, ClipboardList, Mail, Smartphone, MessageCircle, Info, Clock,
 } from 'lucide-react';
@@ -13,7 +13,7 @@ import toast from 'react-hot-toast';
 import Modal from '../components/Modal';
 import Badge from '../components/Badge';
 import { useAuth } from '../context/AuthContext';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 
 /* ─── Constants ───────────────────────────────────────────────────────────── */
 const DAYS_OF_WEEK = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -68,8 +68,6 @@ const SIDEBAR = [
     group: 'SYSTEM',
     items: [
       { id: 'general',           label: 'General Settings',  icon: Settings },
-      { id: 'users',             label: 'User Management',   icon: Users },
-      { id: 'send-invitations',  label: 'Send Invitations',  icon: RefreshCw },
       { id: 'bulk-import',       label: 'Bulk Import',       icon: FileSpreadsheet },
       { id: 'audit-log',     label: 'Audit Log',        icon: ClipboardList },
       { id: 'notifications', label: 'Notifications',    icon: Bell },
@@ -139,13 +137,22 @@ export default function Management() {
   const isAdmin = user?.role === 'admin';
 
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  // Redirect legacy links for sections that have moved to the Drivers page
+  useEffect(() => {
+    const fromUrl = searchParams.get('section');
+    if (fromUrl === 'users')             { navigate('/drivers?tab=user-management', { replace: true }); return; }
+    if (fromUrl === 'send-invitations')  { navigate('/drivers?tab=invitations',     { replace: true }); return; }
+  }, [searchParams, navigate]);
+
   const [activeSection, setActiveSection] = useState(
     () => {
       const fromUrl = (typeof window !== 'undefined') && new URLSearchParams(window.location.search).get('section');
-      if (fromUrl) return fromUrl;
+      if (fromUrl && fromUrl !== 'users' && fromUrl !== 'send-invitations') return fromUrl;
       const saved = localStorage.getItem('mgmt_active_section');
-      // migrate away from removed driver sections
-      if (!saved || saved === 'drivers' || saved === 'add-driver' || saved === 'driver-recurring') return 'scheduler-settings';
+      // migrate away from removed driver sections + moved people-ops sections
+      if (!saved || saved === 'drivers' || saved === 'add-driver' || saved === 'driver-recurring' || saved === 'users' || saved === 'send-invitations') return 'scheduler-settings';
       return saved;
     }
   );
@@ -157,7 +164,7 @@ export default function Management() {
   // Sync active section with ?section= query param when it changes (e.g. nav from Drivers)
   useEffect(() => {
     const section = searchParams.get('section');
-    if (section && section !== activeSection) {
+    if (section && section !== 'users' && section !== 'send-invitations' && section !== activeSection) {
       setActiveSection(section);
       localStorage.setItem('mgmt_active_section', section);
     }
@@ -256,98 +263,6 @@ export default function Management() {
   const drUpdateRow    = useMutation({ mutationFn: row => api.put(`/drivers/${row.staff_id}/recurring/${row.id}`, row), onSuccess: () => qc.invalidateQueries({ queryKey: ['driver-recurring-overview'] }), onError: () => toast.error('Failed to update shift') });
   const drDeleteRow    = useMutation({ mutationFn: ({ staffId, rowId }) => api.delete(`/drivers/${staffId}/recurring/${rowId}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['driver-recurring-overview'] }), onError: () => toast.error('Failed to remove row') });
   const drToggleRotating = useMutation({ mutationFn: ({ staffId, is_rotating }) => api.put(`/drivers/${staffId}/rotating`, { is_rotating }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['driver-recurring-overview'] }); qc.invalidateQueries({ queryKey: ['drivers'] }); }, onError: () => toast.error('Failed to update rotating status') });
-
-  /* ── User Management ──────────────────────────────────────────────────── */
-  const [showAddUser, setShowAddUser] = useState(false);
-  const [editUser,    setEditUser]    = useState(null);
-  const [uForm,       setUForm]       = useState({ first_name:'', last_name:'', email:'', role:'dispatcher', password:'', must_change_password:true });
-  const [editUForm,   setEditUForm]   = useState({ role:'', status:'', password:'' });
-  const { data: userList = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.get('/auth/users').then(r => r.data), enabled: isAdmin });
-  const createUser = useMutation({ mutationFn: d => api.post('/auth/users', d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); setShowAddUser(false); setUForm({ first_name:'', last_name:'', email:'', role:'dispatcher', password:'', must_change_password:true }); toast.success('User created'); }, onError: err => toast.error(err.response?.data?.error || 'Failed to create user') });
-  const updateUser = useMutation({ mutationFn: ({ id, ...d }) => api.put(`/auth/users/${id}`, d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); setEditUser(null); toast.success('User updated'); }, onError: err => toast.error(err.response?.data?.error || 'Failed to update user') });
-  const openEditUser = (u) => { setEditUser(u); setEditUForm({ role: u.role, status: u.status, password: '' }); };
-
-  /* ── Send Invitations ─────────────────────────────────────────────────── */
-  const [inviteFilter,      setInviteFilter]      = useState('all'); // 'all' | 'not_sent' | 'invited' | 'active'
-  const [inviteSearch,      setInviteSearch]      = useState('');
-  const [selectedIds,       setSelectedIds]       = useState(new Set());
-  const [showInviteConfirm, setShowInviteConfirm] = useState(false);
-  const [inviteResults,     setInviteResults]     = useState(null);
-
-  const { data: driverList = [], refetch: refetchDrivers } = useQuery({
-    queryKey: ['invite-drivers'],
-    queryFn: () => api.get('/auth/users').then(r => r.data.filter(u => u.role === 'driver')),
-    enabled: isAdmin && activeSection === 'send-invitations',
-  });
-
-  const sendInvitations = useMutation({
-    mutationFn: (staffIds) => api.post('/auth/send-invitations', { staffIds }).then(r => r.data),
-    onSuccess: (data) => {
-      setInviteResults(data.results);
-      setSelectedIds(new Set());
-      setShowInviteConfirm(false);
-      refetchDrivers();
-      const sent = data.results.filter(r => r.success).length;
-      const skipped = data.results.filter(r => r.skipped).length;
-      const failed = data.results.filter(r => !r.success && !r.skipped).length;
-      if (sent > 0) toast.success(`${sent} invitation${sent !== 1 ? 's' : ''} sent${skipped > 0 ? `, ${skipped} skipped (no email)` : ''}`);
-      if (failed > 0) toast.error(`${failed} failed — email service may not be configured. Invitation links are shown below.`);
-      if (sent === 0 && skipped > 0) toast(`${skipped} driver${skipped !== 1 ? 's' : ''} skipped — no email address`, { icon: '⚠️' });
-    },
-    onError: err => toast.error(err.response?.data?.error || 'Failed to send invitations'),
-  });
-
-  const [resendingId, setResendingId] = useState(null);
-  const resendInvitation = useMutation({
-    mutationFn: (staffId) => {
-      setResendingId(staffId);
-      return api.post(`/auth/resend-invitation/${staffId}`).then(r => r.data);
-    },
-    onSuccess: (data) => {
-      setResendingId(null);
-      refetchDrivers();
-      if (data.emailSent) {
-        toast.success(`Invitation sent to ${data.name}`);
-      } else {
-        toast(`Link saved for ${data.name} — copy it below (email not sent)`, { icon: '⚠️' });
-        setInviteResults([{ id: 0, success: false, name: data.name, error: 'Email not sent', inviteUrl: data.inviteUrl }]);
-      }
-    },
-    onError: (err) => {
-      setResendingId(null);
-      toast.error(err.response?.data?.error || 'Failed to resend invitation');
-    },
-  });
-
-  const getDriverInviteStatus = (d) => {
-    if (d.last_login) return 'active';
-    if (d.invitation_sent_at) return 'invited';
-    return 'not_sent';
-  };
-
-  const inviteDrivers = driverList.filter(d => {
-    const status = getDriverInviteStatus(d);
-    if (inviteFilter !== 'all' && status !== inviteFilter) return false;
-    if (inviteSearch) {
-      const q = inviteSearch.toLowerCase();
-      return `${d.first_name} ${d.last_name} ${d.email}`.toLowerCase().includes(q);
-    }
-    return true;
-  });
-
-  const toggleSelect = (id) => setSelectedIds(prev => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === inviteDrivers.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(inviteDrivers.map(d => d.id)));
-    }
-  };
 
   /* ── Audit Log ────────────────────────────────────────────────────────── */
   const [auditFilters, setAuditFilters] = useState({ date_from: '', date_to: '', user_id: '', action_type: '', entity_type: '', search: '' });
@@ -1151,235 +1066,6 @@ export default function Management() {
           </>
         )}
 
-        {/* ══ USER MANAGEMENT ══════════════════════════════════════════════ */}
-        {activeSection === 'users' && (
-          <>
-            <div className="flex items-start justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900">User Management</h1>
-                <p className="text-sm text-slate-500 mt-1">Manage admin, manager, and dispatcher accounts. Driver accounts are managed from the <span className="font-medium text-blue-600">Driver Profile</span>.</p>
-              </div>
-              <button className="btn-primary text-xs shrink-0 ml-4" onClick={() => setShowAddUser(true)}><UserPlus size={14} /> Add User</button>
-            </div>
-            <section className={CARD + ' !p-0 overflow-hidden'}>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[#E2E8F0] bg-slate-50">
-                    <th className="th text-left px-4 py-3">Name</th>
-                    <th className="th text-left px-3 py-3">Email</th>
-                    <th className="th text-center px-3 py-3">Role</th>
-                    <th className="th text-center px-3 py-3">Last Login</th>
-                    <th className="th text-center px-3 py-3">Status</th>
-                    <th className="th px-3 py-3" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {userList.map(u => {
-                    const isDriverRole = u.role === 'driver';
-                    return (
-                      <tr key={u.id} className={`border-b border-[#E2E8F0] transition-colors ${isDriverRole ? 'bg-slate-50/60' : 'hover:bg-blue-50/40'}`}>
-                        <td className="px-4 py-2.5 font-medium text-[#111827]">
-                          {u.first_name} {u.last_name}
-                          {!isDriverRole && u.must_change_password && <span className="ml-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">Temp PW</span>}
-                        </td>
-                        <td className="px-3 py-2.5 text-[#475569]">{u.email}</td>
-                        <td className="px-3 py-2.5 text-center"><Badge status={u.role === 'manager' ? 'dispatcher' : u.role} label={u.role === 'manager' ? 'Dispatcher' : u.role} /></td>
-                        <td className="px-3 py-2.5 text-center text-xs text-[#475569]">{u.last_login ? format(new Date(u.last_login), 'MM/dd/yy h:mm a') : 'Never'}</td>
-                        <td className="px-3 py-2.5 text-center"><span className={`badge text-xs ${u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{u.status}</span></td>
-                        <td className="px-3 py-2.5 text-right">
-                          {isDriverRole
-                            ? <span className="text-[11px] text-[#94a3b8] italic">Manage from Driver Profile</span>
-                            : <button className="btn-ghost text-xs" onClick={() => openEditUser(u)}>Edit</button>
-                          }
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {userList.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-[#94a3b8]">No users found</td></tr>}
-                </tbody>
-              </table>
-            </section>
-          </>
-        )}
-
-        {/* ══ SEND INVITATIONS ═════════════════════════════════════════════ */}
-        {activeSection === 'send-invitations' && (
-          <>
-            <div className="flex items-start justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900">Send Invitations</h1>
-                <p className="text-sm text-slate-500 mt-1">Select drivers to send portal invitation emails. Drivers receive a 7-day link to set their password.</p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0 ml-4">
-                <button
-                  className="btn-ghost text-xs"
-                  onClick={() => setSelectedIds(new Set(driverList.filter(d => getDriverInviteStatus(d) === 'not_sent').map(d => d.id)))}
-                >
-                  Select All Not Sent
-                </button>
-                {selectedIds.size > 0 && (
-                  <button
-                    className="btn-primary text-xs"
-                    onClick={() => setShowInviteConfirm(true)}
-                  >
-                    <RefreshCw size={14} /> Send to {selectedIds.size} Selected
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Filter bar */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="relative flex-1 min-w-[180px]">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  className="input pl-8 py-1.5 text-sm"
-                  placeholder="Search drivers…"
-                  value={inviteSearch}
-                  onChange={e => setInviteSearch(e.target.value)}
-                />
-              </div>
-              {['all','not_sent','invited','active'].map(f => (
-                <button
-                  key={f}
-                  onClick={() => setInviteFilter(f)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                    inviteFilter === f
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  {{ all: 'All', not_sent: 'Not Sent', invited: 'Invited', active: 'Active' }[f]}
-                  <span className="ml-1.5 opacity-70">
-                    {f === 'all' ? driverList.length : driverList.filter(d => getDriverInviteStatus(d) === f).length}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {/* Results banner */}
-            {inviteResults && (
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-blue-800">Invitation results</p>
-                  <button onClick={() => setInviteResults(null)} className="text-blue-400 hover:text-blue-600"><X size={14} /></button>
-                </div>
-                {inviteResults.map((r, i) => (
-                  <div key={i} className={`text-xs ${r.success ? 'text-green-700' : 'text-amber-700'}`}>
-                    <p className="flex items-center gap-1.5">
-                      {r.success ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
-                      {r.name || `ID ${r.id}`} — {r.success ? 'Email sent' : r.error}
-                    </p>
-                    {!r.success && r.inviteUrl && (
-                      <div className="mt-1 ml-4 flex items-center gap-2">
-                        <input readOnly value={r.inviteUrl} className="flex-1 text-[10px] bg-white border border-amber-200 rounded px-2 py-0.5 font-mono text-amber-800 truncate" onClick={e => e.target.select()} />
-                        <button className="text-[10px] text-blue-600 hover:underline whitespace-nowrap" onClick={() => { navigator.clipboard.writeText(r.inviteUrl); toast.success('Link copied'); }}>Copy</button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Driver table */}
-            <section className={CARD + ' !p-0 overflow-hidden'}>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[#E2E8F0] bg-slate-50">
-                    <th className="px-4 py-3 w-8">
-                      <input
-                        type="checkbox"
-                        className="rounded accent-blue-600"
-                        checked={inviteDrivers.length > 0 && selectedIds.size === inviteDrivers.length}
-                        onChange={toggleSelectAll}
-                      />
-                    </th>
-                    <th className="th text-left px-3 py-3">Name</th>
-                    <th className="th text-left px-3 py-3">Email</th>
-                    <th className="th text-center px-3 py-3">Status</th>
-                    <th className="th text-center px-3 py-3">Invited</th>
-                    <th className="th text-center px-3 py-3">Last Login</th>
-                    <th className="th px-3 py-3" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {inviteDrivers.map(d => {
-                    const invStatus = getDriverInviteStatus(d);
-                    const statusBadge = {
-                      not_sent: <span className="badge bg-slate-100 text-slate-500 text-[10px]">Not Sent</span>,
-                      invited:  <span className="badge bg-amber-100 text-amber-700 text-[10px]">Invited</span>,
-                      active:   <span className="badge bg-green-100 text-green-700 text-[10px]">Active</span>,
-                    }[invStatus];
-                    return (
-                      <tr key={d.id} className="border-b border-[#E2E8F0] hover:bg-blue-50/30 transition-colors">
-                        <td className="px-4 py-2.5">
-                          <input
-                            type="checkbox"
-                            className="rounded accent-blue-600"
-                            checked={selectedIds.has(d.id)}
-                            onChange={() => toggleSelect(d.id)}
-                          />
-                        </td>
-                        <td className="px-3 py-2.5 font-medium text-[#111827]">{d.first_name} {d.last_name}</td>
-                        <td className="px-3 py-2.5 text-[#475569] text-xs">{d.email}</td>
-                        <td className="px-3 py-2.5 text-center">{statusBadge}</td>
-                        <td className="px-3 py-2.5 text-center text-xs text-[#475569]">
-                          {d.invitation_sent_at ? format(new Date(d.invitation_sent_at), 'MM/dd/yy') : '—'}
-                        </td>
-                        <td className="px-3 py-2.5 text-center text-xs text-[#475569]">
-                          {d.last_login ? format(new Date(d.last_login), 'MM/dd/yy') : '—'}
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {d.invitation_sent_at && (
-                              <span className="text-[10px] text-slate-400 whitespace-nowrap">Sent {format(new Date(d.invitation_sent_at), 'M/d')}</span>
-                            )}
-                            <button
-                              className="btn-ghost text-xs"
-                              disabled={resendingId === d.id}
-                              onClick={() => resendInvitation.mutate(d.id)}
-                            >
-                              {resendingId === d.id ? 'Sending…' : d.invitation_sent_at ? 'Resend' : 'Send'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {inviteDrivers.length === 0 && (
-                    <tr><td colSpan={7} className="px-3 py-8 text-center text-[#94a3b8]">No drivers match the current filter</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </section>
-
-            {/* Confirm modal */}
-            <Modal isOpen={showInviteConfirm} onClose={() => setShowInviteConfirm(false)} title="Confirm Send Invitations">
-              <div className="space-y-4">
-                <p className="text-sm text-slate-600">
-                  Send portal invitation emails to <strong>{selectedIds.size}</strong> driver{selectedIds.size !== 1 ? 's' : ''}? Each driver will receive a unique link valid for 7 days.
-                </p>
-                <div className="bg-slate-50 rounded-lg p-3 max-h-40 overflow-y-auto space-y-1">
-                  {[...selectedIds].map(id => {
-                    const d = driverList.find(x => x.id === id);
-                    return d ? <p key={id} className="text-xs text-slate-700">• {d.first_name} {d.last_name} <span className="text-slate-400">({d.email})</span></p> : null;
-                  })}
-                </div>
-                <div className="flex justify-end gap-2">
-                  <button className="btn-ghost text-sm" onClick={() => setShowInviteConfirm(false)}>Cancel</button>
-                  <button
-                    className="btn-primary text-sm"
-                    disabled={sendInvitations.isPending}
-                    onClick={() => sendInvitations.mutate([...selectedIds])}
-                  >
-                    {sendInvitations.isPending ? 'Sending…' : `Send ${selectedIds.size} Invitation${selectedIds.size !== 1 ? 's' : ''}`}
-                  </button>
-                </div>
-              </div>
-            </Modal>
-          </>
-        )}
-
         {/* ══ BULK IMPORT ══════════════════════════════════════════════════ */}
         {activeSection === 'bulk-import' && (
           <>
@@ -2084,57 +1770,6 @@ export default function Management() {
           <div className="flex gap-3 pt-2">
             <button type="button" className="btn-secondary flex-1" onClick={() => { setRuleModal(false); setEditRule(null); }}>Cancel</button>
             <button type="submit" className="btn-primary flex-1" disabled={saveRule.isPending}>{saveRule.isPending ? 'Saving…' : editRule ? 'Update' : 'Create'}</button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Add User Modal */}
-      <Modal isOpen={showAddUser} onClose={() => setShowAddUser(false)} title="Add New User">
-        <form onSubmit={e => { e.preventDefault(); createUser.mutate(uForm); }} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="modal-label">First Name</label><input className="input" value={uForm.first_name} onChange={e => setUForm(f => ({ ...f, first_name: e.target.value }))} /></div>
-            <div><label className="modal-label">Last Name</label><input className="input" value={uForm.last_name} onChange={e => setUForm(f => ({ ...f, last_name: e.target.value }))} /></div>
-          </div>
-          <div><label className="modal-label">Email *</label><input type="email" className="input" required value={uForm.email} onChange={e => setUForm(f => ({ ...f, email: e.target.value }))} /></div>
-          <div><label className="modal-label">Role *</label>
-            <select className="select" required value={uForm.role} onChange={e => setUForm(f => ({ ...f, role: e.target.value }))}>
-              <option value="dispatcher">Dispatcher</option>
-              <option value="manager">Manager</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-          <div><label className="modal-label">Temporary Password *</label><input type="password" className="input" required minLength={6} value={uForm.password} onChange={e => setUForm(f => ({ ...f, password: e.target.value }))} /></div>
-          <label className="flex items-center gap-2 text-sm text-[#374151] cursor-pointer select-none">
-            <input type="checkbox" className="rounded accent-[#2563EB]" checked={uForm.must_change_password} onChange={e => setUForm(f => ({ ...f, must_change_password: e.target.checked }))} />
-            Require password change on first login
-          </label>
-          <div className="flex gap-3 pt-2">
-            <button type="button" className="btn-secondary flex-1" onClick={() => setShowAddUser(false)}>Cancel</button>
-            <button type="submit" className="btn-primary flex-1" disabled={createUser.isPending}>{createUser.isPending ? 'Creating…' : 'Create User'}</button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Edit User Modal */}
-      <Modal isOpen={!!editUser} onClose={() => setEditUser(null)} title={editUser ? `Edit — ${editUser.first_name} ${editUser.last_name}` : ''}>
-        <form onSubmit={e => { e.preventDefault(); const payload = { id: editUser.id, role: editUForm.role, status: editUForm.status }; if (editUForm.password) payload.password = editUForm.password; updateUser.mutate(payload); }} className="space-y-4">
-          <div><label className="modal-label">Role</label>
-            <select className="select" value={editUForm.role} onChange={e => setEditUForm(f => ({ ...f, role: e.target.value }))}>
-              <option value="dispatcher">Dispatcher</option><option value="manager">Manager</option><option value="admin">Admin</option>
-            </select>
-          </div>
-          <div><label className="modal-label">Status</label>
-            <select className="select" value={editUForm.status} onChange={e => setEditUForm(f => ({ ...f, status: e.target.value }))}>
-              <option value="active">Active</option><option value="inactive">Inactive</option>
-            </select>
-          </div>
-          <div><label className="modal-label">Reset Password (optional)</label>
-            <input type="password" className="input" minLength={6} value={editUForm.password} onChange={e => setEditUForm(f => ({ ...f, password: e.target.value }))} placeholder="Leave blank to keep current" />
-            {editUForm.password && <p className="text-xs text-amber-600 mt-1">User will be required to change this password on next login.</p>}
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button type="button" className="btn-secondary flex-1" onClick={() => setEditUser(null)}>Cancel</button>
-            <button type="submit" className="btn-primary flex-1" disabled={updateUser.isPending}>{updateUser.isPending ? 'Saving…' : 'Save Changes'}</button>
           </div>
         </form>
       </Modal>

@@ -1508,10 +1508,7 @@ export default function Drivers() {
 
       {/* ── Left Sidebar ── */}
       <div className="w-52 bg-slate-900 flex-shrink-0 flex flex-col">
-        <div className="px-4 pt-5 pb-3">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Drivers</p>
-        </div>
-        <nav className="flex-1 px-2 space-y-0.5">
+        <nav className="flex-1 px-2 pt-4 space-y-0.5">
           {SIDEBAR.map(item => (
             <button
               key={item.id}

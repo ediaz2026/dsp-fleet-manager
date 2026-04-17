@@ -359,28 +359,6 @@ router.get('/driver-workload', async (req, res) => {
   }
 });
 
-// POST /api/analytics/backfill-workload — one-time backfill, remove after use
-router.post('/backfill-workload', async (req, res) => {
-  try {
-    const { snapshotWorkloadForDate } = require('../jobs/workloadSnapshot');
-    const days = parseInt(req.query.days) || 14;
-    const results = [];
-    for (let i = 1; i <= days; i++) {
-      const todayRow = await pool.query(`SELECT ((NOW() AT TIME ZONE 'America/New_York') - INTERVAL '${i} days')::date AS d`);
-      const dateStr = fmtDate(todayRow.rows[0].d);
-      try {
-        const count = await snapshotWorkloadForDate(dateStr);
-        results.push({ date: dateStr, count: count || 0 });
-      } catch (e) {
-        results.push({ date: dateStr, error: e.message });
-      }
-    }
-    res.json({ results });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ── Full Rescue Log (with filters) ───────────────────────────────────────────
 
 // GET /api/analytics/rescue-log?start=&end=&driver=&route=&reason=

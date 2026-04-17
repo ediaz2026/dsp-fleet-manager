@@ -787,6 +787,8 @@ function RescueWorkloadTab() {
   const [logDriver, setLogDriver]   = useState('');
   const [logRoute, setLogRoute]     = useState('');
   const [logReason, setLogReason]   = useState('');
+  // Quick-access reason filter for Most Rescued watch list
+  const [watchReason, setWatchReason] = useState('all');
 
   const { data: driverStats = [], isLoading: dsLoading } = useQuery({
     queryKey: ['driver-stats', start, end],
@@ -812,7 +814,22 @@ function RescueWorkloadTab() {
     enabled,
   });
 
-  const mostRescued  = driverStats.filter(d => d.rescues_received > 0).sort((a,b) => b.rescues_received - a.rescues_received);
+  // Most rescued: when a watch reason filter is active, derive from rescueLog
+  const mostRescued = useMemo(() => {
+    if (watchReason === 'all') {
+      return driverStats.filter(d => d.rescues_received > 0).sort((a,b) => b.rescues_received - a.rescues_received);
+    }
+    // Aggregate from rescueLog filtered by reason
+    const filtered = rescueLog.filter(r => r.reason === watchReason);
+    const map = {};
+    for (const r of filtered) {
+      if (!r.rescued_name) continue;
+      if (!map[r.rescued_name]) map[r.rescued_name] = { name: r.rescued_name, staff_id: r.rescued_staff_id, rescues_received: 0, packages_rescued: 0 };
+      map[r.rescued_name].rescues_received++;
+      map[r.rescued_name].packages_rescued += (r.packages_rescued || 0);
+    }
+    return Object.values(map).sort((a,b) => b.rescues_received - a.rescues_received);
+  }, [driverStats, rescueLog, watchReason]);
   const topRescuers  = driverStats.filter(d => d.rescues_given > 0).sort((a,b) => b.rescues_given - a.rescues_given);
   const totalRescues = rescueLog.length;
 
@@ -841,10 +858,39 @@ function RescueWorkloadTab() {
     <div className="space-y-4">
       <RangeBar range={range} setRange={setRange} cStart={cStart} setCStart={setCStart} cEnd={cEnd} setCEnd={setCEnd} start={start} end={end} onPrev={onPrev} onNext={onNext} label={label} />
 
+      {/* Reason filter pills */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+        <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 500, marginRight: '4px' }}>Filter:</span>
+        {[
+          { label: 'All', value: 'all' },
+          { label: '🔴 Heavy Route', value: 'Heavy Route' },
+          { label: '📉 Performance', value: 'Performance' },
+          { label: '🚐 Vehicle Issue', value: 'Vehicle Issue' },
+          { label: '🆘 Emergency', value: 'Personal Emergency' },
+          { label: '🌧 Weather', value: 'Weather' },
+          { label: '📋 Other', value: 'Other' },
+        ].map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => setWatchReason(opt.value)}
+            style={{
+              padding: '4px 12px', borderRadius: '16px', cursor: 'pointer',
+              fontSize: '12px', whiteSpace: 'nowrap',
+              fontWeight: watchReason === opt.value ? 700 : 400,
+              background: watchReason === opt.value ? '#1a2e4a' : 'white',
+              color: watchReason === opt.value ? 'white' : '#374151',
+              border: `1px solid ${watchReason === opt.value ? '#1a2e4a' : '#e2e8f0'}`,
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
       {/* Leaderboard: two columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Most Rescued */}
-        <Card title="🚨 Most Rescued — Watch List" icon={AlertTriangle}>
+        <Card title={watchReason === 'all' ? '🚨 Most Rescued — Watch List' : `🚨 Most Rescued — ${watchReason}`} icon={AlertTriangle}>
           {dsLoading && <p className="text-center text-content-muted py-4">Loading…</p>}
           {!dsLoading && mostRescued.length === 0 && <p className="text-center text-content-muted py-4 text-sm">No rescue data in this range</p>}
           {!dsLoading && mostRescued.length > 0 && (

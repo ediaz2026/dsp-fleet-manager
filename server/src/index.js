@@ -395,6 +395,7 @@ runMigrations()
   .then(() => require('./db/migrateVehicleStatus')().catch(err => console.error('⚠️  migrateVehicleStatus error:', err.message)))
   .then(() => require('./db/migratePasswordReset')().catch(err => console.error('⚠️  migratePasswordReset error:', err.message)))
   .then(() => ensureAdditionalAdmins())
+  .then(() => require('./db/migrateWorkload')().catch(err => console.error('⚠️  migrateWorkload error:', err.message)))
   // Clean up non-working drivers from future ops_assignments on startup
   .then(() => require('./db/pool').query(`
     DELETE FROM ops_assignments
@@ -412,5 +413,18 @@ runMigrations()
       console.log(`\n🚀 DSP Fleet Manager API running on port ${PORT}`);
       console.log(`🗄️  Database: ${isRailway ? 'Railway PostgreSQL (SSL)' : 'Local PostgreSQL'}`);
       console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}\n`);
+
+      // Nightly workload snapshot — midnight Eastern
+      const cron = require('node-cron');
+      const { snapshotWorkloadForDate } = require('./jobs/workloadSnapshot');
+      cron.schedule('0 0 * * *', async () => {
+        try {
+          console.log('[Cron] Running nightly workload snapshot');
+          await snapshotWorkloadForDate(); // defaults to yesterday
+        } catch (err) {
+          console.error('[Cron] Workload snapshot failed:', err.message);
+        }
+      }, { timezone: 'America/New_York' });
+      console.log('⏰ Nightly workload snapshot cron scheduled (midnight ET)');
     });
   });

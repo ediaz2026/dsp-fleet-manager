@@ -331,6 +331,91 @@ function fmtDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
+// ── TEMP DIAGNOSTIC — remove after use ──────────────────────────────────────
+router.get('/diag-workload2', async (req, res) => {
+  try {
+    const q1 = await pool.query(`
+      SELECT COUNT(DISTINCT staff_id)::int AS cnt
+      FROM ops_assignments
+      WHERE plan_date >= CURRENT_DATE - INTERVAL '13 days'
+        AND route_code IS NOT NULL AND removed_from_ops IS NOT TRUE
+    `);
+    const q1b = await pool.query(`
+      SELECT COUNT(DISTINCT staff_id)::int AS cnt
+      FROM ops_assignments
+      WHERE plan_date >= CURRENT_DATE - INTERVAL '13 days'
+        AND route_code IS NOT NULL AND removed_from_ops IS NOT TRUE
+        AND shift_type IN ('EDV','STEP VAN')
+    `);
+    const q1c = await pool.query(`
+      SELECT shift_type, COUNT(*)::int AS cnt
+      FROM ops_assignments
+      WHERE plan_date >= CURRENT_DATE - INTERVAL '13 days'
+        AND route_code IS NOT NULL AND removed_from_ops IS NOT TRUE
+      GROUP BY shift_type ORDER BY cnt DESC
+    `);
+
+    // Route matching sample
+    const q2 = await pool.query(`
+      SELECT oa.route_code, oa.plan_date::text, oa.shift_type
+      FROM ops_assignments oa
+      WHERE oa.plan_date >= CURRENT_DATE - INTERVAL '3 days'
+        AND oa.route_code IS NOT NULL AND oa.removed_from_ops IS NOT TRUE
+      LIMIT 15
+    `);
+    // Get routes JSONB keys for those dates
+    const q2b = await pool.query(`
+      SELECT plan_date::text, jsonb_agg(r->>'routeCode') AS route_codes
+      FROM ops_daily_routes, jsonb_array_elements(routes) r
+      WHERE plan_date >= CURRENT_DATE - INTERVAL '3 days'
+      GROUP BY plan_date
+    `);
+
+    // Loadout sample
+    const q3 = await pool.query(`
+      SELECT plan_date::text, jsonb_array_length(loadout) AS entry_count,
+             loadout->0 AS first_entry
+      FROM ops_loadout
+      WHERE plan_date >= CURRENT_DATE - INTERVAL '3 days'
+      LIMIT 3
+    `);
+
+    // Shifts start times sample
+    const q4 = await pool.query(`
+      SELECT sh.staff_id, sh.shift_date::text, sh.start_time, sh.shift_type
+      FROM shifts sh
+      WHERE sh.shift_date >= CURRENT_DATE - INTERVAL '3 days'
+        AND sh.shift_type IN ('EDV','STEP VAN')
+      LIMIT 10
+    `);
+
+    // How many assignments have no matching route in JSONB?
+    // Compare route codes
+    const q5 = await pool.query(`
+      SELECT plan_date::text,
+        COUNT(*)::int AS total_assignments,
+        COUNT(CASE WHEN route_code IS NOT NULL THEN 1 END)::int AS with_route
+      FROM ops_assignments
+      WHERE plan_date >= CURRENT_DATE - INTERVAL '3 days'
+        AND removed_from_ops IS NOT TRUE
+      GROUP BY plan_date ORDER BY plan_date
+    `);
+
+    res.json({
+      total_drivers_all_types: q1.rows[0].cnt,
+      total_drivers_edv_sv: q1b.rows[0].cnt,
+      shift_type_breakdown: q1c.rows,
+      sample_assignments: q2.rows,
+      routes_jsonb_by_date: q2b.rows,
+      loadout_sample: q3.rows,
+      shifts_start_times: q4.rows,
+      assignments_per_day: q5.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/analytics/driver-workload?start=YYYY-MM-DD&end=YYYY-MM-DD
 // Defaults to a 14-day rolling window (today − 13 … today) in Eastern time.
 router.get('/driver-workload', async (req, res) => {

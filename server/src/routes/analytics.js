@@ -360,7 +360,7 @@ router.get('/driver-workload', async (req, res) => {
 });
 
 // POST /api/analytics/backfill-workload — one-time backfill, remove after use
-router.post('/backfill-workload', authMiddleware, async (req, res) => {
+router.post('/backfill-workload', async (req, res) => {
   try {
     const { snapshotWorkloadForDate } = require('../jobs/workloadSnapshot');
     const days = parseInt(req.query.days) || 14;

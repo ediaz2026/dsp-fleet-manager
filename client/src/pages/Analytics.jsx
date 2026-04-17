@@ -10,7 +10,7 @@ import {
   ChevronLeft, ChevronRight, Download, BarChart2, TrendingUp,
   AlertTriangle, Users, Shield, X, Filter, ClipboardList,
 } from 'lucide-react';
-import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, addWeeks, addMonths, subMonths, subDays, getDaysInMonth } from 'date-fns';
+import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, addWeeks, addMonths, subMonths, subDays, addDays, getWeek, getDaysInMonth } from 'date-fns';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 
@@ -48,11 +48,11 @@ function ExportBtn({ onClick, disabled }) {
   );
 }
 
-function RangeBar({ range, setRange, cStart, setCStart, cEnd, setCEnd, start, end }) {
+function RangeBar({ range, setRange, cStart, setCStart, cEnd, setCEnd, start, end, onPrev, onNext, label }) {
   return (
     <div className="flex items-center gap-3 flex-wrap bg-white rounded-xl border border-card-border px-4 py-2.5">
       <span className="text-[10px] font-bold uppercase tracking-wide text-content-muted">Range:</span>
-      {['week', 'month', 'custom'].map(r => (
+      {['daily', 'week', 'month', 'custom'].map(r => (
         <button key={r} onClick={() => setRange(r)}
           className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-all ${range === r ? 'bg-primary text-white' : 'bg-slate-100 text-content-muted hover:bg-slate-200'}`}>
           {r}
@@ -67,9 +67,17 @@ function RangeBar({ range, setRange, cStart, setCStart, cEnd, setCEnd, start, en
             className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-primary" />
         </>
       )}
+      {(range === 'daily' || range === 'week' || range === 'month') && onPrev && onNext && (
+        <div className="flex items-center gap-1.5 ml-1">
+          <button onClick={onPrev} className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"><ChevronLeft size={14} /></button>
+          <button onClick={onNext} className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"><ChevronRight size={14} /></button>
+        </div>
+      )}
       {start && end && (
         <span className="text-xs text-content-muted ml-auto">
-          {format(parseISO(start), 'MMM d')} — {format(parseISO(end), 'MMM d, yyyy')}
+          {label || (start === end
+            ? format(parseISO(start), 'EEE, MMM d, yyyy')
+            : `${format(parseISO(start), 'MMM d')} — ${format(parseISO(end), 'MMM d, yyyy')}`)}
         </span>
       )}
     </div>
@@ -80,13 +88,44 @@ function useRange() {
   const [range, setRange]   = useState('week');
   const [cStart, setCStart] = useState('');
   const [cEnd, setCEnd]     = useState('');
-  const { start, end } = useMemo(() => {
+  const [offset, setOffset] = useState(0); // navigation offset (days/weeks/months)
+
+  // Reset offset when switching range type
+  const handleSetRange = (r) => { setRange(r); setOffset(0); };
+  const onPrev = () => setOffset(o => o - 1);
+  const onNext = () => setOffset(o => o + 1);
+
+  const { start, end, label } = useMemo(() => {
     const today = new Date();
-    if (range === 'week')  return { start: format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd'), end: format(endOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd') };
-    if (range === 'month') return { start: format(startOfMonth(today), 'yyyy-MM-dd'), end: format(endOfMonth(today), 'yyyy-MM-dd') };
-    return { start: cStart, end: cEnd };
-  }, [range, cStart, cEnd]);
-  return { range, setRange, cStart, setCStart, cEnd, setCEnd, start, end };
+    if (range === 'daily') {
+      const d = addDays(today, offset);
+      const s = format(d, 'yyyy-MM-dd');
+      const isToday = offset === 0;
+      return { start: s, end: s, label: isToday ? `Today · ${format(d, 'EEE, MMM d, yyyy')}` : format(d, 'EEE, MMM d, yyyy') };
+    }
+    if (range === 'week') {
+      const base = addWeeks(today, offset);
+      const sun = startOfWeek(base, { weekStartsOn: 0 });
+      const sat = endOfWeek(base, { weekStartsOn: 0 });
+      const wk = getWeek(sun, { weekStartsOn: 0, firstWeekContainsDate: 1 });
+      return {
+        start: format(sun, 'yyyy-MM-dd'),
+        end:   format(sat, 'yyyy-MM-dd'),
+        label: `Week ${wk} · ${format(sun, 'MMM d')} – ${format(sat, 'MMM d, yyyy')}`,
+      };
+    }
+    if (range === 'month') {
+      const base = addMonths(today, offset);
+      return {
+        start: format(startOfMonth(base), 'yyyy-MM-dd'),
+        end:   format(endOfMonth(base), 'yyyy-MM-dd'),
+        label: format(base, 'MMMM yyyy'),
+      };
+    }
+    return { start: cStart, end: cEnd, label: null };
+  }, [range, offset, cStart, cEnd]);
+
+  return { range, setRange: handleSetRange, cStart, setCStart, cEnd, setCEnd, start, end, onPrev, onNext, label };
 }
 
 // ══ SUB-SECTION 1: VOLUME SHARE ═════════════════════════════════════════════
@@ -741,7 +780,7 @@ function DriverPerformanceTab() {
 // ══ SUB-SECTION 4: RESCUE & WORKLOAD ════════════════════════════════════════
 function RescueWorkloadTab() {
   const rangeState = useRange();
-  const { range, setRange, cStart, setCStart, cEnd, setCEnd, start, end } = rangeState;
+  const { range, setRange, cStart, setCStart, cEnd, setCEnd, start, end, onPrev, onNext, label } = rangeState;
   const enabled = !!(start && end);
 
   // Filters for rescue log
@@ -800,7 +839,7 @@ function RescueWorkloadTab() {
 
   return (
     <div className="space-y-4">
-      <RangeBar range={range} setRange={setRange} cStart={cStart} setCStart={setCStart} cEnd={cEnd} setCEnd={setCEnd} start={start} end={end} />
+      <RangeBar range={range} setRange={setRange} cStart={cStart} setCStart={setCStart} cEnd={cEnd} setCEnd={setCEnd} start={start} end={end} onPrev={onPrev} onNext={onNext} label={label} />
 
       {/* Leaderboard: two columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

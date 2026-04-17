@@ -688,7 +688,7 @@ function DriverPerformanceTab() {
                             textAlign: 'center', padding: '4px 2px', minWidth: '52px', cursor: 'default',
                           }}
                         >
-                          {dayData ? fmt12h(dayData.eft) : '—'}
+                          {dayData ? (dayData.eft ? fmt12h(dayData.eft) : dayData.route) : '—'}
                         </td>
                       );
                     })}

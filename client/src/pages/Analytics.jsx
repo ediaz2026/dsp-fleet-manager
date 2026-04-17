@@ -594,9 +594,11 @@ function fmt12h(t) {
 }
 
 function DriverPerformanceTab() {
+  const [workloadRange, setWorkloadRange] = useState('biweekly');
+
   const { data, isLoading } = useQuery({
-    queryKey: ['driver-workload-grid'],
-    queryFn: () => api.get('/analytics/driver-workload').then(r => r.data),
+    queryKey: ['driver-workload-grid', workloadRange],
+    queryFn: () => api.get(`/analytics/driver-workload?range=${workloadRange}`).then(r => r.data),
   });
 
   const dateRange = data?.dateRange || [];
@@ -635,7 +637,34 @@ function DriverPerformanceTab() {
         ))}
       </div>
 
-      <Card title="Driver Workload — 14 Day EFT Grid" icon={Users} action={<ExportBtn onClick={handleExport} disabled={!drivers.length} />}>
+      {/* Range toggle + title */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#374151', fontWeight: 600 }}>
+          Driver Workload — {workloadRange === 'weekly' ? '7' : '14'} Day EFT Grid
+        </div>
+        <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: '20px', padding: '3px' }}>
+          {[
+            { label: 'Weekly', value: 'weekly' },
+            { label: 'Bi-Weekly', value: 'biweekly' },
+          ].map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setWorkloadRange(opt.value)}
+              style={{
+                padding: '5px 14px', borderRadius: '16px', border: 'none', cursor: 'pointer',
+                fontSize: '12px', fontWeight: 600,
+                background: workloadRange === opt.value ? '#1a2e4a' : 'transparent',
+                color: workloadRange === opt.value ? 'white' : '#64748b',
+                transition: 'all 0.15s',
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Card title="" icon={Users} action={<ExportBtn onClick={handleExport} disabled={!drivers.length} />}>
         {isLoading && <p className="text-center text-content-muted py-6">Loading…</p>}
         {!isLoading && !drivers.length && <p className="text-center text-content-muted py-6">No assignment data in this range</p>}
         {!isLoading && drivers.length > 0 && (

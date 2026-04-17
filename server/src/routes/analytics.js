@@ -297,13 +297,14 @@ function fmtDate(d) {
 }
 
 // GET /api/analytics/driver-workload — reads from driver_daily_workload table
-// 14-day rolling window (yesterday − 13 … yesterday).
+// Supports ?range=weekly (7 days) or ?range=biweekly (14 days, default).
 router.get('/driver-workload', async (req, res) => {
   try {
+    const rangeDays = req.query.range === 'weekly' ? 7 : 14;
     const todayRow = await pool.query(`SELECT (NOW() AT TIME ZONE 'America/New_York')::date AS d`);
     const today = fmtDate(todayRow.rows[0].d);
     const yesterday = fmtDate(new Date(new Date(today + 'T12:00:00').getTime() - 86400000));
-    const start = req.query.start || fmtDate(new Date(new Date(yesterday + 'T12:00:00').getTime() - 13 * 86400000));
+    const start = req.query.start || fmtDate(new Date(new Date(yesterday + 'T12:00:00').getTime() - (rangeDays - 1) * 86400000));
     const end   = req.query.end   || yesterday;
 
     const dateRange = [];

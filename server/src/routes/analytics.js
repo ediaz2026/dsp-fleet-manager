@@ -360,41 +360,6 @@ router.get('/driver-workload', async (req, res) => {
   }
 });
 
-// ── TEMP DIAGNOSTIC — remove after use ──────────────────────────────────────
-router.get('/diag-recurring', async (req, res) => {
-  try {
-    const q1 = await pool.query(`
-      SELECT drs.*, s.first_name, s.last_name
-      FROM driver_recurring_shifts drs
-      JOIN staff s ON s.id = drs.staff_id
-      WHERE LOWER(s.first_name) IN ('mario', 'manel', 'fernando')
-      ORDER BY s.first_name, drs.id
-    `);
-    const q2 = await pool.query(`
-      SELECT sh.shift_date::text, sh.shift_type, sh.start_time, sh.end_time,
-             sh.status, sh.publish_status, s.first_name, s.last_name
-      FROM shifts sh
-      JOIN staff s ON s.id = sh.staff_id
-      WHERE LOWER(s.first_name) IN ('mario', 'manel', 'fernando')
-        AND sh.shift_date >= '2026-04-13'
-      ORDER BY s.first_name, sh.shift_date
-    `);
-    const q3 = await pool.query(`
-      SELECT drs.shift_type, COUNT(*)::int AS cnt
-      FROM driver_recurring_shifts drs
-      GROUP BY drs.shift_type
-      ORDER BY cnt DESC
-    `);
-    res.json({
-      recurring_rows: q1.rows,
-      upcoming_shifts: q2.rows,
-      shift_type_distribution: q3.rows,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ── Full Rescue Log (with filters) ───────────────────────────────────────────
 
 // GET /api/analytics/rescue-log?start=&end=&driver=&route=&reason=

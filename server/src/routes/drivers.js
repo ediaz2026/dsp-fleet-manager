@@ -252,8 +252,12 @@ router.post('/:staffId/recurring/apply-weekly', managerOnly, async (req, res) =>
           const dateStr = shiftDate.toISOString().split('T')[0];
           const result = await client.query(
             `INSERT INTO shifts (staff_id, shift_date, start_time, end_time, shift_type, status, publish_status)
-             SELECT $1,$2,$3,$4,$5,'scheduled','draft'
-             WHERE NOT EXISTS (SELECT 1 FROM shifts WHERE staff_id=$1 AND shift_date=$2)`,
+             VALUES ($1,$2,$3,$4,$5,'scheduled','draft')
+             ON CONFLICT (staff_id, shift_date) DO UPDATE SET
+               shift_type = EXCLUDED.shift_type,
+               start_time = EXCLUDED.start_time,
+               end_time   = EXCLUDED.end_time
+             WHERE shifts.publish_status != 'published'`,
             [staffId, dateStr, shift.start_time, shift.end_time, shift.shift_type]
           );
           created += result.rowCount;

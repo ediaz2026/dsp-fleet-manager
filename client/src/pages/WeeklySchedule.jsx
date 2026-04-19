@@ -1409,7 +1409,8 @@ export default function WeeklySchedule() {
 
   // ── Shift type helpers ─────────────────────────────────────────────────────
   const getShiftTypeDefaults = (typeName) => {
-    const t = shiftTypes.find(t => t.name === typeName);
+    const types = shiftTypesRef.current.length ? shiftTypesRef.current : shiftTypes;
+    const t = types.find(t => t.name === typeName);
     return { start_time: t?.default_start_time?.slice(0,5) || '07:00', end_time: t?.default_end_time?.slice(0,5) || '17:00' };
   };
 

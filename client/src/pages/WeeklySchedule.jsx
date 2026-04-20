@@ -164,6 +164,7 @@ export default function WeeklySchedule() {
 
   // Week state
   const [weekStart, setWeekStart] = useState(getSunday(new Date()));
+  const [scheduleView, setScheduleView] = useState('weekly'); // 'weekly' | 'biweekly'
 
   // Filter state
   const [filterShiftTypes, setFilterShiftTypes] = useState([]);
@@ -271,6 +272,7 @@ export default function WeeklySchedule() {
 
   // Add shift form
   const [shiftForm, setShiftForm] = useState({ shift_type: 'EDV', start_time: '07:00', end_time: '17:00', notes: '' });
+  const [consecutiveWarning, setConsecutiveWarning] = useState(null); // { days, message } or null
 
   // Route commitment
   const [rcForm, setRcForm]       = useState({ edv_count: '', step_van_count: '', total_routes: '', notes: '' });
@@ -307,15 +309,20 @@ export default function WeeklySchedule() {
     };
   }, [syncDayColRects, weekStart]);
 
+  // In biweekly mode, show LAST week + THIS week (14 days starting from last Sunday)
+  const biweeklyStart = subWeeks(weekStart, 1);
+  const effectiveStart = scheduleView === 'biweekly' ? biweeklyStart : weekStart;
   const weekEnd      = endOfWeek(weekStart, { weekStartsOn: 0 });
-  const weekDays     = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-  const weekStartStr = format(weekStart, 'yyyy-MM-dd');
+  const numDays      = scheduleView === 'biweekly' ? 14 : 7;
+  const weekDays     = Array.from({ length: numDays }, (_, i) => addDays(effectiveStart, i));
+  const weekStartStr = format(effectiveStart, 'yyyy-MM-dd');
   const amazonWeek   = getAmazonWeek(weekStart);
 
   // ── Data Fetching ──────────────────────────────────────────────────────────
+  const fetchEndStr = format(weekEnd, 'yyyy-MM-dd');
   const { data: shifts = [], isLoading: shiftsLoading } = useQuery({
-    queryKey: ['shifts', weekStartStr],
-    queryFn: () => api.get('/shifts', { params: { start: weekStartStr, end: format(weekEnd, 'yyyy-MM-dd') } }).then(r => r.data),
+    queryKey: ['shifts', weekStartStr, fetchEndStr],
+    queryFn: () => api.get('/shifts', { params: { start: weekStartStr, end: fetchEndStr } }).then(r => r.data),
   });
 
   const { data: staff = [] } = useQuery({
@@ -1455,6 +1462,17 @@ export default function WeeklySchedule() {
     const defaults = getShiftTypeDefaults('EDV');
     setShiftForm({ shift_type: 'EDV', ...defaults, notes: '' });
     setAddShiftKeyIndex(0);
+    // Check consecutive days from loaded shifts
+    const target = new Date(dateStr + 'T12:00:00');
+    let streak = 0;
+    for (let i = 1; i <= 13; i++) {
+      const prev = new Date(target); prev.setDate(target.getDate() - i);
+      const ds = prev.toISOString().split('T')[0];
+      const sh = shiftMapRef.current[`${staffId}-${ds}`]?.[0];
+      if (sh && !['PTO','UTO','SUSPENSION'].includes(sh.shift_type)) streak++;
+      else break;
+    }
+    setConsecutiveWarning(streak >= 6 ? { days: streak } : null);
     setAddShiftModal({ staff_id: staffId, date: dateStr });
   }, []); // eslint-disable-line
 
@@ -1493,8 +1511,17 @@ export default function WeeklySchedule() {
 
         {/* Left: view toggle */}
         <div className="flex bg-white border border-card-border rounded-lg p-0.5 shadow-sm flex-shrink-0">
-          <button className="px-3 py-1.5 rounded-md text-sm font-medium bg-primary text-white shadow-sm transition-all">
+          <button
+            onClick={() => setScheduleView('weekly')}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${scheduleView === 'weekly' ? 'bg-primary text-white shadow-sm' : 'text-content-muted hover:text-content'}`}
+          >
             Weekly
+          </button>
+          <button
+            onClick={() => setScheduleView('biweekly')}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${scheduleView === 'biweekly' ? 'bg-amber-500 text-white shadow-sm' : 'text-content-muted hover:text-content'}`}
+          >
+            2-Week
           </button>
           <button
             onClick={() => navigate('/schedule?tab=daily')}
@@ -1512,23 +1539,38 @@ export default function WeeklySchedule() {
 
         {/* Center: week navigation */}
         <div className="flex-1 flex items-center justify-center gap-1 min-w-0">
-          <button onClick={() => setWeekStart(d => subWeeks(d, 1))} className="p-2 rounded-lg text-[#374151] hover:text-[#2563EB] transition-colors flex-shrink-0" aria-label="Previous week">
-            <ChevronLeft size={22} strokeWidth={2.5} />
-          </button>
+          {scheduleView !== 'biweekly' && (
+            <button onClick={() => setWeekStart(d => subWeeks(d, 1))} className="p-2 rounded-lg text-[#374151] hover:text-[#2563EB] transition-colors flex-shrink-0" aria-label="Previous week">
+              <ChevronLeft size={22} strokeWidth={2.5} />
+            </button>
+          )}
           <div className="text-center px-2 min-w-0">
-            <p className="font-semibold text-content text-sm leading-tight whitespace-nowrap">
-              {format(weekStart, 'MMMM d')} – {format(weekEnd, 'MMMM d, yyyy')}
-            </p>
-            <p className="text-xs text-content-muted leading-tight">Week {amazonWeek}</p>
+            {scheduleView === 'biweekly' ? (
+              <>
+                <p className="font-semibold text-content text-sm leading-tight whitespace-nowrap">
+                  {format(biweeklyStart, 'MMM d')} – {format(weekEnd, 'MMM d, yyyy')}
+                </p>
+                <p className="text-xs leading-tight"><span className="text-amber-600 font-semibold">Last week + This week</span></p>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold text-content text-sm leading-tight whitespace-nowrap">
+                  {format(weekStart, 'MMMM d')} – {format(weekEnd, 'MMMM d, yyyy')}
+                </p>
+                <p className="text-xs text-content-muted leading-tight">Week {amazonWeek}</p>
+              </>
+            )}
           </div>
-          <button
-            onClick={() => canGoForward && setWeekStart(d => addWeeks(d, 1))}
-            disabled={!canGoForward}
-            className={`p-2 rounded-lg transition-colors flex-shrink-0 ${canGoForward ? 'text-[#374151] hover:text-[#2563EB]' : 'text-slate-300 cursor-not-allowed'}`}
-            aria-label="Next week"
-          >
-            <ChevronRight size={22} strokeWidth={2.5} />
-          </button>
+          {scheduleView !== 'biweekly' && (
+            <button
+              onClick={() => canGoForward && setWeekStart(d => addWeeks(d, 1))}
+              disabled={!canGoForward}
+              className={`p-2 rounded-lg transition-colors flex-shrink-0 ${canGoForward ? 'text-[#374151] hover:text-[#2563EB]' : 'text-slate-300 cursor-not-allowed'}`}
+              aria-label="Next week"
+            >
+              <ChevronRight size={22} strokeWidth={2.5} />
+            </button>
+          )}
         </div>
 
         {/* Right: action buttons */}
@@ -1845,11 +1887,16 @@ export default function WeeklySchedule() {
                   const today = isToday(d);
                   const ds = format(d, 'yyyy-MM-dd');
                   const isFiltered = dayColFilter?.dateStr === ds && dayColFilter?.mode !== 'all';
+                  const isLastWeekCol = scheduleView === 'biweekly' && i < 7;
+                  const isWeekBoundary = scheduleView === 'biweekly' && i === 7;
                   return (
-                    <th key={i} ref={el => { dayColRefs.current[i] = el; }} className={`text-center px-2 py-3 font-medium w-24 ${today ? 'bg-blue-50' : ''}`}>
+                    <th key={i} ref={el => { dayColRefs.current[i] = el; }}
+                      className={`text-center px-2 py-3 font-medium w-24 ${today ? 'bg-blue-50' : isLastWeekCol ? 'bg-slate-50' : ''}`}
+                      style={isWeekBoundary ? { borderLeft: '2px solid #94a3b8' } : undefined}
+                    >
                       <div className="flex flex-col items-center gap-0.5">
-                        <p className={`text-xs font-semibold ${today ? 'text-blue-700' : 'text-content-muted'}`}>
-                          {DAYS[i]} {format(d, 'd')}
+                        <p className={`text-xs font-semibold ${today ? 'text-blue-700' : isLastWeekCol ? 'text-slate-400' : 'text-content-muted'}`}>
+                          {DAYS[i % 7]} {format(d, 'd')}
                         </p>
                         {today && <span className="text-[8px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded-full uppercase">Today</span>}
                         <div className="relative">
@@ -1908,6 +1955,24 @@ export default function WeeklySchedule() {
                           <RefreshCw size={8} />ROT
                         </span>
                       )}
+                      {/* Consecutive-day risk dot */}
+                      {(() => {
+                        let streak = 0, maxStreak = 0;
+                        for (const d of weekDays) {
+                          const ds = format(d, 'yyyy-MM-dd');
+                          const sh = shiftMap[`${s.id}-${ds}`]?.[0];
+                          if (sh && !['PTO','UTO','SUSPENSION'].includes(sh.shift_type)) {
+                            streak++;
+                            if (streak > maxStreak) maxStreak = streak;
+                          } else { streak = 0; }
+                        }
+                        return maxStreak >= 6 ? (
+                          <span
+                            title={`${maxStreak} consecutive days scheduled — review workload`}
+                            style={{ display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }}
+                          />
+                        ) : null;
+                      })()}
                     </p>
                     {/* transponder hidden — cleaner layout */}
                   </td>
@@ -1926,7 +1991,8 @@ export default function WeeklySchedule() {
                       <td
                         key={di}
                         data-cell-key={ck}
-                        className={`px-1.5 py-1.5 select-none transition-colors ${isToday(d) ? 'bg-blue-50/70' : ''}`}
+                        className={`px-1.5 py-1.5 select-none transition-colors ${isToday(d) ? 'bg-blue-50/70' : scheduleView === 'biweekly' && di < 7 ? 'bg-slate-50/60' : ''}`}
+                        style={scheduleView === 'biweekly' && di === 7 ? { borderLeft: '2px solid #94a3b8' } : undefined}
                         style={
                           isDrop  ? { boxShadow: 'inset 0 0 0 2px #16a34a', background: 'rgba(22,163,74,0.10)' } :
                           isSel   ? { boxShadow: 'inset 0 0 0 2px #2563EB', background: 'rgba(37,99,235,0.07)' } :
@@ -2031,7 +2097,7 @@ export default function WeeklySchedule() {
       </Modal>
 
       {/* ═══ ADD SHIFT MODAL ══════════════════════════════════════════════════ */}
-      <Modal isOpen={!!addShiftModal} onClose={() => setAddShiftModal(null)} title="Add Shift">
+      <Modal isOpen={!!addShiftModal} onClose={() => { setAddShiftModal(null); setConsecutiveWarning(null); }} title="Add Shift">
         {addShiftModal && (
           <form ref={addShiftFormRef} className="space-y-4"
             onSubmit={e => {
@@ -2075,6 +2141,20 @@ export default function WeeklySchedule() {
               <div><label className="modal-label">End Time</label><input type="time" className="input" value={shiftForm.end_time} onChange={e => setShiftForm(f => ({ ...f, end_time: e.target.value }))} required /></div>
             </div>
             <div><label className="modal-label">Notes (optional)</label><input type="text" className="input bg-[#F9FAFB]" value={shiftForm.notes} onChange={e => setShiftForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional note" /></div>
+            {/* Consecutive-day risk warning */}
+            {consecutiveWarning && !addShiftModal.bulkCells && (
+              <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderLeft: '4px solid #d97706', borderRadius: '6px', padding: '10px 14px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '18px', lineHeight: 1 }}>⚠️</span>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#92400e' }}>
+                    Consecutive Day Risk — Day {consecutiveWarning.days + 1} in a row
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#b45309', marginTop: '3px' }}>
+                    This driver has worked {consecutiveWarning.days} days straight. {scheduleView !== 'biweekly' ? 'Switch to 2-Week view to review their full schedule.' : 'Review the schedule above.'}
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex gap-3 pt-1">
               {/* Delete — only in bulk mode when at least one cell has an existing shift */}
               {addShiftModal.bulkCells && addShiftModal.bulkCells.some(c => c.shift_id) && (

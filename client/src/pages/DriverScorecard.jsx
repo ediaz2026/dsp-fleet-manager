@@ -105,6 +105,13 @@ function DriverScorecardInner() {
   const location = useLocation();
   const [selectedWeek, setSelectedWeek] = useState(null);
   const [animType, setAnimType] = useState(null);
+  const [rescueView, setRescueView] = useState('weekly');
+
+  const { data: rescueData } = useQuery({
+    queryKey: ['my-rescues'],
+    queryFn: () => api.get('/drivers/my-rescues').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
 
   const { data: weeks = [] } = useQuery({
     queryKey: ['amazon-scorecard-weeks'],
@@ -276,6 +283,89 @@ function DriverScorecardInner() {
               <MetricRow label="Following Distance" value={sc.following_dist_score} invert scorecardType={sc.scorecard_type} />
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── My Rescues section ─────────────────────────────────────────── */}
+      {rescueData && (
+        <div className="px-4 pb-8 space-y-3">
+          {/* Header + toggle */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: '15px', fontWeight: 700, color: '#1a2e4a' }}>🚨 My Rescues</div>
+            <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: '20px', padding: '2px' }}>
+              {['weekly', 'monthly'].map(v => (
+                <button key={v} onClick={() => setRescueView(v)} style={{
+                  padding: '4px 12px', borderRadius: '16px', border: 'none',
+                  fontSize: '11px', fontWeight: 600, cursor: 'pointer',
+                  background: rescueView === v ? '#1a2e4a' : 'transparent',
+                  color: rescueView === v ? 'white' : '#64748b',
+                }}>
+                  {v === 'weekly' ? 'This Week' : 'This Month'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Summary counts */}
+          {(() => {
+            const d = rescueData[rescueView];
+            if (!d) return null;
+            return (
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ flex: 1, background: d.total > 0 ? '#fef2f2' : '#f0fdf4', borderRadius: '10px', padding: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '22px', fontWeight: 800, color: d.total > 0 ? '#dc2626' : '#16a34a' }}>{d.total}</div>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>Total Rescues</div>
+                </div>
+                {d.performance > 0 && (
+                  <div style={{ flex: 1, background: '#fff7ed', borderRadius: '10px', padding: '10px', textAlign: 'center', border: '1px solid #fed7aa' }}>
+                    <div style={{ fontSize: '22px', fontWeight: 800, color: '#ea580c' }}>{d.performance}</div>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>Performance</div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Empty state */}
+          {rescueData[rescueView]?.rescues.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#16a34a', fontSize: '13px', fontWeight: 600 }}>
+              ✓ No rescues {rescueView === 'weekly' ? 'this week' : 'this month'}
+            </div>
+          )}
+
+          {/* Rescue list */}
+          {rescueData[rescueView]?.rescues.map(r => {
+            const isPerfomance = r.reason === 'Performance';
+            const dateStr = typeof r.plan_date === 'string' ? r.plan_date.slice(0, 10) : new Date(r.plan_date).toISOString().slice(0, 10);
+            return (
+              <div key={r.id} style={{
+                background: isPerfomance ? '#fff7ed' : '#f8fafc',
+                border: `1px solid ${isPerfomance ? '#fed7aa' : '#e2e8f0'}`,
+                borderLeft: `4px solid ${isPerfomance ? '#ea580c' : '#94a3b8'}`,
+                borderRadius: '8px', padding: '10px 12px',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: isPerfomance ? '#ea580c' : '#374151' }}>
+                      {isPerfomance ? '⚠️ Performance' : r.reason || 'Heavy Route'} — Route {r.rescued_route}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                      Assisted by {r.rescuer_name} · {r.packages_rescued} pkgs
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', textAlign: 'right', flexShrink: 0 }}>
+                    {new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    {r.rescue_time && <div>{r.rescue_time}</div>}
+                  </div>
+                </div>
+                {isPerfomance && (
+                  <div style={{ marginTop: '6px', fontSize: '11px', color: '#ea580c', fontWeight: 500 }}>
+                    This rescue was logged due to performance concerns. Focus on improvement this week.
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

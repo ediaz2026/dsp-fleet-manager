@@ -29,6 +29,54 @@ router.get('/', async (req, res) => {
   res.json(rows);
 });
 
+// GET /api/drivers/my-rescues — driver sees only their own rescues (weekly + monthly)
+router.get('/my-rescues', async (req, res) => {
+  const staffId = req.user.id;
+  try {
+    // Sunday-based week bounds
+    const today = new Date();
+    const dow = today.getDay();
+    const sun = new Date(today); sun.setDate(today.getDate() - dow); sun.setHours(0,0,0,0);
+    const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
+    const weekStart = sun.toISOString().split('T')[0];
+    const weekEnd   = sat.toISOString().split('T')[0];
+
+    // Month bounds
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const monthEnd   = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+
+    const weekQ = await pool.query(`
+      SELECT id, plan_date, rescued_route, rescuer_name,
+             rescue_time, packages_rescued, reason, notes
+      FROM ops_rescues WHERE rescued_staff_id = $1
+        AND plan_date BETWEEN $2 AND $3
+      ORDER BY plan_date DESC, rescue_time DESC
+    `, [staffId, weekStart, weekEnd]);
+
+    const monthQ = await pool.query(`
+      SELECT id, plan_date, rescued_route, rescuer_name,
+             rescue_time, packages_rescued, reason, notes
+      FROM ops_rescues WHERE rescued_staff_id = $1
+        AND plan_date BETWEEN $2 AND $3
+      ORDER BY plan_date DESC, rescue_time DESC
+    `, [staffId, monthStart, monthEnd]);
+
+    res.json({
+      weekly: {
+        rescues: weekQ.rows, total: weekQ.rows.length,
+        performance: weekQ.rows.filter(r => r.reason === 'Performance').length,
+      },
+      monthly: {
+        rescues: monthQ.rows, total: monthQ.rows.length,
+        performance: monthQ.rows.filter(r => r.reason === 'Performance').length,
+      },
+    });
+  } catch (err) {
+    console.error('[drivers/my-rescues]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/drivers/create  — create a brand-new driver (staff + drivers row)
 router.post('/create', managerOnly, async (req, res) => {
   const { first_name, last_name, email, personal_email, phone,

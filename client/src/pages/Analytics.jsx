@@ -634,6 +634,10 @@ function fmt12h(t) {
 
 function DriverPerformanceTab() {
   const [workloadRange, setWorkloadRange] = useState('biweekly');
+  const [nameSortDir, setNameSortDir] = useState(null); // null | 'asc' | 'desc'
+
+  // Reset sort when switching range
+  useEffect(() => { setNameSortDir(null); }, [workloadRange]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['driver-workload-grid', workloadRange],
@@ -641,8 +645,15 @@ function DriverPerformanceTab() {
   });
 
   const dateRange = data?.dateRange || [];
-  const drivers   = data?.drivers   || [];
+  const rawDrivers = data?.drivers || [];
   const todayStr  = new Date().toISOString().slice(0, 10);
+
+  const drivers = useMemo(() => {
+    const list = [...rawDrivers];
+    if (nameSortDir === 'asc') return list.sort((a, b) => a.name.localeCompare(b.name));
+    if (nameSortDir === 'desc') return list.sort((a, b) => b.name.localeCompare(a.name));
+    return list; // default sort from backend (most active/red first)
+  }, [rawDrivers, nameSortDir]);
 
   const handleExport = () => {
     if (!drivers.length) return;
@@ -676,10 +687,24 @@ function DriverPerformanceTab() {
         ))}
       </div>
 
-      {/* Range toggle + title */}
+      {/* Range toggle + title + name sort */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#374151', fontWeight: 600 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151', fontWeight: 600 }}>
           Driver Workload — {workloadRange === 'weekly' ? '7' : '14'} Day EFT Grid
+          <button
+            onClick={() => setNameSortDir(prev => prev === 'asc' ? 'desc' : prev === 'desc' ? null : 'asc')}
+            style={{
+              padding: '4px 12px', borderRadius: '6px', cursor: 'pointer',
+              border: `1px solid ${nameSortDir ? '#1a2e4a' : '#e2e8f0'}`,
+              background: nameSortDir ? '#1a2e4a' : 'white',
+              color: nameSortDir ? 'white' : '#374151',
+              fontSize: '12px', fontWeight: 600,
+              display: 'flex', alignItems: 'center', gap: '4px',
+              transition: 'all 0.15s',
+            }}
+          >
+            {nameSortDir === 'asc' ? '↑ A→Z' : nameSortDir === 'desc' ? '↓ Z→A' : '↕ Name'}
+          </button>
         </div>
         <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: '20px', padding: '3px' }}>
           {[

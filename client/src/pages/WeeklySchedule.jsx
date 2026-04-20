@@ -2076,6 +2076,23 @@ export default function WeeklySchedule() {
             </div>
             <div><label className="modal-label">Notes (optional)</label><input type="text" className="input bg-[#F9FAFB]" value={shiftForm.notes} onChange={e => setShiftForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional note" /></div>
             <div className="flex gap-3 pt-1">
+              {/* Delete — only in bulk mode when at least one cell has an existing shift */}
+              {addShiftModal.bulkCells && addShiftModal.bulkCells.some(c => c.shift_id) && (
+                <button
+                  type="button"
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-sm font-medium transition-colors"
+                  onClick={() => {
+                    const ids = addShiftModal.bulkCells.map(c => c.shift_id).filter(Boolean);
+                    const count = ids.length;
+                    if (count === 0) return;
+                    if (!window.confirm(`Delete ${count} shift${count !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+                    bulkDelete.mutate(ids);
+                    setAddShiftModal(null);
+                  }}
+                >
+                  <Trash2 size={13} /> Delete ({addShiftModal.bulkCells.filter(c => c.shift_id).length})
+                </button>
+              )}
               <button type="button" className="btn-secondary flex-1" onClick={() => setAddShiftModal(null)}>Cancel</button>
               <button type="submit" className="btn-primary flex-1" disabled={createShift.isPending || bulkApply.isPending}>
                 {createShift.isPending || bulkApply.isPending ? 'Saving…' : addShiftModal.bulkCells ? `Apply to ${addShiftModal.bulkCells.length} cell${addShiftModal.bulkCells.length !== 1 ? 's' : ''}` : 'Add Shift'}

@@ -360,6 +360,40 @@ router.get('/driver-workload', async (req, res) => {
   }
 });
 
+// ── TEMP DIAGNOSTIC — remove after use ──────────────────────────────────────
+router.get('/diag-rescues', async (req, res) => {
+  try {
+    const q1 = await pool.query(`
+      SELECT column_name, data_type
+      FROM information_schema.columns
+      WHERE table_name = 'ops_rescues'
+      ORDER BY ordinal_position
+    `);
+    const q2 = await pool.query(`SELECT * FROM ops_rescues ORDER BY id DESC LIMIT 5`);
+    const q3 = await pool.query(`SELECT DISTINCT reason FROM ops_rescues`);
+    const q4 = await pool.query(`
+      SELECT COUNT(*)::int AS cnt FROM ops_rescues
+      WHERE plan_date >= CURRENT_DATE - INTERVAL '30 days'
+    `);
+    const q5 = await pool.query(`
+      SELECT rescuer_name, rescuer_staff_id, COUNT(*)::int AS rescues
+      FROM ops_rescues
+      WHERE plan_date >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY rescuer_name, rescuer_staff_id
+      ORDER BY rescues DESC LIMIT 10
+    `);
+    res.json({
+      schema: q1.rows,
+      sample_rows: q2.rows,
+      distinct_reasons: q3.rows.map(r => r.reason),
+      count_30d: q4.rows[0].cnt,
+      top_rescuers_30d: q5.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Full Rescue Log (with filters) ───────────────────────────────────────────
 
 // GET /api/analytics/rescue-log?start=&end=&driver=&route=&reason=

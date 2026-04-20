@@ -241,25 +241,29 @@ function DriverScorecardInner() {
           </div>
 
           {/* Incentives */}
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-            <div className="bg-[#166534] px-4 py-2.5"><p className="text-white font-bold text-sm">Incentives & Bonus</p></div>
-            <div className="p-4 space-y-3">
-              <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Bonus Hours</span><Badge pass={!!sc.bonus_hours} label={sc.bonus_hours ? 'Earned' : 'Not eligible'} /></div>
-              <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Perfect Incentive</span>{sc.perfect_incentive > 0 ? <span className="font-bold text-green-700 text-sm">{fmtMoney(sc.perfect_incentive)}</span> : <span className="text-xs text-slate-400">Not eligible</span>}</div>
-              <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Per Package</span><span className="font-bold text-sm text-slate-700">{fmtMoney(sc.incentive_per_package)}</span></div>
-              <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Safety</span><Badge pass={
-                sc.scorecard_type === 'pre_dispute'
-                  ? [sc.speeding_score, sc.seatbelt_score, sc.distraction_score, sc.sign_signal_score, sc.following_dist_score]
-                      .every(v => v == null || parseFloat(v) === 0)
-                  : !!sc.safety_pass
-              } /></div>
-              <div className="flex justify-between items-center"><span className="text-sm text-slate-600">DSB</span><Badge pass={
-                sc.scorecard_type === 'pre_dispute'
-                  ? sc.dsb_revised == null || parseFloat(sc.dsb_revised) === 0
-                  : !!sc.dsb_pass
-              } /></div>
-            </div>
-          </div>
+          {(() => {
+            // Pre Dispute: derive Safety/DSB/Bonus pass from raw metrics
+            const pdSafetyPass = [sc.speeding_score, sc.seatbelt_score, sc.distraction_score, sc.sign_signal_score, sc.following_dist_score]
+              .every(v => v == null || parseFloat(v) === 0);
+            const pdDsbPass = sc.dsb_revised == null || parseFloat(sc.dsb_revised) === 0;
+            const isPD = sc.scorecard_type === 'pre_dispute';
+            const safetyPass = isPD ? pdSafetyPass : !!sc.safety_pass;
+            const dsbPass    = isPD ? pdDsbPass : !!sc.dsb_pass;
+            // Pre Dispute: Bonus Hours = Safety AND DSB both pass
+            const bonusPass  = isPD ? (pdSafetyPass && pdDsbPass) : !!sc.bonus_hours;
+            return (
+              <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                <div className="bg-[#166534] px-4 py-2.5"><p className="text-white font-bold text-sm">Incentives & Bonus</p></div>
+                <div className="p-4 space-y-3">
+                  <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Bonus Hours</span><Badge pass={bonusPass} label={bonusPass ? 'Earned' : 'Not eligible'} /></div>
+                  <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Perfect Incentive</span>{sc.perfect_incentive > 0 ? <span className="font-bold text-green-700 text-sm">{fmtMoney(sc.perfect_incentive)}</span> : <span className="text-xs text-slate-400">Not eligible</span>}</div>
+                  <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Per Package</span><span className="font-bold text-sm text-slate-700">{fmtMoney(sc.incentive_per_package)}</span></div>
+                  <div className="flex justify-between items-center"><span className="text-sm text-slate-600">Safety</span><Badge pass={safetyPass} /></div>
+                  <div className="flex justify-between items-center"><span className="text-sm text-slate-600">DSB</span><Badge pass={dsbPass} /></div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Quality */}
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">

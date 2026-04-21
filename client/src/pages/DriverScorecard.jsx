@@ -131,10 +131,28 @@ function DriverScorecardInner() {
   const [animType, setAnimType] = useState(null);
   const [rescueView, setRescueView] = useState('weekly');
 
+  const currentMonth = new Date().toISOString().slice(0, 7);
+
   const { data: rescueData } = useQuery({
     queryKey: ['my-rescues'],
     queryFn: () => api.get('/drivers/my-rescues').then(r => r.data),
     staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: raffleData } = useQuery({
+    queryKey: ['my-tickets'],
+    queryFn: () => api.get('/raffle/my-tickets').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: leaderboard } = useQuery({
+    queryKey: ['raffle-leaderboard', currentMonth],
+    queryFn: () => api.get(`/raffle/leaderboard?period=${currentMonth}`).then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: raffleWinner } = useQuery({
+    queryKey: ['raffle-winner', currentMonth],
+    queryFn: () => api.get(`/raffle/winner?period=${currentMonth}`).then(r => r.data),
+    staleTime: 60 * 1000,
   });
 
   const { data: weeks = [] } = useQuery({
@@ -405,6 +423,114 @@ function DriverScorecardInner() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── Rescues Given + Raffle ────────────────────────────────────── */}
+      {raffleData && (
+        <div className="px-4 pb-8 space-y-4">
+          <div style={{ fontSize: '15px', fontWeight: 700, color: '#1a2e4a' }}>🚀 Rescues I've Given</div>
+
+          {/* Stats row */}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ flex: 1, background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: '#16a34a' }}>{raffleData.myRescues}</div>
+              <div style={{ fontSize: '11px', color: '#64748b' }}>Rescues Given</div>
+            </div>
+            <div style={{ flex: 1, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: '#2563eb' }}>{raffleData.myPackages}</div>
+              <div style={{ fontSize: '11px', color: '#64748b' }}>Packages Assisted</div>
+            </div>
+            <div style={{ flex: 1, background: '#fdf4ff', border: '1px solid #e9d5ff', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: '#7c3aed' }}>{raffleData.myTickets}</div>
+              <div style={{ fontSize: '11px', color: '#64748b' }}>🎟 Raffle Tickets</div>
+            </div>
+          </div>
+
+          {/* Rescue list */}
+          {raffleData.rescuesGiven?.length > 0 && (
+            <div className="space-y-2">
+              {raffleData.rescuesGiven.map(r => {
+                const ds = typeof r.plan_date === 'string' ? r.plan_date.slice(0,10) : new Date(r.plan_date).toISOString().slice(0,10);
+                return (
+                  <div key={r.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderLeft: '4px solid #16a34a', borderRadius: '8px', padding: '10px 12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#374151' }}>
+                          Rescued {r.rescued_name} — Route {r.rescued_route || '—'}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                          {r.packages_rescued} pkgs{r.reason ? ` · ${r.reason}` : ''}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', textAlign: 'right', flexShrink: 0 }}>
+                        {new Date(ds + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        {r.rescue_time && <div>{r.rescue_time}</div>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Winner announcement */}
+          {raffleWinner && (
+            <div style={{ background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', borderRadius: '12px', padding: '14px 16px', textAlign: 'center' }}>
+              <div style={{ fontSize: '20px', marginBottom: '4px' }}>🎉</div>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: 'white' }}>
+                {raffleWinner.period === currentMonth ? "This Month's Winner" : `${raffleWinner.period} Winner`}
+              </div>
+              <div style={{ fontSize: '16px', fontWeight: 800, color: 'white', marginTop: '2px' }}>{raffleWinner.winner_name}</div>
+              <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.8)', marginTop: '2px' }}>
+                {raffleWinner.winner_tickets} tickets · {raffleWinner.total_participants} drivers competed
+              </div>
+            </div>
+          )}
+
+          {/* My rank */}
+          {raffleData.myRank && (
+            <div style={{ background: '#1a2e4a', borderRadius: '10px', padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 500 }}>YOUR RANK THIS MONTH</div>
+                <div style={{ fontSize: '20px', fontWeight: 800, color: 'white', marginTop: '2px' }}>#{raffleData.myRank} of {raffleData.totalDrivers}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '11px', color: '#94a3b8' }}>Your tickets</div>
+                <div style={{ fontSize: '22px', fontWeight: 800, color: '#fbbf24' }}>🎟 {raffleData.myTickets}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Leaderboard */}
+          {leaderboard?.leaderboard?.length > 0 && (
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#1a2e4a', marginBottom: '8px' }}>🏆 Monthly Leaderboard</div>
+              {leaderboard.leaderboard.map((d, idx) => {
+                const isMe = d.staff_id === raffleData.staffId;
+                return (
+                  <div key={d.staff_id} style={{
+                    display: 'flex', alignItems: 'center', padding: '10px 12px', marginBottom: '6px', borderRadius: '8px',
+                    background: isMe ? '#eff6ff' : idx === 0 ? '#fffbeb' : '#f8fafc',
+                    border: `1px solid ${isMe ? '#bfdbfe' : idx === 0 ? '#fde68a' : '#e2e8f0'}`,
+                    borderLeft: `4px solid ${idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : idx === 2 ? '#b45309' : '#e2e8f0'}`,
+                  }}>
+                    <div style={{ width: '28px', fontSize: '13px', fontWeight: 700, color: '#64748b' }}>
+                      {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${d.rank}`}
+                    </div>
+                    <div style={{ flex: 1, fontSize: '12px', fontWeight: isMe ? 700 : 500, color: '#1a2e4a' }}>
+                      {isMe ? `${d.driver_name} (You)` : d.driver_name}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginRight: '12px' }}>{d.rescues_given} rescues</div>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#7c3aed' }}>🎟 {d.total_tickets}</div>
+                  </div>
+                );
+              })}
+              <div style={{ textAlign: 'center', fontSize: '10px', color: '#94a3b8', marginTop: '10px' }}>
+                Every 10 packages rescued = 1 raffle ticket · Draw at end of month
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

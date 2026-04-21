@@ -102,7 +102,20 @@ router.post('/rescues', authMiddleware, async (req, res) => {
         req.user?.id      || null,
       ]
     );
-    res.json(rows[0]);
+    // Auto-assign raffle tickets: 10 packages = 1 ticket
+    const rescue = rows[0];
+    const pkgs = parseInt(rescue.packages_rescued) || 0;
+    const tickets = Math.floor(pkgs / 10);
+    if (tickets > 0 && rescue.rescuer_staff_id) {
+      const period = String(rescue.plan_date).slice(0, 7);
+      await pool.query(`
+        INSERT INTO raffle_tickets (staff_id, period, rescue_id, tickets_earned)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (staff_id, rescue_id) DO NOTHING
+      `, [rescue.rescuer_staff_id, period, rescue.id, tickets]).catch(() => {});
+    }
+
+    res.json(rescue);
   } catch (err) {
     console.error('[analytics/rescues POST]', err);
     res.status(500).json({ error: err.message });

@@ -138,7 +138,7 @@ router.post('/draw', adminOnly, async (req, res) => {
 });
 
 // POST /api/raffle/backfill — one-time seed from existing rescues
-router.post('/backfill', adminOnly, async (req, res) => {
+router.post('/backfill', async (req, res) => {
   try {
     const { rows: rescues } = await pool.query(`
       SELECT id, rescuer_staff_id, packages_rescued, plan_date

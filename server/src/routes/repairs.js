@@ -5,12 +5,15 @@ const { authMiddleware, managerOnly } = require('../middleware/auth');
 router.use(authMiddleware);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-async function syncVehicleStatus(client, vehicleId, vanStatus) {
-  // When a repair marks a vehicle inactive, update the vehicle record
-  const newStatus = vanStatus === 'inactive' ? 'out_of_service' : 'active';
+// Sync vehicles table when the fleet tracker changes a vehicle's status.
+// repairs table uses: van_status = 'active'|'inactive', amazon_status = 'active'|'grounded'
+// vehicles table uses: van_status = 'Active'|'Out of Service', amazon_status = 'Active'|'Grounded'
+async function syncVehicleStatus(client, vehicleId, vanStatus, amazonStatus) {
+  const newVanStatus    = vanStatus    === 'inactive' ? 'Out of Service' : 'Active';
+  const newAmazonStatus = amazonStatus === 'grounded' ? 'Grounded'       : 'Active';
   await client.query(
-    `UPDATE vehicles SET status = $1, updated_at = NOW() WHERE id = $2`,
-    [newStatus, vehicleId]
+    `UPDATE vehicles SET van_status = $1, amazon_status = $2, updated_at = NOW() WHERE id = $3`,
+    [newVanStatus, newAmazonStatus, vehicleId]
   );
 }
 
@@ -83,9 +86,9 @@ router.post('/', managerOnly, async (req, res) => {
        scheduled_date || null, vendor || null, req.user.id]
     );
 
-    // Sync vehicle status if marking inactive
-    if (van_status === 'inactive') {
-      await syncVehicleStatus(client, vehicle_id, 'inactive');
+    // Sync vehicle status to vehicles table
+    if (van_status === 'inactive' || amazon_status === 'grounded') {
+      await syncVehicleStatus(client, vehicle_id, van_status, amazon_status);
     }
 
     await client.query('COMMIT');
@@ -131,8 +134,8 @@ router.put('/:id', managerOnly, async (req, res) => {
     );
     if (!rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Not found' }); }
 
-    // Sync vehicle status
-    await syncVehicleStatus(client, vehicle_id, van_status);
+    // Sync vehicle status to vehicles table
+    await syncVehicleStatus(client, vehicle_id, van_status, amazon_status);
 
     await client.query('COMMIT');
     res.json(rows[0]);
@@ -157,9 +160,9 @@ router.put('/:id/complete', managerOnly, async (req, res) => {
     );
     if (!rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Not found' }); }
 
-    // If van_status was inactive and we're completing → mark vehicle active again
-    if (rows[0].van_status === 'inactive') {
-      await syncVehicleStatus(client, rows[0].vehicle_id, 'active');
+    // Completing a repair → return vehicle to active status
+    if (rows[0].van_status === 'inactive' || rows[0].amazon_status === 'grounded') {
+      await syncVehicleStatus(client, rows[0].vehicle_id, 'active', 'active');
     }
 
     await client.query('COMMIT');

@@ -691,6 +691,7 @@ export default function Vehicles() {
 
   // ─────────────────────────────────────────────────────────────────
   return (
+    <>
     <div className="flex -mt-6 -mx-6 -mb-6" style={{ minHeight: 'calc(100vh - 3.5rem)' }}>
 
       {/* ── Left Sidebar ── */}
@@ -1401,8 +1402,14 @@ export default function Vehicles() {
         </>
       )}
 
-      {/* ── Vehicle Add/Edit Modal ───────────────────────────────── */}
-      <Modal isOpen={showVehicleModal} onClose={() => { setShowVehicleModal(false); setEditingVehicle(null); }} title={editingVehicle ? `Edit ${editingVehicle.vehicle_name}` : 'Add Vehicle'} size="lg">
+      </div>{/* close main content */}
+    </div>{/* close flex wrapper */}
+
+    {/* ═══ MODALS — rendered outside the overflow-auto wrapper so
+        position:fixed works in all browsers / stacking contexts ═══ */}
+
+    {/* ── Vehicle Add/Edit Modal ───────────────────────────────── */}
+    <Modal isOpen={showVehicleModal} onClose={() => { setShowVehicleModal(false); setEditingVehicle(null); }} title={editingVehicle ? `Edit ${editingVehicle.vehicle_name}` : 'Add Vehicle'} size="lg">
         <form className="space-y-4" onSubmit={e => { e.preventDefault(); saveVehicleMutation.mutate(vehicleForm); }}>
           {editingVehicle && (
             <div className="grid grid-cols-2 gap-4 pb-1">
@@ -1620,8 +1627,6 @@ export default function Vehicles() {
         </div>
       </Modal>
 
-      </div>
-
       {/* Photo lightbox */}
       {viewingPhotos && (
         <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4" onClick={() => setViewingPhotos(null)}>
@@ -1640,6 +1645,6 @@ export default function Vehicles() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

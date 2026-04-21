@@ -1854,10 +1854,10 @@ export default function WeeklySchedule() {
 
         {/* ── Weekly Grid ─────────────────────────────────────────────────── */}
         <div ref={tableContainerRef} className="flex-1 min-w-0 overflow-auto bg-white border border-card-border rounded-xl shadow-sm pb-12">
-          <table className="w-full text-sm min-w-[780px]">
+          <table className="w-full text-sm" style={{ minWidth: scheduleView === 'biweekly' ? '1400px' : '900px' }}>
             <thead className="sticky top-0 bg-white z-20 shadow-sm">
               <tr className="border-b border-[#CBD5E1]">
-                <th className="text-left px-4 py-3 text-content-muted font-semibold w-44 text-xs uppercase tracking-wide sticky left-0 z-30 bg-white">
+                <th className="text-left px-3 py-3 text-content-muted font-semibold text-xs uppercase tracking-wide sticky left-0 z-30 bg-white" style={{ width: '160px', minWidth: '160px', maxWidth: '160px' }}>
                   <div className="flex items-center gap-1 relative">
                     Driver
                     <button onClick={() => setSortOpen(o => !o)} className="text-[10px] text-slate-400 hover:text-primary transition-colors px-1.5 py-0.5 rounded bg-slate-50 border border-slate-200">
@@ -1886,7 +1886,7 @@ export default function WeeklySchedule() {
                     )}
                   </div>
                 </th>
-                <th className="text-center px-1 py-3 text-content-subtle font-semibold w-10 text-[10px] uppercase tracking-wide sticky left-44 z-20 bg-white">Hrs</th>
+                <th className="text-center py-3 text-content-subtle font-semibold text-[10px] uppercase tracking-wide sticky z-20 bg-white" style={{ left: '160px', width: '36px', minWidth: '36px', maxWidth: '36px' }}>Hrs</th>
                 {weekDays.map((d, i) => {
                   const today = isToday(d);
                   const ds = format(d, 'yyyy-MM-dd');
@@ -1895,8 +1895,8 @@ export default function WeeklySchedule() {
                   const isWeekBoundary = scheduleView === 'biweekly' && i === 7;
                   return (
                     <th key={i} ref={el => { dayColRefs.current[i] = el; }}
-                      className={`text-center px-2 py-3 font-medium w-24 ${today ? 'bg-blue-50' : isLastWeekCol ? 'bg-slate-50' : ''}`}
-                      style={isWeekBoundary ? { borderLeft: '2px solid #94a3b8' } : undefined}
+                      className={`text-center px-1 py-3 font-medium ${today ? 'bg-blue-50' : isLastWeekCol ? 'bg-slate-50' : ''}`}
+                      style={{ minWidth: scheduleView === 'biweekly' ? '76px' : '96px', ...(isWeekBoundary ? { borderLeft: '2px solid #94a3b8' } : {}) }}
                     >
                       <div className="flex flex-col items-center gap-0.5">
                         <p className={`text-xs font-semibold ${today ? 'text-blue-700' : isLastWeekCol ? 'text-slate-400' : 'text-content-muted'}`}>
@@ -1951,7 +1951,7 @@ export default function WeeklySchedule() {
                 <tr><td colSpan={9} className="text-center py-16 text-content-muted">No drivers match your filter</td></tr>
               ) : sortedStaff.map((s, idx) => (
                 <tr key={s.id} className={`border-b border-[#CBD5E1] ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-blue-50/30 transition-colors group`}>
-                  <td className={`px-4 py-2 sticky left-0 z-10 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} group-hover:bg-blue-50/30`}>
+                  <td className={`px-3 py-2 sticky left-0 z-10 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} group-hover:bg-blue-50/30`} style={{ width: '160px', minWidth: '160px', maxWidth: '160px', overflow: 'hidden' }}>
                     <p className="font-semibold text-content text-sm flex items-center gap-1.5">
                       {s.first_name} {s.last_name}
                       {s.is_rotating && (
@@ -1980,7 +1980,7 @@ export default function WeeklySchedule() {
                     </p>
                     {/* transponder hidden — cleaner layout */}
                   </td>
-                  <td className={`px-1 py-2 text-center sticky left-44 z-10 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} group-hover:bg-blue-50/30`}>
+                  <td className={`py-2 text-center sticky z-10 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} group-hover:bg-blue-50/30`} style={{ left: '160px', width: '36px', minWidth: '36px', maxWidth: '36px' }}>
                     <span className="text-[10px] text-content-subtle">{hoursMap[s.id] ? `${hoursMap[s.id]}h` : '—'}</span>
                   </td>
                   {weekDays.map((d, di) => {

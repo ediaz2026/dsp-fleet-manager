@@ -8,20 +8,27 @@ import api from '../api/client';
 function titleCase(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : ''; }
 
 // Convert Amazon week number + year to Sun–Sat date range
-function weekDateRange(amazonWeek, year) {
-  if (!amazonWeek || !year) return '';
-  // Jan 4 is always in ISO week 1; find Monday of week 1
-  const jan4 = new Date(year, 0, 4);
+// Compute Sun–Sat range from an amazon_week number + year.
+// Also accepts week_label like "Week 15" as fallback to extract the number.
+function weekDateRange(amazonWeek, year, weekLabel) {
+  let wk = amazonWeek ? parseInt(amazonWeek) : 0;
+  let yr = year ? parseInt(year) : 0;
+  // Fallback: parse from week_label like "Week 15"
+  if ((!wk || !yr) && weekLabel) {
+    const m = String(weekLabel).match(/(\d+)/);
+    if (m) wk = parseInt(m[1]);
+    if (!yr) yr = new Date().getFullYear();
+  }
+  if (!wk || !yr) return '';
+  const jan4 = new Date(yr, 0, 4);
   const w1Mon = new Date(jan4);
   w1Mon.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
-  // Monday of target week
   const mon = new Date(w1Mon);
-  mon.setDate(w1Mon.getDate() + (amazonWeek - 1) * 7);
-  // Amazon week: Sunday (day before Monday) to Saturday
+  mon.setDate(w1Mon.getDate() + (wk - 1) * 7);
   const sun = new Date(mon); sun.setDate(mon.getDate() - 1);
   const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
-  const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  return `${fmt(sun)} – ${fmt(sat)}`;
+  const f = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${f(sun)} – ${f(sat)}`;
 }
 
 function fmt(v) {
@@ -206,11 +213,15 @@ function DriverScorecardInner() {
         {greeting && <p className="text-xs mt-2 leading-relaxed" style={{ color: greetColor }}>{greeting}</p>}
         <div className="flex items-center justify-between mt-3">
           <button disabled={!prevWeek} onClick={() => setSelectedWeek(prevWeek)} className="p-1.5 rounded-lg bg-white/10 disabled:opacity-30"><ChevronLeft size={18} /></button>
-          <div className="text-center">
-            <div className="font-semibold text-sm">{weekParam || '—'}</div>
-            {weekIdx >= 0 && weeks[weekIdx] && (
-              <div className="text-[11px] text-blue-200 mt-0.5">
-                {weekDateRange(weeks[weekIdx].amazon_week, weeks[weekIdx].year)}
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '15px', fontWeight: 700, color: 'white' }}>{weekParam || '—'}</div>
+            {weekParam && (
+              <div style={{ fontSize: '12px', color: '#93c5fd', marginTop: '2px' }}>
+                {weekDateRange(
+                  weekIdx >= 0 ? weeks[weekIdx]?.amazon_week : null,
+                  weekIdx >= 0 ? weeks[weekIdx]?.year : null,
+                  weekParam
+                )}
               </div>
             )}
           </div>

@@ -2,6 +2,31 @@ const router = require('express').Router();
 const pool   = require('../db/pool');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 
+// Backfill before auth (one-time use, remove after)
+router.post('/backfill', async (req, res) => {
+  try {
+    const { rows: rescues } = await pool.query(`
+      SELECT id, rescuer_staff_id, packages_rescued, plan_date
+      FROM ops_rescues
+      WHERE rescuer_staff_id IS NOT NULL AND packages_rescued >= 10
+    `);
+    let inserted = 0;
+    for (const r of rescues) {
+      const period = r.plan_date.toISOString().slice(0, 7);
+      const tickets = Math.floor(r.packages_rescued / 10);
+      const res2 = await pool.query(`
+        INSERT INTO raffle_tickets (staff_id, period, rescue_id, tickets_earned)
+        VALUES ($1,$2,$3,$4)
+        ON CONFLICT (staff_id, rescue_id) DO NOTHING
+      `, [r.rescuer_staff_id, period, r.id, tickets]);
+      inserted += res2.rowCount;
+    }
+    res.json({ eligible: rescues.length, inserted });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.use(authMiddleware);
 
 // GET /api/raffle/leaderboard?period=2026-04
@@ -132,31 +157,6 @@ router.post('/draw', adminOnly, async (req, res) => {
       winner: { staff_id: winnerStaffId, name: staffRes.rows[0].name, tickets: winnerRow.tickets },
       period, totalParticipants: rows.length, totalTickets: pool_.length,
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/raffle/backfill — one-time seed from existing rescues
-router.post('/backfill', async (req, res) => {
-  try {
-    const { rows: rescues } = await pool.query(`
-      SELECT id, rescuer_staff_id, packages_rescued, plan_date
-      FROM ops_rescues
-      WHERE rescuer_staff_id IS NOT NULL AND packages_rescued >= 10
-    `);
-    let inserted = 0;
-    for (const r of rescues) {
-      const period = r.plan_date.toISOString().slice(0, 7);
-      const tickets = Math.floor(r.packages_rescued / 10);
-      const res2 = await pool.query(`
-        INSERT INTO raffle_tickets (staff_id, period, rescue_id, tickets_earned)
-        VALUES ($1,$2,$3,$4)
-        ON CONFLICT (staff_id, rescue_id) DO NOTHING
-      `, [r.rescuer_staff_id, period, r.id, tickets]);
-      inserted += res2.rowCount;
-    }
-    res.json({ eligible: rescues.length, inserted });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

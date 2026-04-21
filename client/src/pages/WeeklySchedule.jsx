@@ -1511,26 +1511,17 @@ export default function WeeklySchedule() {
 
         {/* Left: view toggle */}
         <div className="flex bg-white border border-card-border rounded-lg p-0.5 shadow-sm flex-shrink-0">
-          <button
-            onClick={() => setScheduleView('weekly')}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${scheduleView === 'weekly' ? 'bg-primary text-white shadow-sm' : 'text-content-muted hover:text-content'}`}
-          >
+          <button className="px-3 py-1.5 rounded-md text-sm font-medium bg-primary text-white shadow-sm transition-all">
             Weekly
           </button>
           <button
-            onClick={() => setScheduleView('biweekly')}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${scheduleView === 'biweekly' ? 'bg-amber-500 text-white shadow-sm' : 'text-content-muted hover:text-content'}`}
-          >
-            2-Week
-          </button>
-          <button
-            onClick={() => navigate('/schedule?tab=daily')}
+            onClick={() => { setScheduleView('weekly'); navigate('/schedule?tab=daily'); }}
             className="px-3 py-1.5 rounded-md text-sm font-medium transition-all text-content-muted hover:text-content"
           >
             Daily
           </button>
           <button
-            onClick={() => navigate('/operational-planner')}
+            onClick={() => { setScheduleView('weekly'); navigate('/operational-planner'); }}
             className="px-3 py-1.5 rounded-md text-sm font-medium transition-all text-content-muted hover:text-content"
           >
             Ops Planner
@@ -1605,6 +1596,19 @@ export default function WeeklySchedule() {
           )}
           <button onClick={exportToExcel} className="btn-secondary">
             <Download size={14} /> Export
+          </button>
+          {/* 2-Week pill toggle */}
+          <button
+            onClick={() => setScheduleView(v => v === 'biweekly' ? 'weekly' : 'biweekly')}
+            style={{
+              padding: '5px 14px', borderRadius: '20px', cursor: 'pointer',
+              fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap',
+              border: scheduleView === 'biweekly' ? 'none' : '1px solid #e2e8f0',
+              background: scheduleView === 'biweekly' ? '#f59e0b' : 'white',
+              color: scheduleView === 'biweekly' ? 'white' : '#374151',
+            }}
+          >
+            {scheduleView === 'biweekly' ? '2-Week ✓' : '2-Week'}
           </button>
         </div>
       </div>

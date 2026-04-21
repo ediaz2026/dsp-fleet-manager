@@ -106,6 +106,9 @@ router.get('/:id/qr', async (req, res) => {
 });
 
 // POST /api/vehicles
+// Empty strings → null for date columns (Postgres rejects "" for DATE)
+const toDateOrNull = (v) => (v && v !== '' && v !== 'undefined') ? v : null;
+
 router.post('/', managerOnly, async (req, res) => {
   const { vehicle_name, license_plate, vin, make, model, year, color, transponder_id,
     insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date,
@@ -116,7 +119,8 @@ router.post('/', managerOnly, async (req, res) => {
       van_status, amazon_status, notes)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
     [vehicle_name, license_plate, vin, make, model, year, color, transponder_id,
-     insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date,
+     toDateOrNull(insurance_expiration), toDateOrNull(registration_expiration),
+     toDateOrNull(last_inspection_date), toDateOrNull(next_inspection_date),
      van_status || 'Active', amazon_status || 'Active', notes]
   );
   res.status(201).json(rows[0]);
@@ -133,7 +137,8 @@ router.put('/:id', managerOnly, async (req, res) => {
      next_inspection_date=$12, van_status=$13, amazon_status=$14, notes=$15, updated_at=NOW()
      WHERE id=$16 RETURNING *`,
     [vehicle_name, license_plate, vin, make, model, year, color, transponder_id,
-     insurance_expiration, registration_expiration, last_inspection_date, next_inspection_date,
+     toDateOrNull(insurance_expiration), toDateOrNull(registration_expiration),
+     toDateOrNull(last_inspection_date), toDateOrNull(next_inspection_date),
      van_status || 'Active', amazon_status || 'Active', notes, req.params.id]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found' });

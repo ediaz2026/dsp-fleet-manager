@@ -1052,7 +1052,7 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
             {search || hasActiveFilters ? 'No drivers match the current filters' : `No ${statusFilter === 'all' ? '' : statusFilter + ' '}drivers`}
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" style={{ minWidth: '900px' }}>
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="text-left px-3 py-2.5 font-semibold text-slate-500 text-xs">First Name</th>
@@ -1085,7 +1085,7 @@ function AllDriversSection({ onOpenProfile, initialStatus }) {
                     <td className="px-3 py-2.5">
                       <div className="font-medium text-slate-800">{d.last_name}</div>
                       {d.email && !d.email.includes('@import.local') && (
-                        <div className="text-xs text-slate-400 truncate max-w-[160px]" title={d.email}>{d.email}</div>
+                        <div className="text-xs text-slate-400 truncate max-w-[240px]" title={d.email}>{d.email}</div>
                       )}
                     </td>
                     <td className="px-3 py-2.5">
@@ -1554,7 +1554,7 @@ export default function Drivers() {
       </div>
 
       {/* ── Main Content ── */}
-      <div className="flex-1 overflow-auto bg-slate-50 p-6">
+      <div className="flex-1 overflow-auto bg-slate-50 px-4 py-5">
         {section === 'all-drivers'     && <AllDriversSection onOpenProfile={openProfile} initialStatus={initialStatus} />}
         {section === 'recurring'       && <RecurringSection onOpenProfile={openProfile} />}
         {section === 'alerts'          && <AlertsSection onOpenProfile={openProfile} />}

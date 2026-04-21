@@ -773,38 +773,6 @@ export default function Vehicles() {
                 <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${categoryFilter === f.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>{f.count}</span>
               </button>
             ))}
-            <span className="w-px h-5 bg-slate-200 mx-1" />
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Van</span>
-            {[
-              { key: 'all',            label: 'All',          activeClass: 'bg-blue-600 text-white border-blue-600', count: null },
-              { key: 'Active',         label: 'Active',       activeClass: 'bg-emerald-600 text-white border-emerald-600', count: vehicles.filter(v => (v.van_status || 'Active') === 'Active').length },
-              { key: 'Out of Service', label: 'Out of Svc',  activeClass: 'bg-red-500 text-white border-red-500',     count: vehicles.filter(v => v.van_status === 'Out of Service').length },
-            ].map(f => (
-              <button key={f.key} onClick={() => setVanStatusFilter(f.key)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                  vanStatusFilter === f.key ? f.activeClass : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'
-                }`}
-              >
-                {f.label}
-                {f.count !== null && <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${vanStatusFilter === f.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>{f.count}</span>}
-              </button>
-            ))}
-            <span className="w-px h-5 bg-slate-200 mx-1" />
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Amazon</span>
-            {[
-              { key: 'all',      label: 'All',      activeClass: 'bg-blue-600 text-white border-blue-600',    count: null },
-              { key: 'Active',   label: 'Active',   activeClass: 'bg-emerald-600 text-white border-emerald-600', count: vehicles.filter(v => (v.amazon_status || 'Active') === 'Active').length },
-              { key: 'Grounded', label: 'Grounded', activeClass: 'bg-orange-500 text-white border-orange-500', count: vehicles.filter(v => v.amazon_status === 'Grounded').length },
-            ].map(f => (
-              <button key={f.key} onClick={() => setAmazonStatusFilter(f.key)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                  amazonStatusFilter === f.key ? f.activeClass : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'
-                }`}
-              >
-                {f.label}
-                {f.count !== null && <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${amazonStatusFilter === f.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>{f.count}</span>}
-              </button>
-            ))}
             <div className="relative ml-auto">
               <SearchIcon size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={vehicleSearch} onChange={e => setVehicleSearch(e.target.value)}

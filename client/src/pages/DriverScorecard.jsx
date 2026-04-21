@@ -7,6 +7,23 @@ import api from '../api/client';
 
 function titleCase(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : ''; }
 
+// Convert Amazon week number + year to Sun–Sat date range
+function weekDateRange(amazonWeek, year) {
+  if (!amazonWeek || !year) return '';
+  // Jan 4 is always in ISO week 1; find Monday of week 1
+  const jan4 = new Date(year, 0, 4);
+  const w1Mon = new Date(jan4);
+  w1Mon.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+  // Monday of target week
+  const mon = new Date(w1Mon);
+  mon.setDate(w1Mon.getDate() + (amazonWeek - 1) * 7);
+  // Amazon week: Sunday (day before Monday) to Saturday
+  const sun = new Date(mon); sun.setDate(mon.getDate() - 1);
+  const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
+  const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(sun)} – ${fmt(sat)}`;
+}
+
 function fmt(v) {
   if (v === null || v === undefined) return '—';
   const n = parseFloat(v);
@@ -189,7 +206,14 @@ function DriverScorecardInner() {
         {greeting && <p className="text-xs mt-2 leading-relaxed" style={{ color: greetColor }}>{greeting}</p>}
         <div className="flex items-center justify-between mt-3">
           <button disabled={!prevWeek} onClick={() => setSelectedWeek(prevWeek)} className="p-1.5 rounded-lg bg-white/10 disabled:opacity-30"><ChevronLeft size={18} /></button>
-          <span className="font-semibold text-sm">{weekParam || '—'}</span>
+          <div className="text-center">
+            <div className="font-semibold text-sm">{weekParam || '—'}</div>
+            {weekIdx >= 0 && weeks[weekIdx] && (
+              <div className="text-[11px] text-blue-200 mt-0.5">
+                {weekDateRange(weeks[weekIdx].amazon_week, weeks[weekIdx].year)}
+              </div>
+            )}
+          </div>
           <button disabled={!nextWeek} onClick={() => setSelectedWeek(nextWeek)} className="p-1.5 rounded-lg bg-white/10 disabled:opacity-30"><ChevronRight size={18} /></button>
         </div>
         {/* Scorecard type label — inside header, right-aligned */}

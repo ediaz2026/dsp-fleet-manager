@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie, Legend, LineChart, Line, ReferenceLine,
+  PieChart, Pie, Legend, LineChart, Line, ReferenceLine, CartesianGrid,
 } from 'recharts';
 import * as XLSX from 'xlsx';
 import {
@@ -176,13 +176,12 @@ function VolumeShareTab() {
     enabled: vsView === 'week' || vsView === 'month',
   });
 
-  // Trend data — last 30 days for line chart
-  const trendStart = format(subDays(new Date(), 30), 'yyyy-MM-dd');
+  // Trend data — last 56 days (8 Amazon weeks) for trend arrows + line chart
+  const trendStart = format(subDays(new Date(), 56), 'yyyy-MM-dd');
   const trendEnd = format(new Date(), 'yyyy-MM-dd');
   const { data: trendRaw = [] } = useQuery({
     queryKey: ['volume-share-trend', trendStart],
     queryFn: () => api.get('/analytics/volume-share', { params: { start: trendStart, end: trendEnd } }).then(r => r.data),
-    enabled: chartType === 'line',
     staleTime: 5 * 60 * 1000,
   });
 
@@ -213,29 +212,46 @@ function VolumeShareTab() {
     return { trendLineData: lineData, trendDsps: dsps, trendInsight: insight };
   }, [trendRaw]);
 
-  // Trend arrows for table — compare current period vs previous
-  const trendArrows = useMemo(() => {
-    if (trendRaw.length < 4) return {};
-    const mid = Math.floor(trendRaw.length / 2);
-    const arrows = {};
-    const allDsps = new Set();
-    const firstHalf = {}, secondHalf = {};
-    for (let i = 0; i < trendRaw.length; i++) {
-      const vol = typeof trendRaw[i].volume === 'string' ? JSON.parse(trendRaw[i].volume) : (trendRaw[i].volume || {});
+  // Weekly aggregation of trend data — group daily records into Amazon weeks (Sun–Sat)
+  const weeklyTrend = useMemo(() => {
+    if (!trendRaw.length) return [];
+    const weeks = {};
+    for (const rec of trendRaw) {
+      const d = new Date(String(rec.plan_date).slice(0, 10) + 'T12:00:00');
+      const sun = new Date(d); sun.setDate(d.getDate() - d.getDay());
+      const wk = format(sun, 'yyyy-MM-dd');
+      if (!weeks[wk]) weeks[wk] = { week: wk, dsps: {}, total: 0 };
+      const vol = typeof rec.volume === 'string' ? JSON.parse(rec.volume) : (rec.volume || {});
       for (const [dsp, count] of Object.entries(vol)) {
-        allDsps.add(dsp);
-        const target = i < mid ? firstHalf : secondHalf;
-        target[dsp] = (target[dsp] || 0) + Number(count);
+        weeks[wk].dsps[dsp] = (weeks[wk].dsps[dsp] || 0) + Number(count);
+        weeks[wk].total += Number(count);
       }
     }
+    const sorted = Object.values(weeks).sort((a, b) => a.week.localeCompare(b.week));
+    sorted.forEach(w => {
+      w.shares = {};
+      for (const [dsp, count] of Object.entries(w.dsps)) {
+        w.shares[dsp] = w.total > 0 ? (count / w.total * 100) : 0;
+      }
+    });
+    return sorted;
+  }, [trendRaw]);
+
+  // Trend arrows — compare last complete week vs the one before it
+  const trendArrows = useMemo(() => {
+    if (weeklyTrend.length < 2) return {};
+    const curr = weeklyTrend[weeklyTrend.length - 1];
+    const prev = weeklyTrend[weeklyTrend.length - 2];
+    const arrows = {};
+    const allDsps = new Set([...Object.keys(curr.shares), ...Object.keys(prev.shares)]);
     for (const dsp of allDsps) {
-      const prev = (firstHalf[dsp] || 0) / mid;
-      const curr = (secondHalf[dsp] || 0) / (trendRaw.length - mid);
-      const changePct = prev > 0 ? ((curr - prev) / prev * 100) : 0;
-      arrows[dsp] = { pct: changePct.toFixed(1), dir: changePct > 5 ? 'up' : changePct < -5 ? 'down' : 'flat' };
+      const cShare = curr.shares[dsp] || 0;
+      const pShare = prev.shares[dsp] || 0;
+      const diff = cShare - pShare;
+      arrows[dsp] = { pct: Math.abs(diff).toFixed(1), dir: diff > 0.5 ? 'up' : diff < -0.5 ? 'down' : 'flat' };
     }
     return arrows;
-  }, [trendRaw]);
+  }, [weeklyTrend]);
 
   // Day view navigation
   const dateStrs = dateList.map(d => String(d.plan_date).slice(0, 10)).sort();
@@ -411,13 +427,13 @@ function VolumeShareTab() {
                     <td className="py-2 text-right">
                       <span className={`font-bold ${r.dsp === 'LSMD' ? 'text-blue-600' : 'text-content-muted'}`}>{r.pct}%</span>
                     </td>
-                    <td className="py-2 text-right text-[10px] pl-1 whitespace-nowrap">
-                      {trendArrows[r.dsp] && (() => {
+                    <td className="py-2 text-right text-[11px] pl-1 whitespace-nowrap">
+                      {trendArrows[r.dsp] ? (() => {
                         const t = trendArrows[r.dsp];
                         const color = t.dir === 'up' ? 'text-green-600' : t.dir === 'down' ? 'text-red-500' : 'text-slate-400';
-                        const arrow = t.dir === 'up' ? '↑' : t.dir === 'down' ? '↓' : '→';
-                        return <span className={`font-semibold ${color}`}>{arrow} {t.pct > 0 ? '+' : ''}{t.pct}%</span>;
-                      })()}
+                        const arrow = t.dir === 'up' ? '▲' : t.dir === 'down' ? '▼' : '—';
+                        return <span className={`font-bold ${color}`}>{arrow} {t.pct}%</span>;
+                      })() : <span className="text-slate-300">—</span>}
                     </td>
                   </tr>
                 ))}
@@ -468,6 +484,46 @@ function VolumeShareTab() {
               </div>
             )}
           </Card>
+        </div>
+      )}
+
+      {/* 8-week trend line chart */}
+      {weeklyTrend.length >= 2 && (
+        <div style={{ marginTop: '16px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px 24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div>
+              <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#1a2e4a' }}>📈 Volume Share Trend — Last {weeklyTrend.length} Weeks</h3>
+              <p style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Weekly route share % per DSP · Amazon week (Sun–Sat)</p>
+            </div>
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, color: '#2563eb' }}>
+              LSMD avg: {(weeklyTrend.reduce((s, w) => s + (w.shares.LSMD || 0), 0) / weeklyTrend.length).toFixed(1)}%
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={weeklyTrend.map(w => {
+              const d = new Date(w.week + 'T12:00:00');
+              const pt = { week: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) };
+              for (const [dsp, share] of Object.entries(w.shares)) pt[dsp] = parseFloat(share.toFixed(1));
+              return pt;
+            })} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="week" tick={{ fontSize: 11, fill: '#64748b' }} />
+              <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={v => `${v}%`} />
+              <Tooltip formatter={(v, name) => [`${v}%`, name]} contentStyle={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+              <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '12px' }} />
+              {(() => {
+                const allDsps = [...new Set(weeklyTrend.flatMap(w => Object.keys(w.shares)))].sort((a, b) => a === 'LSMD' ? -1 : b === 'LSMD' ? 1 : a.localeCompare(b));
+                return allDsps.map((dsp, i) => (
+                  <Line key={dsp} type="monotone" dataKey={dsp}
+                    stroke={dsp === 'LSMD' ? '#2563eb' : DSP_COLORS[i % DSP_COLORS.length]}
+                    strokeWidth={dsp === 'LSMD' ? 3 : 1.5}
+                    dot={dsp === 'LSMD' ? { r: 4, fill: '#2563eb' } : { r: 2 }}
+                    opacity={dsp === 'LSMD' ? 1 : 0.6}
+                  />
+                ));
+              })()}
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       )}
     </div>

@@ -5,6 +5,27 @@ import api from '../api/client';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 
+// Compute Sun–Sat date range from amazon_week + year (or parse from week_label "Week 15")
+function weekDateRange(amazonWeek, year, weekLabel) {
+  let wk = amazonWeek ? parseInt(amazonWeek) : 0;
+  let yr = year ? parseInt(year) : 0;
+  if ((!wk || !yr) && weekLabel) {
+    const m = String(weekLabel).match(/(\d+)/);
+    if (m) wk = parseInt(m[1]);
+    if (!yr) yr = new Date().getFullYear();
+  }
+  if (!wk || !yr) return '';
+  const jan4 = new Date(yr, 0, 4);
+  const w1Mon = new Date(jan4);
+  w1Mon.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+  const mon = new Date(w1Mon);
+  mon.setDate(w1Mon.getDate() + (wk - 1) * 7);
+  const sun = new Date(mon); sun.setDate(mon.getDate() - 1);
+  const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
+  const f = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${f(sun)} – ${f(sat)}`;
+}
+
 function Badge({ pass, label }) {
   return pass
     ? <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700"><CheckCircle size={9} />{label || 'Pass'}</span>
@@ -312,9 +333,11 @@ export default function Scorecard() {
       {weeks.length > 0 && (
         <div className="flex items-center justify-center gap-4">
           <button onClick={() => { setSelectedWeek(prevWeek); setIframeError(false); }} disabled={!prevWeek} className="p-2 rounded-lg border bg-white hover:bg-slate-50 disabled:opacity-30"><ChevronLeft size={16} /></button>
-          <div className="text-center">
+          <div style={{ textAlign: 'center' }}>
             <p className="font-bold text-lg text-slate-900">{weekLabel || '—'}</p>
-            <p className="text-xs text-slate-400">{weeks[weekIdx]?.year || ''}</p>
+            <p style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+              {weekDateRange(weeks[weekIdx]?.amazon_week, weeks[weekIdx]?.year, weekLabel)}
+            </p>
           </div>
           <button onClick={() => { setSelectedWeek(nextWeek); setIframeError(false); }} disabled={!nextWeek} className="p-2 rounded-lg border bg-white hover:bg-slate-50 disabled:opacity-30"><ChevronRight size={16} /></button>
         </div>

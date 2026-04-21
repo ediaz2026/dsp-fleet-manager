@@ -8,7 +8,7 @@ import {
 import * as XLSX from 'xlsx';
 import {
   ChevronLeft, ChevronRight, Download, BarChart2, TrendingUp,
-  AlertTriangle, Users, Shield, X, Filter, ClipboardList,
+  AlertTriangle, Users, Shield, X, Filter, ClipboardList, Gift,
 } from 'lucide-react';
 import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, addWeeks, addMonths, subMonths, subDays, addDays, getWeek, getDaysInMonth } from 'date-fns';
 import api from '../api/client';
@@ -1037,7 +1037,136 @@ const TABS = [
   { id: 'performance',   label: 'Driver Workload',     icon: Users          },
   { id: 'rescue',        label: 'Rescue',              icon: AlertTriangle  },
   { id: 'daily-summary', label: 'Daily Routes Summary', icon: ClipboardList },
+  { id: 'raffle',        label: '🎟 Raffle',            icon: Gift           },
 ];
+
+// ══ SUB-SECTION 6: RAFFLE ═══════════════════════════════════════════════════
+function RaffleTab() {
+  const qc = useQueryClient();
+  const [rafflePeriod, setRafflePeriod] = useState(new Date().toISOString().slice(0, 7));
+
+  const { data: raffleData, isLoading } = useQuery({
+    queryKey: ['raffle-leaderboard', rafflePeriod],
+    queryFn: () => api.get(`/raffle/leaderboard?period=${rafflePeriod}`).then(r => r.data),
+    staleTime: 60 * 1000,
+  });
+  const { data: winner } = useQuery({
+    queryKey: ['raffle-winner-admin', rafflePeriod],
+    queryFn: () => api.get(`/raffle/winner?period=${rafflePeriod}`).then(r => r.data),
+    staleTime: 30 * 1000,
+  });
+
+  const handleDraw = async () => {
+    const total = raffleData?.totalParticipants;
+    const tickets = raffleData?.totalTickets;
+    if (!window.confirm(`Draw winner for ${rafflePeriod}?\n\n${total} drivers competing with ${tickets} total tickets.\n\nThis cannot be undone.`)) return;
+    try {
+      const { data } = await api.post('/raffle/draw', { period: rafflePeriod });
+      if (data.winner) {
+        toast.success(`🎉 Winner: ${data.winner.name} (${data.winner.tickets} tickets)`);
+        qc.invalidateQueries({ queryKey: ['raffle-winner-admin'] });
+        qc.invalidateQueries({ queryKey: ['raffle-leaderboard'] });
+      }
+    } catch (e) {
+      toast.error('Draw failed — please try again');
+    }
+  };
+
+  const monthLabel = (() => {
+    const [y, m] = rafflePeriod.split('-');
+    return new Date(parseInt(y), parseInt(m) - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  })();
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1a2e4a' }}>🎟 Rescue Raffle — {monthLabel}</h2>
+          <p style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Every 10 packages rescued = 1 ticket · Weighted random draw</p>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <input type="month" value={rafflePeriod} onChange={e => setRafflePeriod(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '13px' }} />
+          {!winner && raffleData?.leaderboard?.length > 0 && (
+            <button onClick={handleDraw} style={{ padding: '8px 18px', background: '#f59e0b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
+              🎲 Draw Winner
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Winner banner */}
+      {winner && (
+        <div style={{ background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', borderRadius: '12px', padding: '18px 24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ fontSize: '40px' }}>🏆</div>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.8)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>{monthLabel} Winner</div>
+            <div style={{ fontSize: '22px', fontWeight: 800, color: 'white' }}>{winner.winner_name}</div>
+            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', marginTop: '2px' }}>
+              {winner.winner_tickets} tickets · {winner.total_participants} drivers competed · Drawn {winner.drawn_at ? new Date(winner.drawn_at).toLocaleDateString() : ''}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
+          <div style={{ fontSize: '24px', fontWeight: 800, color: '#1a2e4a' }}>{raffleData?.totalParticipants || 0}</div>
+          <div style={{ fontSize: '11px', color: '#64748b' }}>Drivers with Tickets</div>
+        </div>
+        <div style={{ background: '#fdf4ff', border: '1px solid #e9d5ff', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
+          <div style={{ fontSize: '24px', fontWeight: 800, color: '#7c3aed' }}>{raffleData?.totalTickets || 0}</div>
+          <div style={{ fontSize: '11px', color: '#64748b' }}>Total Tickets in Pool</div>
+        </div>
+        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
+          <div style={{ fontSize: '24px', fontWeight: 800, color: '#d97706' }}>{raffleData?.leaderboard?.[0]?.total_tickets || 0}</div>
+          <div style={{ fontSize: '11px', color: '#64748b' }}>Most Tickets (#1)</div>
+        </div>
+      </div>
+
+      {/* Leaderboard table */}
+      {isLoading && <p className="text-center text-content-muted py-6">Loading…</p>}
+      {!isLoading && (!raffleData?.leaderboard?.length) && <p className="text-center text-content-muted py-6">No raffle tickets for {monthLabel}</p>}
+      {!isLoading && raffleData?.leaderboard?.length > 0 && (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.5px' }}>RANK</th>
+                <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.5px' }}>DRIVER</th>
+                <th style={{ padding: '10px 16px', textAlign: 'center', fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.5px' }}>RESCUES</th>
+                <th style={{ padding: '10px 16px', textAlign: 'center', fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.5px' }}>PACKAGES</th>
+                <th style={{ padding: '10px 16px', textAlign: 'center', fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.5px' }}>🎟 TICKETS</th>
+                <th style={{ padding: '10px 16px', textAlign: 'center', fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.5px' }}>WIN ODDS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {raffleData.leaderboard.map((d, idx) => {
+                const odds = raffleData.totalTickets > 0 ? ((d.total_tickets / raffleData.totalTickets) * 100).toFixed(1) : 0;
+                return (
+                  <tr key={d.staff_id} style={{ borderBottom: '1px solid #f1f5f9', background: idx === 0 ? '#fffbeb' : 'white' }}>
+                    <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: 700, color: '#64748b' }}>
+                      {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${d.rank}`}
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: '13px', fontWeight: 600, color: '#1a2e4a' }}>{d.driver_name}</td>
+                    <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '13px', color: '#374151' }}>{d.rescues_given}</td>
+                    <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '13px', color: '#374151' }}>{d.packages_rescued}</td>
+                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                      <span style={{ background: '#7c3aed', color: 'white', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 700 }}>{d.total_tickets}</span>
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{odds}%</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Daily Routes Summary row config ──────────────────────────────────────────
 const SUMMARY_ROWS = [
@@ -1075,12 +1204,12 @@ export default function Analytics() {
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    return t && ['volume', 'routes', 'performance', 'rescue', 'daily-summary'].includes(t) ? t : 'volume';
+    return t && ['volume', 'routes', 'performance', 'rescue', 'daily-summary', 'raffle'].includes(t) ? t : 'volume';
   });
 
   useEffect(() => {
     const t = searchParams.get('tab');
-    if (t && t !== tab && ['volume', 'routes', 'performance', 'rescue', 'daily-summary'].includes(t)) setTab(t);
+    if (t && t !== tab && ['volume', 'routes', 'performance', 'rescue', 'daily-summary', 'raffle'].includes(t)) setTab(t);
   }, [searchParams]);
 
   // Daily Routes Summary state
@@ -1231,6 +1360,8 @@ export default function Analytics() {
           )}
         </div>
       )}
+
+      {tab === 'raffle' && <RaffleTab />}
     </div>
   );
 }

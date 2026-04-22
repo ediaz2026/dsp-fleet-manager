@@ -909,7 +909,7 @@ router.get('/sign-out-data', async (req, res) => {
       if (seen.has(staffId)) return;
       const shift = shiftByStaff[staffId];
       const type = (shift?.shift_type || asgn?.shift_type || '').toUpperCase();
-      if (OPS_EX.has(type)) return;
+      if (!type || OPS_EX.has(type)) return; // exclude null/empty + ON CALL/PTO/etc
       // No route code format filtering — all route codes are valid
       seen.add(staffId);
 

@@ -897,6 +897,13 @@ router.get('/sign-out-data', async (req, res) => {
     for (const a of asgnArr) {
       if (a.route_code) assignedRouteCodes.add(a.route_code);
     }
+    // Multi-DA route codes — allow multiple drivers to share these
+    const multiDaRouteCodes = new Set();
+    for (const route of routes) {
+      if (route.hasMultipleDAs || (route.transponderIds || []).length > 1) {
+        multiDaRouteCodes.add(route.routeCode);
+      }
+    }
 
     function addRow(staffId, routeCode, asgn) {
       if (seen.has(staffId)) return;
@@ -907,10 +914,10 @@ router.get('/sign-out-data', async (req, res) => {
       seen.add(staffId);
 
       // If no route, try TID matching fallback — but only if that route
-      // hasn't been manually assigned to someone else
+      // hasn't been manually assigned to someone else (multi-DA routes are allowed)
       if (!routeCode && staffToTid[staffId]) {
         const tidRoute = tidToRoute[staffToTid[staffId]] || '';
-        if (tidRoute && !assignedRouteCodes.has(tidRoute)) {
+        if (tidRoute && (!assignedRouteCodes.has(tidRoute) || multiDaRouteCodes.has(tidRoute))) {
           routeCode = tidRoute;
         }
       }
@@ -957,10 +964,13 @@ router.get('/sign-out-data', async (req, res) => {
       if (a.staff_id) addRow(a.staff_id, a.route_code, a);
     }
 
-    // 2. Drivers matched via TID from ops_daily_routes (skip manually assigned routes)
+    // 2. Drivers matched via TID from ops_daily_routes
+    // For multi-DA routes, allow multiple TIDs to match the same route code.
+    // For single-DA routes, skip if the route was manually assigned to someone else.
     for (const route of routes) {
       const rc = route.routeCode;
-      if (assignedRouteCodes.has(rc)) continue;
+      const isMultiDA = route.hasMultipleDAs || (route.transponderIds || []).length > 1;
+      if (!isMultiDA && assignedRouteCodes.has(rc)) continue;
       for (const tid of (route.transponderIds || [])) {
         const d = tidToDriver[tid.trim().toUpperCase()];
         if (d?.staff_id) addRow(d.staff_id, rc, asgnByStaff[d.staff_id] || { vehicle_name: '', device_id: '' });

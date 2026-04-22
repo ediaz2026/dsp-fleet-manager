@@ -2288,7 +2288,10 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
 
       const displayName = (asgn?.name_override)
         || (profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : '')
-        || amazonEntry?.name || '';
+        || amazonEntry?.name
+        // For multi-DA routes with no matched driver, show names from the JSONB
+        || (hasMultipleDAs && route.driverNames?.length > 0 ? route.driverNames.join(' / ') : '')
+        || '';
 
       return {
         section: 'route',
@@ -2450,8 +2453,9 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   // ── Combined flat list ────────────────────────────────────────────────────────
   // Order: routes with drivers → unassigned routes → section3 gaps
   const allRows = useMemo(() => {
-    const routesWithDrivers = section1Rows.filter(r => r.name && r.status !== 'unassigned_route' && r.status !== 'multiple_das');
-    const routesUnassigned  = section1Rows.filter(r => !r.name || r.status === 'unassigned_route' || r.status === 'multiple_das');
+    // Multi-DA routes with driver names go in the main section (not hidden at bottom)
+    const routesWithDrivers = section1Rows.filter(r => r.name && r.status !== 'unassigned_route');
+    const routesUnassigned  = section1Rows.filter(r => !r.name || r.status === 'unassigned_route');
     const combined = [...routesWithDrivers, ...routesUnassigned, ...section2Rows, ...section3Rows];
     // Dedup by staff_id — safety net against logic race conditions causing a driver to appear twice
     const seen = new Set();

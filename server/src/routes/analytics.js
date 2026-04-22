@@ -303,6 +303,18 @@ router.patch('/route-profiles/:code', authMiddleware, async (req, res) => {
 
 // ── Driver Workload ───────────────────────────────────────────────────────────
 
+// ── TEMP: fix Daniel shift_type — remove after use ───────────────────────────
+router.post('/fix-457', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      UPDATE ops_assignments SET shift_type = 'ON CALL'
+      WHERE staff_id = 457 AND plan_date = (NOW() AT TIME ZONE 'America/New_York')::date
+      RETURNING id, staff_id, shift_type
+    `);
+    res.json({ updated: rows.length, rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Driver Workload helpers ──────────────────────────────────────────────────
 function fmtDate(d) {
   if (typeof d === 'string') return d.slice(0, 10);

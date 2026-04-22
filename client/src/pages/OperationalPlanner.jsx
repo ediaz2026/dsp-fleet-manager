@@ -2903,11 +2903,9 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         const NON_ROUTE = ['ON CALL', 'SUSPENSION', 'PTO', 'UTO', 'TRAINING', 'TRAINER'];
         const doRouteClear = () => {
           if (NON_ROUTE.includes(newType)) {
-            // Clear everything — non-route shift types don't need vehicle/device/staging
-            patchAssignment.mutate({ staffId, data: {
-              vehicle_id: null, device_id: null, route_code: null, name_override: null,
-              wave_override: null, staging_override: null, canopy_override: null, launchpad_override: null,
-            }});
+            // Server auto-deletes ops_assignment for excluded types (shifts.js line 504).
+            // Invalidate ops-assignments so the UI reflects the deletion.
+            setTimeout(() => qc.invalidateQueries({ queryKey: ['ops-assignments', planDate] }), 500);
           } else if (newType === 'HELPER') {
             // Helpers keep device but clear vehicle + route fields
             patchAssignment.mutate({ staffId, data: {

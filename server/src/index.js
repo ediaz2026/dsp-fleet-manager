@@ -431,5 +431,13 @@ runMigrations()
         }
       }, { timezone: 'America/New_York' });
       console.log('⏰ Nightly workload snapshot cron scheduled (midnight ET)');
+
+      // Shift reminders — every 5 minutes, checks if any shifts need a reminder
+      const { runShiftReminders } = require('./jobs/shiftReminder');
+      cron.schedule('*/5 * * * *', async () => {
+        try { await runShiftReminders(); }
+        catch (err) { console.error('[Cron] Shift reminder failed:', err.message); }
+      }, { timezone: 'America/New_York' });
+      console.log('⏰ Shift reminder cron scheduled (every 5 min ET)');
     });
   });

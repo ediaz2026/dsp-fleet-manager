@@ -24,26 +24,6 @@ router.get('/vapid-public-key', (req, res) => {
   res.json({ publicKey: key });
 });
 
-// TEMP: diagnostic + test — remove after use
-router.get('/diag', async (req, res) => {
-  try {
-    const staff = await pool.query(`SELECT id, first_name, last_name FROM staff WHERE first_name ILIKE '%tequila%'`);
-    const staffId = staff.rows[0]?.id;
-    const subs = staffId ? await pool.query(`SELECT id, staff_id, endpoint, created_at FROM push_subscriptions WHERE staff_id = $1`, [staffId]) : { rows: [] };
-    const total = await pool.query(`SELECT COUNT(*)::int AS cnt FROM push_subscriptions`);
-    res.json({ tequila: staff.rows[0] || null, subscriptions: subs.rows, totalSubscriptions: total.rows[0].cnt, vapidConfigured: !!process.env.VAPID_PUBLIC_KEY });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-router.post('/test-send/:staffId', async (req, res) => {
-  try {
-    const staffId = parseInt(req.params.staffId);
-    const title = req.body?.title || '🔔 Test Notification';
-    const body = req.body?.body || 'Push notifications are working!';
-    await sendPushToDriver(staffId, title, body, { url: '/today' });
-    res.json({ success: true, staffId });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 // POST /api/push/subscribe — save driver's push subscription
 router.post('/subscribe', authMiddleware, async (req, res) => {
   try {

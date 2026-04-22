@@ -1427,19 +1427,23 @@ export default function WeeklySchedule() {
   };
 
   // ── Export ─────────────────────────────────────────────────────────────────
+  const COUNTED_TYPES = new Set(['EDV','EXTRA','DISPATCH AM','DISPATCH PM','STEP VAN','HELPER','TRAINER','TRAINING']);
   const exportToExcel = () => {
-    const rows = [['Driver', 'ID', ...DAYS.map((d, i) => format(addDays(weekStart, i), 'EEE M/d')), 'Total Hrs']];
+    const dayHeaders = weekDays.map(d => format(d, 'EEE M/d'));
+    const rows = [['Driver', 'ID', ...dayHeaders, 'Total Days', 'Total Hrs']];
     filteredStaff.forEach(s => {
+      let totalDays = 0;
       const cells = weekDays.map(d => {
         const sh = shiftMap[`${s.id}-${format(d, 'yyyy-MM-dd')}`]?.[0];
         if (!sh) return '';
+        if (COUNTED_TYPES.has(sh.shift_type)) totalDays++;
         return `${sh.shift_type} ${sh.start_time?.slice(0,5)}-${sh.end_time?.slice(0,5)}${sh.attendance_status && sh.attendance_status !== 'present' ? ` (${sh.attendance_status})` : ''}`;
       });
-      rows.push([`${s.first_name} ${s.last_name}`, s.employee_id, ...cells, hoursMap[s.id] || '']);
+      rows.push([`${s.first_name} ${s.last_name}`, s.employee_id, ...cells, totalDays, hoursMap[s.id] || '']);
     });
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{ wch: 24 }, { wch: 14 }, ...Array(7).fill({ wch: 22 }), { wch: 10 }];
+    ws['!cols'] = [{ wch: 24 }, { wch: 14 }, ...Array(weekDays.length).fill({ wch: 22 }), { wch: 10 }, { wch: 10 }];
     XLSX.utils.book_append_sheet(wb, ws, `Week ${amazonWeek}`);
     XLSX.writeFile(wb, `Schedule_Week${amazonWeek}_${weekStartStr}.xlsx`);
     toast.success('Schedule exported!');

@@ -9,18 +9,29 @@ function urlBase64ToUint8Array(base64) {
 }
 
 export function usePushNotifications() {
-  const supported = 'serviceWorker' in navigator && 'PushManager' in navigator && 'Notification' in window;
-  const [permission, setPermission] = useState(supported ? Notification.permission : 'denied');
+  const [supported, setSupported] = useState(false);
+  const [permission, setPermission] = useState('default');
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Check existing subscription on mount
+  // Check support + existing subscription on mount (async — SW may not be ready immediately)
   useEffect(() => {
-    if (!supported) return;
-    navigator.serviceWorker.ready.then(reg =>
-      reg.pushManager.getSubscription().then(sub => setIsSubscribed(!!sub))
-    ).catch(() => {});
-  }, [supported]);
+    const check = async () => {
+      try {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
+        setSupported(true);
+        setPermission(Notification.permission);
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        setIsSubscribed(!!sub);
+      } catch (e) {
+        console.log('[push] check failed:', e.message);
+      }
+    };
+    // Small delay — give SW time to register on first visit
+    const t = setTimeout(check, 1000);
+    return () => clearTimeout(t);
+  }, []);
 
   const subscribe = async () => {
     if (!supported) return false;

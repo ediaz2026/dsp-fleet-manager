@@ -415,6 +415,7 @@ runMigrations()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`\n🚀 DSP Fleet Manager API running on port ${PORT}`);
+      console.log(`🔔 Push notifications: ${process.env.VAPID_PUBLIC_KEY ? 'CONFIGURED' : 'NOT CONFIGURED (set VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY)'}`);
       console.log(`🗄️  Database: ${isRailway ? 'Railway PostgreSQL (SSL)' : 'Local PostgreSQL'}`);
       console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}\n`);
 

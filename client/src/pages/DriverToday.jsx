@@ -26,7 +26,7 @@ export default function DriverToday() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { supported: pushSupported, permission: pushPermission, isSubscribed: pushSubscribed, subscribe: pushSubscribe, loading: pushLoading } = usePushNotifications();
-  const [pushDismissed, setPushDismissed] = useState(false);
+  const [pushDismissed, setPushDismissed] = useState(() => localStorage.getItem('push_prompt_dismissed') === 'true');
   const today = format(new Date(), 'yyyy-MM-dd');
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
 
@@ -145,7 +145,7 @@ export default function DriverToday() {
                 style={{ padding: '7px 14px', background: '#1a2e4a', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', opacity: pushLoading ? 0.6 : 1 }}>
                 {pushLoading ? '...' : 'Turn On'}
               </button>
-              <button onClick={() => setPushDismissed(true)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', padding: '0 4px' }}>✕</button>
+              <button onClick={() => { setPushDismissed(true); localStorage.setItem('push_prompt_dismissed', 'true'); }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', padding: '0 4px' }}>✕</button>
             </div>
           )}
           {pushSubscribed && !pushDismissed && (

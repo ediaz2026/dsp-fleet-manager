@@ -245,6 +245,7 @@ export default function WeeklySchedule() {
   const sortedStaffRef       = useRef([]);
   const weekDaysRef          = useRef([]);
   const shiftMapRef          = useRef({});
+  const staffRef             = useRef([]);
   const openEditShiftRef     = useRef(null);
   const openAddShiftRef      = useRef(null);
   const openBulkAddShiftRef  = useRef(null);
@@ -272,7 +273,8 @@ export default function WeeklySchedule() {
 
   // Add shift form
   const [shiftForm, setShiftForm] = useState({ shift_type: 'EDV', start_time: '07:00', end_time: '17:00', notes: '' });
-  const [consecutiveWarning, setConsecutiveWarning] = useState(null); // { days, message } or null
+  const [consecutiveWarning, setConsecutiveWarning] = useState(null);
+  const [consecutiveAck, setConsecutiveAck] = useState({ show: false, driverName: '', days: 0, onConfirm: null });
 
   // Route commitment
   const [rcForm, setRcForm]       = useState({ edv_count: '', step_van_count: '', total_routes: '', notes: '' });
@@ -1029,6 +1031,7 @@ export default function WeeklySchedule() {
   sortedStaffRef.current   = sortedStaff;
   weekDaysRef.current      = weekDays;
   shiftMapRef.current      = shiftMap;
+  staffRef.current         = staff;
   moveShiftRef.current     = moveShift;
 
   // Live popup keyboard refs (no stale closures in effects)
@@ -1464,8 +1467,12 @@ export default function WeeklySchedule() {
 
   const openAddShift = useCallback((staffId, dateStr) => {
     const defaults = getShiftTypeDefaults('EDV');
-    setShiftForm({ shift_type: 'EDV', ...defaults, notes: '' });
-    setAddShiftKeyIndex(0);
+    const doOpen = () => {
+      setShiftForm({ shift_type: 'EDV', ...defaults, notes: '' });
+      setAddShiftKeyIndex(0);
+      setConsecutiveWarning(null);
+      setAddShiftModal({ staff_id: staffId, date: dateStr });
+    };
     // Check consecutive days from loaded shifts
     const target = new Date(dateStr + 'T12:00:00');
     let streak = 0;
@@ -1476,8 +1483,14 @@ export default function WeeklySchedule() {
       if (sh && !['PTO','UTO','SUSPENSION'].includes(sh.shift_type)) streak++;
       else break;
     }
-    setConsecutiveWarning(streak >= 6 ? { days: streak } : null);
-    setAddShiftModal({ staff_id: staffId, date: dateStr });
+    if (streak >= 6) {
+      // Find driver name for the dialog
+      const st = staffRef.current?.find(s => s.id === staffId);
+      const name = st ? `${st.first_name} ${st.last_name}` : 'This driver';
+      setConsecutiveAck({ show: true, driverName: name, days: streak + 1, onConfirm: () => { setConsecutiveAck({ show: false }); doOpen(); } });
+    } else {
+      doOpen();
+    }
   }, []); // eslint-disable-line
 
   const openBulkAddShift = useCallback((cellsSet) => {
@@ -2104,6 +2117,35 @@ export default function WeeklySchedule() {
         </div>
       </Modal>
 
+      {/* ═══ CONSECUTIVE DAY ACKNOWLEDGMENT ════════════════════════════════ */}
+      {consecutiveAck.show && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'white', borderRadius: '14px', padding: '28px 32px', maxWidth: '420px', width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: '3px solid #f59e0b' }}>
+            <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+              <div style={{ width: '56px', height: '56px', background: '#fef3c7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', fontSize: '28px' }}>⚠️</div>
+            </div>
+            <div style={{ textAlign: 'center', marginBottom: '12px' }}>
+              <div style={{ fontSize: '17px', fontWeight: 800, color: '#1a2e4a' }}>Consecutive Day Risk</div>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: '#d97706', marginTop: '4px' }}>Day {consecutiveAck.days} in a Row</div>
+            </div>
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', textAlign: 'center' }}>
+              <div style={{ fontSize: '14px', color: '#92400e', fontWeight: 600 }}>{consecutiveAck.driverName}</div>
+              <div style={{ fontSize: '13px', color: '#b45309', marginTop: '4px', lineHeight: '1.5' }}>
+                This driver has worked {consecutiveAck.days - 1} consecutive days. Scheduling them today would be day {consecutiveAck.days} in a row. Consider assigning a rest day.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setConsecutiveAck({ show: false })} style={{ flex: 1, padding: '11px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#374151', fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={consecutiveAck.onConfirm} style={{ flex: 1, padding: '11px', borderRadius: '8px', border: 'none', background: '#d97706', color: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer', lineHeight: '1.3' }}>
+                I Understand —<br/>Schedule Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══ ADD SHIFT MODAL ══════════════════════════════════════════════════ */}
       <Modal isOpen={!!addShiftModal} onClose={() => { setAddShiftModal(null); setConsecutiveWarning(null); }} title="Add Shift">
         {addShiftModal && (
@@ -2149,20 +2191,6 @@ export default function WeeklySchedule() {
               <div><label className="modal-label">End Time</label><input type="time" className="input" value={shiftForm.end_time} onChange={e => setShiftForm(f => ({ ...f, end_time: e.target.value }))} required /></div>
             </div>
             <div><label className="modal-label">Notes (optional)</label><input type="text" className="input bg-[#F9FAFB]" value={shiftForm.notes} onChange={e => setShiftForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional note" /></div>
-            {/* Consecutive-day risk warning */}
-            {consecutiveWarning && !addShiftModal.bulkCells && (
-              <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderLeft: '4px solid #d97706', borderRadius: '6px', padding: '10px 14px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <span style={{ fontSize: '18px', lineHeight: 1 }}>⚠️</span>
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#92400e' }}>
-                    Consecutive Day Risk — Day {consecutiveWarning.days + 1} in a row
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#b45309', marginTop: '3px' }}>
-                    This driver has worked {consecutiveWarning.days} days straight. {scheduleView !== 'biweekly' ? 'Switch to 2-Week view to review their full schedule.' : 'Review the schedule above.'}
-                  </div>
-                </div>
-              </div>
-            )}
             <div className="flex gap-3 pt-1">
               {/* Delete — only in bulk mode when at least one cell has an existing shift */}
               {addShiftModal.bulkCells && addShiftModal.bulkCells.some(c => c.shift_id) && (

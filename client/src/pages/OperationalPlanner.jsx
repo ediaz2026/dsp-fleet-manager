@@ -2900,9 +2900,20 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         // Skip popup only when driver is ALREADY scheduled with the exact same type
         if (row.internalShift && row.internalShift.shift_type === newType) return;
 
+        const NON_ROUTE = ['ON CALL', 'SUSPENSION', 'PTO', 'UTO', 'TRAINING', 'TRAINER'];
         const doRouteClear = () => {
-          if (newType === 'HELPER' && effectiveRoute) {
-            saveAssignment.mutate({ staffId, data: { route_code: null } });
+          if (NON_ROUTE.includes(newType)) {
+            // Clear everything — non-route shift types don't need vehicle/device/staging
+            patchAssignment.mutate({ staffId, data: {
+              vehicle_id: null, device_id: null, route_code: null, name_override: null,
+              wave_override: null, staging_override: null, canopy_override: null, launchpad_override: null,
+            }});
+          } else if (newType === 'HELPER') {
+            // Helpers keep device but clear vehicle + route fields
+            patchAssignment.mutate({ staffId, data: {
+              vehicle_id: null, route_code: null, name_override: null,
+              staging_override: null, canopy_override: null, launchpad_override: null,
+            }});
           }
         };
 

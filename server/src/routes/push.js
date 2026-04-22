@@ -8,8 +8,9 @@ function getWebPush() {
   if (webpush) return webpush;
   if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return null;
   webpush = require('web-push');
+  const email = process.env.VAPID_EMAIL || 'admin@lastmiledsp.com';
   webpush.setVapidDetails(
-    process.env.VAPID_EMAIL || 'mailto:admin@lastmiledsp.com',
+    email.startsWith('mailto:') ? email : `mailto:${email}`,
     process.env.VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
   );

@@ -303,6 +303,23 @@ router.patch('/route-profiles/:code', authMiddleware, async (req, res) => {
 
 // ── Driver Workload ───────────────────────────────────────────────────────────
 
+// ── TEMP: clear ON CALL assignment — remove after use ────────────────────────
+router.post('/clear-oncall', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      UPDATE ops_assignments
+      SET vehicle_id = NULL, device_id = NULL, staging_override = NULL,
+          canopy_override = NULL, launchpad_override = NULL, wave_override = NULL, route_code = NULL
+      WHERE plan_date = (NOW() AT TIME ZONE 'America/New_York')::date
+        AND staff_id = (SELECT id FROM staff WHERE first_name ILIKE '%Daniel%' AND last_name ILIKE '%Bermudez%' LIMIT 1)
+      RETURNING staff_id, vehicle_id
+    `);
+    res.json({ updated: rows.length, rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Driver Workload helpers ──────────────────────────────────────────────────
 function fmtDate(d) {
   if (typeof d === 'string') return d.slice(0, 10);

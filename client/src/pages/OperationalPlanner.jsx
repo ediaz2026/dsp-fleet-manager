@@ -2470,6 +2470,12 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
 
   const hasAnyData = allRows.length > 0;
 
+  // Safety net: find routes from ops_daily_routes that aren't in allRows
+  const missingRoutes = useMemo(() => {
+    const displayed = new Set(allRows.map(r => r.routeCode).filter(Boolean));
+    return (routesData?.routes || []).filter(r => r.routeCode && !displayed.has(r.routeCode));
+  }, [allRows, routesData]);
+
   // Filtered rows (apply filter bar)
   const filteredRows = useMemo(() => {
     if (!hasActiveFilters) return allRows;
@@ -3276,6 +3282,30 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             </tbody>
           </table>
         </div>
+
+        {/* Safety net: routes from sheet not displayed in the grid */}
+        {missingRoutes.length > 0 && (
+          <div style={{ marginTop: '16px', borderTop: '2px dashed #fca5a5', paddingTop: '12px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#dc2626', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              ⚠️ UNMATCHED ROUTES ({missingRoutes.length})
+              <span style={{ fontSize: '10px', fontWeight: 400, color: '#94a3b8' }}>— Routes from today's sheet with no driver assignment</span>
+            </div>
+            {missingRoutes.map(route => (
+              <div key={route.routeCode} style={{
+                display: 'flex', alignItems: 'center', gap: '12px',
+                padding: '8px 12px', marginBottom: '4px',
+                background: '#fef2f2', border: '1px solid #fecaca', borderLeft: '4px solid #dc2626', borderRadius: '6px', fontSize: '13px',
+              }}>
+                <span style={{ fontWeight: 700, color: '#1a2e4a', minWidth: '60px' }}>{route.routeCode}</span>
+                <span style={{ fontSize: '10px', fontWeight: 600, background: '#fee2e2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px' }}>{route.shiftType}</span>
+                {route.hasMultipleDAs && <span style={{ fontSize: '10px', fontWeight: 600, background: '#fef3c7', color: '#d97706', padding: '2px 6px', borderRadius: '4px' }}>🚩 Multi-Driver</span>}
+                <span style={{ color: '#374151', flex: 1 }}>{route.driverNames?.length > 0 ? route.driverNames.join(' / ') : 'No driver name'}</span>
+                <span style={{ color: '#64748b', fontSize: '12px' }}>{route.duration ? `${(parseInt(route.duration) / 60).toFixed(1)}h` : '—'}</span>
+                <span style={{ color: '#64748b', fontSize: '12px' }}>{route.allStops} stops</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -3474,6 +3504,9 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             Routes: {summaryCounts.assignedRoutes}/{summaryCounts.routes}
           </span>
           <span className="text-amber-600">Helpers: {summaryCounts.helpers}</span>
+          {missingRoutes.length > 0 && (
+            <span className="text-red-600 font-semibold">⚠️ {missingRoutes.length} Unmatched</span>
+          )}
           {summaryCounts.wronglyRostered > 0 && (
             <button
               onClick={() => setFilter('status', filters.status === 'wrongly_rostered' ? '' : 'wrongly_rostered')}

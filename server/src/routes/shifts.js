@@ -184,6 +184,21 @@ router.post('/publish-week', managerOnly, async (req, res) => {
   );
 
   logAudit(req, { action_type: 'PUBLISH_WEEK', entity_type: 'shifts', entity_description: `Published ${rows.length} shifts for week of ${week_start}`, new_value: { week_start, published: rows.length } });
+
+  // Push notifications — notify drivers whose shifts were published
+  try {
+    const { sendPushToDriver } = require('./push');
+    const shiftIds = rows.map(r => r.id);
+    if (shiftIds.length > 0) {
+      const { rows: drivers } = await pool.query(
+        `SELECT DISTINCT staff_id FROM shifts WHERE id = ANY($1::int[])`, [shiftIds]
+      );
+      for (const d of drivers) {
+        sendPushToDriver(d.staff_id, '📅 Schedule Published', 'Your schedule has been updated. Check your shifts.', { url: '/my-schedule' }).catch(() => {});
+      }
+    }
+  } catch (e) { /* push not configured — silently skip */ }
+
   res.json({ published: rows.length });
 });
 

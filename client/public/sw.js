@@ -24,6 +24,43 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// Push notification received
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+  try {
+    const data = event.data.json();
+    const options = {
+      body: data.body || '',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      vibrate: [200, 100, 200],
+      data: data.data || {},
+      tag: data.data?.tag || 'default',
+    };
+    event.waitUntil(self.registration.showNotification(data.title || 'Last Mile DSP', options));
+  } catch (e) {
+    console.error('[SW] push parse error', e);
+  }
+});
+
+// Notification click — open or focus the app
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || '/';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) {
+        if (c.url.includes(self.location.origin) && 'focus' in c) {
+          c.focus();
+          if ('navigate' in c) c.navigate(url);
+          return;
+        }
+      }
+      return clients.openWindow(url);
+    })
+  );
+});
+
 // Fetch — network-first for API, cache-first for static assets
 self.addEventListener('fetch', (event) => {
   const { request } = event;

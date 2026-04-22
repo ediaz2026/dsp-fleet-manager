@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { MapPin, Clock, Truck, Layers, Navigation, Info, Lock, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 import { resolveColor, buildShiftTypeMap } from '../utils/shiftColors';
 
 function getGreeting() {
@@ -24,6 +25,8 @@ const DAYS = ['S','M','T','W','T','F','S'];
 export default function DriverToday() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { supported: pushSupported, permission: pushPermission, isSubscribed: pushSubscribed, subscribe: pushSubscribe, loading: pushLoading } = usePushNotifications();
+  const [pushDismissed, setPushDismissed] = useState(false);
   const today = format(new Date(), 'yyyy-MM-dd');
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
 
@@ -129,6 +132,25 @@ export default function DriverToday() {
         </div>
 
         <div className="px-4 -mt-4 space-y-4">
+
+          {/* ── Push notification opt-in ─────────────────────────────── */}
+          {pushSupported && pushPermission === 'default' && !pushDismissed && (
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+              <div style={{ fontSize: '24px' }}>🔔</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#1a2e4a' }}>Enable Notifications</div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Get alerts for schedule changes, scorecard updates & more</div>
+              </div>
+              <button onClick={async () => { await pushSubscribe(); }} disabled={pushLoading}
+                style={{ padding: '7px 14px', background: '#1a2e4a', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', opacity: pushLoading ? 0.6 : 1 }}>
+                {pushLoading ? '...' : 'Turn On'}
+              </button>
+              <button onClick={() => setPushDismissed(true)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', padding: '0 4px' }}>✕</button>
+            </div>
+          )}
+          {pushSubscribed && !pushDismissed && (
+            <div style={{ textAlign: 'center', fontSize: '11px', color: '#16a34a', marginBottom: '8px' }}>✓ Notifications enabled</div>
+          )}
 
           {/* ── Announcements ──────────────────────────────────────────── */}
           {announcements.length > 0 && (

@@ -154,6 +154,7 @@ app.use('/api/ops', require('./routes/pickList'));
 app.use('/api/announcements', require('./routes/announcements'));
 app.use('/api/analytics',   require('./routes/analytics'));
 app.use('/api/raffle',      require('./routes/raffle'));
+app.use('/api/push',        require('./routes/push').router);
 app.use('/api/scorecard',   require('./routes/scorecard'));
 app.use('/api/amazon-scorecard', require('./routes/amazonScorecard'));
 app.use('/api/cortex-sync', require('./routes/cortexSync'));
@@ -398,6 +399,7 @@ runMigrations()
   .then(() => ensureAdditionalAdmins())
   .then(() => require('./db/migrateWorkload')().catch(err => console.error('⚠️  migrateWorkload error:', err.message)))
   .then(() => require('./db/migrateRaffle')().catch(err => console.error('⚠️  migrateRaffle error:', err.message)))
+  .then(() => require('./db/migratePush')().catch(err => console.error('⚠️  migratePush error:', err.message)))
   // Clean up non-working drivers from future ops_assignments on startup
   .then(() => require('./db/pool').query(`
     DELETE FROM ops_assignments

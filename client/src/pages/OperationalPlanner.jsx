@@ -2640,14 +2640,76 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     return s;
   }, [section1Rows]);
 
-  // ── Sign-Out Sheet ──────────────────────────────────────────────────────────
+  // ── Sign-Out Sheet (uses the grid's already-resolved rows as single source of truth) ─
   const handlePrintSignOut = () => { window.open(`/sign-out-sheet?date=${planDate}`, '_blank'); };
 
-  const handleExport = async () => {
+  const handleExport = () => {
     try {
-      const { data } = await api.get('/ops/sign-out-data', { params: { date: planDate } });
-      const { rows, dispAM = [], dispPM = [] } = data;
-      if (!rows?.length) { toast('No data to export', { icon: '⚠️' }); return; }
+      const OPS_EX = new Set(['ON CALL','UTO','PTO','SUSPENSION','TRAINING','TRAINER','DISPATCH AM','DISPATCH PM']);
+      const ATT_LABELS = { ncns: 'NCNS', late: 'LATE', called_out: 'CALL OUT', sent_home: 'SENT HOME' };
+
+      // Build export rows from the grid's resolved allRows — same data the dispatcher sees
+      const printRows = [];
+      const extraDrivers = [];
+      const attCategories = { callOuts: [], ncns: [], lates: [], sentHome: [], training: [], trainer: [] };
+
+      for (const row of allRows) {
+        const staffId = row.profile?.staff_id;
+        const asgn = row.asgn || {};
+        const shift = row.internalShift;
+        const type = (shift?.shift_type || row.shiftType || '').toUpperCase();
+        const attSt = shift?.attendance_status;
+        const routeCode = asgn.route_code || row.routeCode || '';
+        const displayName = (asgn.name_override || row.name || '').toUpperCase();
+        if (!displayName && !routeCode) continue;
+
+        // Categorize extras / attendance
+        if (['NCNS', 'CALLED_OUT', 'SENT_HOME'].includes(attSt?.toUpperCase?.() || attSt)) {
+          const cat = attSt === 'ncns' ? 'ncns' : attSt === 'called_out' ? 'callOuts' : 'sentHome';
+          attCategories[cat].push(`${displayName}${routeCode ? ' — ' + routeCode : ''}`);
+          continue; // excluded from main rows
+        }
+        if (type === 'EXTRA') { extraDrivers.push(displayName); continue; }
+        if (type === 'TRAINING') { attCategories.training.push(displayName); continue; }
+        if (type === 'TRAINER') { attCategories.trainer.push(displayName); continue; }
+        if (OPS_EX.has(type) || !type) continue;
+
+        const lo = loadoutMap[routeCode] || row.loadout || {};
+        const v = vehicles.find(x => x.id === asgn.vehicle_id);
+        const wave = lo.wave || asgn.wave_override || '';
+        const lp = (lo.launchpad || asgn.launchpad_override || '').trim();
+        let pad = '';
+        if (lp) { const m = lp.toUpperCase().match(/LAUNCHPAD\s+([A-Z])/); pad = m ? m[1] : /SIDELINE/i.test(lp) ? 'SL' : lp.length <= 2 ? lp.toUpperCase() : ''; }
+        const waveNum = wave.replace(/\D/g, '');
+        const station = waveNum ? `W${waveNum}${pad ? '-' + pad : ''}` : '';
+        const att = attSt && attSt !== 'present' ? (ATT_LABELS[attSt] || '') : '';
+
+        printRows.push({
+          route: routeCode || (type === 'HELPER' ? 'HELPER' : ''),
+          name: displayName,
+          van: v?.vehicle_name || '',
+          device: asgn.device_id || '',
+          staging: lo.staging || asgn.staging_override || '',
+          waveTime: lo.waveTime || '',
+          station, att,
+        });
+      }
+
+      // Sort by wave time then staging
+      const parseStg = s => { const m = (s || '').match(/STG\.([A-Z]+)(\d+)/i); return m ? { l: m[1].toUpperCase(), n: parseInt(m[2]) } : { l: 'ZZZ', n: 999 }; };
+      printRows.sort((a, b) => {
+        const wA = a.waveTime || '99:99', wB = b.waveTime || '99:99';
+        if (wA !== wB) return wA.localeCompare(wB);
+        const sA = parseStg(a.staging), sB = parseStg(b.staging);
+        return sA.l !== sB.l ? sA.l.localeCompare(sB.l) : sA.n - sB.n;
+      });
+
+      if (!printRows.length) { toast('No data to export', { icon: '⚠️' }); return; }
+
+      // Dispatchers
+      const dispAM = internalShifts.filter(s => s.shift_type === 'DISPATCH AM').map(s => `${s.first_name} ${s.last_name}`);
+      const dispPM = internalShifts.filter(s => s.shift_type === 'DISPATCH PM').map(s => `${s.first_name} ${s.last_name}`);
+
       const dateLabel = format(parseISO(planDate), 'EEEE, MMMM d, yyyy');
       const openN = dispAM.length ? dispAM.join(' \\ ') : '________';
       const closeN = dispPM.length ? dispPM.join(' \\ ') : '________';
@@ -2657,49 +2719,35 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         [],
         ['#','ROUTE','DELIVERY ASSOCIATE','VAN','DEV','PWR BNK','STG','SIGNATURE','RTS','STN','EXTRAS'],
       ];
-      // Build extras cells for EXTRAS column
-      const ex = data.extras || {};
+
+      // Extras column
       const extrasCells = [];
-      // Top rows: EXTRA drivers + blank for manual notes
-      const extraDrivers = ex.extraDrivers || [];
       const topCount = Math.max(6, extraDrivers.length);
       for (let j = 0; j < topCount; j++) extrasCells.push(extraDrivers[j] || '');
-      const secs = [
-        { label: 'CALL OUTS:', min: 5, items: ex.callOuts || [] },
-        { label: 'NO CALL NO SHOW:', min: 5, items: ex.ncns || [] },
-        { label: 'LATE:', min: 5, items: ex.lates || [] },
-        { label: 'SENT HOME:', min: 5, items: ex.sentHome || [] },
-        { label: 'TRAINING:', min: 5, items: ex.training || [] },
-        { label: 'TRAINER:', min: 5, items: ex.trainer || [] },
-      ];
-      for (const sec of secs) {
-        extrasCells.push(sec.label);
-        const cnt = Math.max(sec.min, sec.items.length);
-        for (let j = 0; j < cnt; j++) extrasCells.push(sec.items[j] || '');
+      for (const [label, items] of [['CALL OUTS:', attCategories.callOuts], ['NO CALL NO SHOW:', attCategories.ncns], ['LATE:', attCategories.lates], ['SENT HOME:', attCategories.sentHome], ['TRAINING:', attCategories.training], ['TRAINER:', attCategories.trainer]]) {
+        extrasCells.push(label);
+        const cnt = Math.max(5, items.length);
+        for (let j = 0; j < cnt; j++) extrasCells.push(items[j] || '');
       }
 
-      // Merge driver rows with extras column
-      const totalRows = Math.max(rows.length, extrasCells.length);
+      const totalRows = Math.max(printRows.length, extrasCells.length);
       for (let i = 0; i < totalRows; i++) {
-        const r = rows[i];
+        const r = printRows[i];
         const ec = extrasCells[i] || '';
-        if (r) {
-          aoa.push([i + 1, r.route, r.name, r.van, r.device, '', r.staging, '', '', r.station, ec || r.att]);
-        } else {
-          aoa.push(['', '', '', '', '', '', '', '', '', '', ec]);
-        }
+        if (r) aoa.push([i + 1, r.route, r.name, r.van, r.device, '', r.staging, '', '', r.station, ec || r.att]);
+        else aoa.push(['', '', '', '', '', '', '', '', '', '', ec]);
       }
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       ws['!cols'] = [{wch:3},{wch:8},{wch:22},{wch:6},{wch:5},{wch:8},{wch:8},{wch:14},{wch:6},{wch:5},{wch:18}];
-      ws['!rows'] = aoa.map((_,i) => ({ hpt: i < 3 ? 14 : i === 3 ? 16 : 18 }));
+      ws['!rows'] = aoa.map((_, i) => ({ hpt: i < 3 ? 14 : i === 3 ? 16 : 18 }));
       ws['!freeze'] = { xSplit:0, ySplit:4, topLeftCell:'A5', activePane:'bottomLeft', state:'frozen' };
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, `SignOut ${planDate}`);
       XLSX.writeFile(wb, `SignOut_${planDate}.xlsx`);
-      toast.success(`Exported sign-out sheet — ${rows.length} drivers`);
+      toast.success(`Exported sign-out sheet — ${printRows.length} drivers`);
     } catch (err) {
-      toast.error('Export failed: ' + (err?.response?.data?.error || err.message));
+      toast.error('Export failed: ' + (err?.message || 'Unknown error'));
     }
   };
 

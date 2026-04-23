@@ -24,15 +24,6 @@ router.get('/vapid-public-key', (req, res) => {
   res.json({ publicKey: key });
 });
 
-// TEMP: fix route codes — remove after use
-router.post('/fix-routes', async (req, res) => {
-  try {
-    const r1 = await pool.query(`UPDATE ops_assignments SET route_code = 'CX175' WHERE plan_date = '2026-04-23' AND staff_id = 361 RETURNING staff_id, route_code`);
-    const r2 = await pool.query(`UPDATE ops_assignments SET route_code = 'CX171' WHERE plan_date = '2026-04-23' AND staff_id = 357 RETURNING staff_id, route_code`);
-    res.json({ dayron: r1.rows, hector: r2.rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 // POST /api/push/subscribe — save driver's push subscription
 router.post('/subscribe', authMiddleware, async (req, res) => {
   try {

@@ -24,15 +24,6 @@ router.get('/vapid-public-key', (req, res) => {
   res.json({ publicKey: key });
 });
 
-// TEMP: diag push subs — remove after use
-router.get('/diag-subs', async (req, res) => {
-  try {
-    const dayron = await pool.query(`SELECT id, first_name, last_name FROM staff WHERE first_name ILIKE '%dayron%' AND last_name ILIKE '%martin%'`);
-    const subs = await pool.query(`SELECT ps.staff_id, s.first_name, s.last_name, LEFT(ps.endpoint, 60) AS endpoint, ps.created_at FROM push_subscriptions ps JOIN staff s ON s.id = ps.staff_id ORDER BY ps.created_at DESC`);
-    res.json({ dayron: dayron.rows, all_subscriptions: subs.rows, total: subs.rows.length });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 // POST /api/push/subscribe — save driver's push subscription
 router.post('/subscribe', authMiddleware, async (req, res) => {
   try {

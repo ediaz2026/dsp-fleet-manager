@@ -317,6 +317,15 @@ router.post('/publish-selected', managerOnly, async (req, res) => {
         // Send email (fire-and-forget; errors are logged inside the service)
         sendScheduleNotification(driver, weekLabel, driver.shifts).catch(() => {});
 
+        // Send push notification
+        try {
+          const { sendPushToDriver } = require('./push');
+          const shiftSummary = driver.shifts.length === 1
+            ? `Your ${driver.shifts[0].shift_type} shift on ${fmtShort(String(driver.shifts[0].shift_date).slice(0,10))} has been confirmed.`
+            : `Your schedule for ${weekLabel} has been updated. Check your shifts.`;
+          sendPushToDriver(driver.staff_id, '📅 Schedule Update', shiftSummary, { url: '/my-schedule' }).catch(() => {});
+        } catch (e) { /* push not configured */ }
+
         notifiedDrivers.push(`${driver.first_name} ${driver.last_name}`);
       }
     } catch (notifyErr) {

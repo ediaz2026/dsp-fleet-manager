@@ -2312,6 +2312,25 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     });
   }, [routesData, loadoutMap, transpToProfile, shiftByStaffId, amazonDriversByTid, assignments, assignmentByRouteCode, driverProfiles, allStaff, assignmentsArr]);
 
+  // Auto-save route_code to ops_assignments when TID match resolves a route but
+  // the assignment doesn't have route_code stored yet. This makes ops_assignments
+  // the single source of truth so the driver portal reads the correct route.
+  const autoSaveRef = useRef(new Set());
+  useEffect(() => {
+    for (const row of section1Rows) {
+      const staffId = row.profile?.staff_id;
+      const rc = row.routeCode;
+      const savedRc = row.asgn?.route_code;
+      if (!staffId || !rc || savedRc === rc) continue; // already correct or nothing to save
+      if (row.status === 'unassigned_route' || row.status === 'multiple_das') continue;
+      if (row.asgn?.removed_from_ops) continue;
+      const key = `${staffId}|${rc}|${planDate}`;
+      if (autoSaveRef.current.has(key)) continue; // already sent this session
+      autoSaveRef.current.add(key);
+      api.patch(`/ops-planner/assignments/${staffId}`, { plan_date: planDate, route_code: rc }).catch(() => {});
+    }
+  }, [section1Rows, planDate]);
+
   // Staff IDs that are ACTUALLY showing as assigned in section1 (for section3 dedup)
   // Differs from routedTids: a TID may be in routes file but driver was reassigned away
   const effectivelyRoutedStaffIds = useMemo(() => {

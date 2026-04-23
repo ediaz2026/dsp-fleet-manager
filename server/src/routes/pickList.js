@@ -722,6 +722,7 @@ router.get('/my-assignment', async (req, res) => {
     }
 
     // Step 2: Fallback — TID matching via ops_daily_routes
+    // Prefer single-DA routes over multi-DA to avoid ambiguity
     if (!routeCode) {
       const { rows: drvRows } = await pool.query(
         `SELECT d.transponder_id, s.employee_id FROM drivers d JOIN staff s ON s.id = d.staff_id WHERE d.staff_id = $1`, [staffId]
@@ -731,13 +732,14 @@ router.get('/my-assignment', async (req, res) => {
         const { rows: drRows } = await pool.query(`SELECT routes FROM ops_daily_routes WHERE plan_date = $1`, [today]);
         if (drRows[0]?.routes) {
           const normTid = tid.trim().toUpperCase().replace(/\s/g, '');
+          let singleMatch = null, anyMatch = null;
           for (const route of drRows[0].routes) {
             const tids = (route.transponderIds || []).map(t => t.trim().toUpperCase().replace(/\s/g, ''));
-            if (tids.includes(normTid)) {
-              routeCode = route.routeCode;
-              break;
-            }
+            if (!tids.includes(normTid)) continue;
+            if (!anyMatch) anyMatch = route.routeCode;
+            if (!route.hasMultipleDAs && tids.length === 1) { singleMatch = route.routeCode; break; }
           }
+          routeCode = singleMatch || anyMatch;
         }
       }
     }

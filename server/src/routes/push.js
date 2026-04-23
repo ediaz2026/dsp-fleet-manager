@@ -24,6 +24,14 @@ router.get('/vapid-public-key', (req, res) => {
   res.json({ publicKey: key });
 });
 
+// TEMP: diag notification settings — remove after use
+router.get('/diag-settings', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE 'notifications_%' ORDER BY setting_key`);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/push/subscribe — save driver's push subscription
 router.post('/subscribe', authMiddleware, async (req, res) => {
   try {

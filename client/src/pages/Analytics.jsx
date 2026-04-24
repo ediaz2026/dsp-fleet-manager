@@ -690,10 +690,11 @@ function fmt12h(t) {
 
 function DriverPerformanceTab() {
   const [workloadRange, setWorkloadRange] = useState('biweekly');
-  const [nameSortDir, setNameSortDir] = useState(null); // null | 'asc' | 'desc'
+  const [nameSortDir, setNameSortDir] = useState('asc'); // 'asc' | 'desc' | null
+  const [workloadSearch, setWorkloadSearch] = useState('');
 
-  // Reset sort when switching range
-  useEffect(() => { setNameSortDir(null); }, [workloadRange]);
+  // Reset sort + search when switching range
+  useEffect(() => { setNameSortDir('asc'); setWorkloadSearch(''); }, [workloadRange]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['driver-workload-grid', workloadRange],
@@ -710,6 +711,12 @@ function DriverPerformanceTab() {
     if (nameSortDir === 'desc') return list.sort((a, b) => b.name.localeCompare(a.name));
     return list; // default sort from backend (most active/red first)
   }, [rawDrivers, nameSortDir]);
+
+  const filteredDrivers = useMemo(() => {
+    if (!workloadSearch.trim()) return drivers;
+    const q = workloadSearch.toLowerCase();
+    return drivers.filter(d => d.name.toLowerCase().includes(q));
+  }, [drivers, workloadSearch]);
 
   const handleExport = () => {
     if (!drivers.length) return;
@@ -747,6 +754,13 @@ function DriverPerformanceTab() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151', fontWeight: 600 }}>
           Driver Workload — {workloadRange === 'weekly' ? '7' : '14'} Day EFT Grid
+          {/* Search */}
+          <div style={{ position: 'relative', width: '220px', marginLeft: '8px' }}>
+            <input type="text" placeholder="Search driver..." value={workloadSearch} onChange={e => setWorkloadSearch(e.target.value)}
+              style={{ width: '100%', padding: '7px 12px 7px 32px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', color: '#1a2e4a', fontWeight: 400 }} />
+            <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
+            {workloadSearch && <button onClick={() => setWorkloadSearch('')} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '14px', padding: 0 }}>✕</button>}
+          </div>
           <button
             onClick={() => setNameSortDir(prev => prev === 'asc' ? 'desc' : prev === 'desc' ? null : 'asc')}
             style={{
@@ -817,7 +831,7 @@ function DriverPerformanceTab() {
                 </tr>
               </thead>
               <tbody>
-                {drivers.map((drv, i) => (
+                {filteredDrivers.map((drv, i) => (
                   <tr key={drv.staff_id}>
                     <td style={{ position: 'sticky', left: 0, background: i % 2 ? '#f8fafc' : 'white', zIndex: 1, padding: '6px 12px', fontSize: '13px', fontWeight: 500, borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                       {drv.name}

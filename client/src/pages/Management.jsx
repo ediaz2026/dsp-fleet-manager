@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import {
   Save, Plus, Trash2, Shield, Bell, Cpu, DollarSign, Cloud, ToggleLeft, ToggleRight,
   Tag, RepeatIcon, X, ChevronDown, ChevronUp, Search, Users, RefreshCw,
-  Settings, Calendar, Upload, CheckCircle, AlertCircle, ChevronRight, GripVertical,
+  Settings, Calendar, Upload, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, GripVertical,
   Download, FileSpreadsheet, ClipboardList, Mail, Smartphone, MessageCircle, Info, Clock,
 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -81,13 +81,21 @@ function RouteTargetsSection() {
   const qc = useQueryClient();
   const [targets, setTargets] = useState({});
   const [saving, setSaving] = useState(false);
+  const [weekOffset, setWeekOffset] = useState(0);
 
-  // 3 weeks forward from current Sunday
   const today = new Date();
-  const sun = new Date(today); sun.setDate(today.getDate() - today.getDay());
-  const dates = [];
-  for (let i = 0; i < 21; i++) { const d = new Date(sun); d.setDate(sun.getDate() + i); dates.push(d.toISOString().split('T')[0]); }
-  const startDate = dates[0], endDate = dates[dates.length - 1];
+  const todayStr = today.toISOString().split('T')[0];
+
+  // Week Sunday based on offset
+  const weekSun = new Date(today);
+  weekSun.setDate(today.getDate() - today.getDay() + weekOffset * 7);
+  weekSun.setHours(0, 0, 0, 0);
+  const weekSat = new Date(weekSun); weekSat.setDate(weekSun.getDate() + 6);
+  const weekDays = Array.from({ length: 7 }, (_, i) => { const d = new Date(weekSun); d.setDate(weekSun.getDate() + i); return d; });
+
+  const startDate = weekSun.toISOString().split('T')[0];
+  const endDate = weekSat.toISOString().split('T')[0];
+  const weekNum = Math.ceil(((weekSun - new Date(weekSun.getFullYear(), 0, 1)) / 86400000 + new Date(weekSun.getFullYear(), 0, 1).getDay() + 1) / 7);
 
   const { data: existing = [] } = useQuery({
     queryKey: ['route-targets', startDate, endDate],
@@ -96,13 +104,16 @@ function RouteTargetsSection() {
 
   useEffect(() => {
     const m = {};
-    for (const t of existing) { const ds = typeof t.target_date === 'string' ? t.target_date.slice(0,10) : t.target_date.toISOString().slice(0,10); m[ds] = { route_target: t.route_target, notes: t.notes || '' }; }
+    for (const t of existing) {
+      const ds = typeof t.target_date === 'string' ? t.target_date.slice(0, 10) : t.target_date.toISOString().slice(0, 10);
+      m[ds] = t.route_target;
+    }
     setTargets(m);
   }, [existing]);
 
   const handleSave = async () => {
     setSaving(true);
-    const arr = Object.entries(targets).filter(([, v]) => v.route_target).map(([date, v]) => ({ date, route_target: parseInt(v.route_target), notes: v.notes || null }));
+    const arr = Object.entries(targets).filter(([, v]) => v).map(([date, route_target]) => ({ date, route_target: parseInt(route_target) }));
     await api.post('/route-targets', { targets: arr });
     qc.invalidateQueries({ queryKey: ['route-targets'] });
     qc.invalidateQueries({ queryKey: ['cr-tracker'] });
@@ -110,55 +121,65 @@ function RouteTargetsSection() {
     setSaving(false);
   };
 
-  const todayStr = today.toISOString().split('T')[0];
-  const CARD = 'bg-white border border-[#E2E8F0] rounded-xl shadow-sm p-5 space-y-4';
+  const fmtShort = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
-    <section className={CARD}>
-      <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+    <section className="bg-white border border-[#E2E8F0] rounded-xl shadow-sm p-5 space-y-4">
+      {/* Header with nav */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <h2 className="text-[16px] font-bold text-[#1E3A5F]">📅 Route Targets (Okami)</h2>
-          <p className="text-xs text-[#6B7280] mt-1">Enter targets for 3 weeks. CR Tracker, Daily Summary, and Schedule all read from here.</p>
+          <p className="text-xs text-[#6B7280] mt-1">CR Tracker, Daily Summary, and Schedule all read from here</p>
         </div>
-        <button onClick={handleSave} disabled={saving} className="btn-primary text-sm">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button onClick={() => setWeekOffset(v => v - 1)} className="p-2 rounded-lg border bg-white hover:bg-slate-50 transition-colors"><ChevronLeft size={16} /></button>
+          <span style={{ fontWeight: 700, fontSize: '14px', color: '#1a2e4a', minWidth: '220px', textAlign: 'center' }}>
+            Week {weekNum} · {fmtShort(weekSun)} – {fmtShort(weekSat)}
+          </span>
+          <button onClick={() => setWeekOffset(v => v + 1)} className="p-2 rounded-lg border bg-white hover:bg-slate-50 transition-colors"><ChevronRight size={16} /></button>
+        </div>
+        <button onClick={handleSave} disabled={saving} tabIndex={8} className="btn-primary text-sm">
           <Save size={14} /> {saving ? 'Saving…' : 'Save Targets'}
         </button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead><tr className="border-b border-slate-200 bg-slate-50">
-            <th className="text-left px-3 py-2 text-xs font-semibold text-slate-500">Date</th>
-            <th className="text-left px-3 py-2 text-xs font-semibold text-slate-500">Day</th>
-            <th className="text-center px-3 py-2 text-xs font-semibold text-slate-500">Route Target</th>
-            <th className="text-center px-3 py-2 text-xs font-semibold text-slate-500">Flex-up (auto)</th>
-            <th className="text-left px-3 py-2 text-xs font-semibold text-slate-500">Notes</th>
-          </tr></thead>
-          <tbody>
-            {dates.map(ds => {
-              const d = new Date(ds + 'T12:00:00');
-              const isT = ds === todayStr;
-              const val = targets[ds]?.route_target || '';
-              const notes = targets[ds]?.notes || '';
-              const flex = val ? Math.ceil(parseInt(val) * 1.05) : null;
-              return (
-                <tr key={ds} className={isT ? 'bg-blue-50' : ''} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td className="px-3 py-2" style={{ fontWeight: isT ? 700 : 400 }}>{format(d, 'MMM d')}</td>
-                  <td className="px-3 py-2 text-slate-500">{format(d, 'EEE')}</td>
-                  <td className="px-3 py-2 text-center">
-                    <input type="number" min="0" max="100" value={val} onChange={e => setTargets(prev => ({ ...prev, [ds]: { ...prev[ds], route_target: e.target.value } }))}
-                      className="w-16 text-center border border-slate-200 rounded px-2 py-1 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none" placeholder="—" />
-                  </td>
-                  <td className="px-3 py-2 text-center text-slate-400 text-xs">{flex ?? '—'}</td>
-                  <td className="px-3 py-2">
-                    <input type="text" value={notes} onChange={e => setTargets(prev => ({ ...prev, [ds]: { ...prev[ds], notes: e.target.value } }))}
-                      className="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Optional note…" />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+
+      {/* Table — 7 rows */}
+      <table className="w-full text-sm">
+        <thead><tr className="border-b-2 border-slate-200 bg-slate-50">
+          <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500" style={{ width: '120px' }}>Date</th>
+          <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500" style={{ width: '80px' }}>Day</th>
+          <th className="text-center px-4 py-2.5 text-xs font-semibold text-slate-500" style={{ width: '180px' }}>Route Target (Okami)</th>
+          <th className="text-center px-4 py-2.5 text-xs font-semibold text-slate-500">Flex-up Target (auto)</th>
+        </tr></thead>
+        <tbody>
+          {weekDays.map((d, idx) => {
+            const ds = d.toISOString().split('T')[0];
+            const isT = ds === todayStr;
+            const val = targets[ds] || '';
+            const flex = val ? Math.ceil(parseInt(val) * 1.05) : null;
+            return (
+              <tr key={ds} style={{ borderBottom: '1px solid #f1f5f9', background: isT ? '#eff6ff' : 'white' }}>
+                <td className="px-4 py-2.5" style={{ fontWeight: isT ? 700 : 400, color: '#1a2e4a' }}>
+                  {fmtShort(d)}
+                  {isT && <span style={{ marginLeft: '6px', fontSize: '10px', background: '#2563eb', color: 'white', borderRadius: '4px', padding: '1px 5px' }}>TODAY</span>}
+                </td>
+                <td className="px-4 py-2.5 text-slate-500">{DAYS[d.getDay()]}</td>
+                <td className="px-4 py-2.5 text-center">
+                  <input type="number" min="0" max="999" value={val}
+                    onChange={e => setTargets(prev => ({ ...prev, [ds]: e.target.value }))}
+                    onFocus={e => e.target.select()}
+                    tabIndex={idx + 1}
+                    placeholder="—"
+                    style={{ width: '90px', padding: '8px 12px', textAlign: 'center', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '15px', fontWeight: 600, outline: 'none' }}
+                  />
+                </td>
+                <td className="px-4 py-2.5 text-center" style={{ color: '#94a3b8', fontSize: '14px', fontWeight: val ? 600 : 400 }}>{flex ?? '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </section>
   );
 }

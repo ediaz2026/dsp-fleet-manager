@@ -24,17 +24,6 @@ router.get('/vapid-public-key', (req, res) => {
   res.json({ publicKey: key });
 });
 
-// TEMP: scorecard schema diagnostic — remove after use
-router.get('/diag-scorecard', async (req, res) => {
-  try {
-    const cols = await pool.query(`SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'amazon_scorecards' ORDER BY ordinal_position`);
-    const sample = await pool.query(`SELECT * FROM amazon_scorecards WHERE scorecard_type = 'final' LIMIT 1`);
-    const qualityCols = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'amazon_scorecards' AND column_name ILIKE ANY(ARRAY['%dcr%','%cdf%','%dsb%','%pod%','%quality%','%safety%','%speeding%','%seatbelt%','%following%','%sign%','%distract%','%contact%','%bonus%','%incentive%','%rank%','%score%'])`);
-    const weeks = await pool.query(`SELECT week_label, COUNT(*)::int as drivers, scorecard_type FROM amazon_scorecards WHERE scorecard_type = 'final' GROUP BY week_label, scorecard_type ORDER BY week_label DESC LIMIT 10`);
-    res.json({ columns: cols.rows, sampleRow: sample.rows[0] || null, qualityColumns: qualityCols.rows.map(r => r.column_name), weekBreakdown: weeks.rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 // POST /api/push/subscribe — save driver's push subscription
 router.post('/subscribe', authMiddleware, async (req, res) => {
   try {

@@ -189,6 +189,8 @@ export default function Scorecard() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('rank');
   const [scorecardView, setScorecardView] = useState('final');
+  const [subTab, setSubTab] = useState('scores'); // 'scores' | 'quality' | 'safety'
+  const [analysisPeriod, setAnalysisPeriod] = useState('monthly');
   const fileRef = useRef();
   const pdfRef = useRef();
 
@@ -312,6 +314,22 @@ export default function Scorecard() {
           ))}
         </div>
       )}
+
+      {/* Sub-tabs — Scores | Quality | Safety (admin/manager only) */}
+      {!isDriver && (
+        <div style={{ display: 'flex', gap: '4px', borderBottom: '2px solid #e2e8f0', paddingBottom: 0, marginBottom: '16px' }}>
+          {[{ id: 'scores', label: '📋 Scores' }, { id: 'quality', label: '📦 Quality' }, { id: 'safety', label: '🛡 Safety' }].map(t => (
+            <button key={t.id} onClick={() => setSubTab(t.id)} style={{
+              padding: '8px 18px', border: 'none', cursor: 'pointer', fontSize: '14px', background: 'transparent',
+              borderBottom: subTab === t.id ? '3px solid #1a2e4a' : '3px solid transparent', marginBottom: '-2px',
+              fontWeight: subTab === t.id ? 700 : 400, color: subTab === t.id ? '#1a2e4a' : '#64748b',
+            }}>{t.label}</button>
+          ))}
+        </div>
+      )}
+
+      {/* ══ SCORES SUB-TAB ═══════════════════════════════════════════════ */}
+      {(isDriver || subTab === 'scores') && (<>
 
       {/* Upload result — managers only, final view */}
       {!isDriver && scorecardView === 'final' && uploadResult && (
@@ -503,6 +521,161 @@ export default function Scorecard() {
           </div>
         </div>
       )}
+
+      </>)}{/* end scores sub-tab */}
+
+      {/* ══ QUALITY SUB-TAB ══════════════════════════════════════════════ */}
+      {!isDriver && subTab === 'quality' && <QualityTab period={analysisPeriod} setPeriod={setAnalysisPeriod} />}
+
+      {/* ══ SAFETY SUB-TAB ═══════════════════════════════════════════════ */}
+      {!isDriver && subTab === 'safety' && <SafetyTab period={analysisPeriod} setPeriod={setAnalysisPeriod} />}
+    </div>
+  );
+}
+
+// ── Period selector pill ─────────────────────────────────────────────────────
+function PeriodPills({ period, setPeriod }) {
+  return (
+    <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: '20px', padding: '3px', width: 'fit-content', marginBottom: '20px' }}>
+      {[{ label: 'This Week', value: 'weekly' }, { label: 'Bi-Weekly', value: 'biweekly' }, { label: 'Monthly', value: 'monthly' }, { label: '3 Months', value: '3months' }].map(o => (
+        <button key={o.value} onClick={() => setPeriod(o.value)} style={{
+          padding: '6px 14px', borderRadius: '16px', border: 'none', cursor: 'pointer',
+          background: period === o.value ? '#1a2e4a' : 'transparent',
+          color: period === o.value ? 'white' : '#64748b', fontWeight: 600, fontSize: '12px',
+        }}>{o.label}</button>
+      ))}
+    </div>
+  );
+}
+
+// ── Reusable metric table ────────────────────────────────────────────────────
+function MetricTable({ title, subtitle, data, valueKey, format, colorFn }) {
+  return (
+    <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+        <div style={{ fontWeight: 700, fontSize: '13px', color: '#1a2e4a' }}>{title}</div>
+        <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>{subtitle}</div>
+      </div>
+      <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead style={{ position: 'sticky', top: 0, background: 'white', zIndex: 1 }}>
+            <tr>
+              <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 700, color: '#64748b', borderBottom: '1px solid #f1f5f9', width: '30px' }}>#</th>
+              <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 700, color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>DRIVER</th>
+              <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '10px', fontWeight: 700, color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>SCORE</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data?.slice(0, 20).map((d, i) => {
+              const v = d[valueKey]; const c = colorFn(v);
+              return (
+                <tr key={d.staff_id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                  <td style={{ padding: '8px 12px', fontSize: '12px', color: '#94a3b8' }}>{i + 1}</td>
+                  <td style={{ padding: '8px 12px', fontSize: '12px', fontWeight: 500, color: '#1a2e4a' }}>
+                    {d.driver_name} <span style={{ fontSize: '10px', color: '#94a3b8', marginLeft: '4px' }}>({d.weeks_included}w)</span>
+                  </td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                    <span style={{ background: c + '15', color: c, fontWeight: 700, fontSize: '12px', padding: '2px 8px', borderRadius: '6px' }}>{format(v)}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Quality Analysis Tab ─────────────────────────────────────────────────────
+function QualityTab({ period, setPeriod }) {
+  const { data: q, isLoading } = useQuery({
+    queryKey: ['quality-analysis', period],
+    queryFn: () => api.get(`/amazon-scorecard/quality-analysis?period=${period}`).then(r => r.data),
+    staleTime: 10 * 60 * 1000,
+  });
+  if (isLoading) return <p className="text-center text-slate-400 py-8">Loading quality analysis…</p>;
+  return (
+    <div>
+      <PeriodPills period={period} setPeriod={setPeriod} />
+      {/* Top / Worst */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+        {q?.topDriver && (
+          <div style={{ background: '#f0fdf4', border: '2px solid #22c55e', borderRadius: '12px', padding: '16px 20px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#16a34a', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '6px' }}>🏆 Top Driver</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: '#1a2e4a' }}>{q.topDriver.driver_name}</div>
+            <div style={{ fontSize: '13px', color: '#16a34a', marginTop: '4px' }}>Score: {q.topDriver.avg_overall?.toFixed(1)} · {q.topDriver.packages_total?.toLocaleString()} pkgs</div>
+          </div>
+        )}
+        {q?.worstDriver && (
+          <div style={{ background: '#fef2f2', border: '2px solid #ef4444', borderRadius: '12px', padding: '16px 20px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#dc2626', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '6px' }}>⚠️ Needs Attention</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: '#1a2e4a' }}>{q.worstDriver.driver_name}</div>
+            <div style={{ fontSize: '13px', color: '#dc2626', marginTop: '4px' }}>Score: {q.worstDriver.avg_overall?.toFixed(1)} · {q.worstDriver.packages_total?.toLocaleString()} pkgs</div>
+          </div>
+        )}
+      </div>
+      {/* Metric tables 2x2 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <MetricTable title="CDF — Concession Defect" subtitle="Higher = worse (DPMO)" data={q?.byCDF} valueKey="avg_cdf" format={v => v?.toFixed(0) || '—'} colorFn={v => v > 500 ? '#dc2626' : v > 200 ? '#f59e0b' : '#16a34a'} />
+        <MetricTable title="DSB — Delivery Success" subtitle="Higher = worse (DPMO)" data={q?.byDSB} valueKey="avg_dsb" format={v => v?.toFixed(0) || '—'} colorFn={v => v > 500 ? '#dc2626' : v > 200 ? '#f59e0b' : '#16a34a'} />
+        <MetricTable title="DCR — Delivery Completion" subtitle="Lower = worse (%)" data={q?.byDCR} valueKey="avg_dcr" format={v => v != null ? v.toFixed(1) + '%' : '—'} colorFn={v => v < 95 ? '#dc2626' : v < 98 ? '#f59e0b' : '#16a34a'} />
+        <MetricTable title="POD — Proof of Delivery" subtitle="Lower = worse (%)" data={q?.byPOD} valueKey="avg_pod" format={v => v != null ? (v * 100).toFixed(1) + '%' : '—'} colorFn={v => v < 0.95 ? '#dc2626' : v < 0.98 ? '#f59e0b' : '#16a34a'} />
+      </div>
+    </div>
+  );
+}
+
+// ── Safety Analysis Tab ──────────────────────────────────────────────────────
+function SafetyTab({ period, setPeriod }) {
+  const { data: s, isLoading } = useQuery({
+    queryKey: ['safety-analysis', period],
+    queryFn: () => api.get(`/amazon-scorecard/safety-analysis?period=${period}`).then(r => r.data),
+    staleTime: 10 * 60 * 1000,
+  });
+  if (isLoading) return <p className="text-center text-slate-400 py-8">Loading safety analysis…</p>;
+  return (
+    <div>
+      <PeriodPills period={period} setPeriod={setPeriod} />
+      {/* Top offenders */}
+      <div style={{ marginBottom: '24px' }}>
+        <div style={{ fontSize: '14px', fontWeight: 700, color: '#1a2e4a', marginBottom: '12px' }}>🚨 Top Safety Offenders</div>
+        {s?.topOffenders?.slice(0, 5).map((d, i) => {
+          const issues = [d.had_speeding && 'Speeding', d.had_seatbelt && 'Seatbelt', d.had_distraction && 'Distraction', d.had_sign_signal && 'Sign/Signal', d.had_following_dist && 'Following Distance'].filter(Boolean);
+          return (
+            <div key={d.staff_id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', marginBottom: '6px', background: '#fef2f2', border: '1px solid #fecaca', borderLeft: '4px solid #dc2626', borderRadius: '8px' }}>
+              <span style={{ fontWeight: 800, color: '#dc2626', fontSize: '16px', minWidth: '24px' }}>#{i + 1}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, color: '#1a2e4a', fontSize: '13px' }}>{d.driver_name}</div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Issues: {issues.join(' · ') || 'None'}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#dc2626' }}>{d.avg_safety_overall?.toFixed(1)}</div>
+                <div style={{ fontSize: '10px', color: '#94a3b8' }}>avg score</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* Clean drivers */}
+      {s?.cleanDrivers?.length > 0 && (
+        <div style={{ marginBottom: '24px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '14px 16px' }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: '#16a34a', marginBottom: '8px' }}>✅ No Safety Events — {s.cleanDrivers.length} drivers</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {s.cleanDrivers.map(d => (
+              <span key={d.staff_id} style={{ background: '#dcfce7', color: '#166534', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 500 }}>{d.driver_name}</span>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Safety metric tables */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <MetricTable title="Speeding" subtitle="Lower = more events" data={s?.bySpeeding} valueKey="avg_speeding" format={v => v?.toFixed(1)} colorFn={v => v < 80 ? '#dc2626' : v < 95 ? '#f59e0b' : '#16a34a'} />
+        <MetricTable title="Seatbelt" subtitle="Lower = more events" data={s?.bySeatbelt} valueKey="avg_seatbelt" format={v => v?.toFixed(1)} colorFn={v => v < 80 ? '#dc2626' : v < 95 ? '#f59e0b' : '#16a34a'} />
+        <MetricTable title="Distraction" subtitle="Lower = more events" data={s?.byDistraction} valueKey="avg_distraction" format={v => v?.toFixed(1)} colorFn={v => v < 80 ? '#dc2626' : v < 95 ? '#f59e0b' : '#16a34a'} />
+        <MetricTable title="Sign & Signal" subtitle="Lower = more events" data={s?.bySignalViolation} valueKey="avg_sign_signal" format={v => v?.toFixed(1)} colorFn={v => v < 80 ? '#dc2626' : v < 95 ? '#f59e0b' : '#16a34a'} />
+        <MetricTable title="Following Distance" subtitle="Lower = more events" data={s?.byFollowingDistance} valueKey="avg_following_dist" format={v => v?.toFixed(1)} colorFn={v => v < 80 ? '#dc2626' : v < 95 ? '#f59e0b' : '#16a34a'} />
+      </div>
     </div>
   );
 }

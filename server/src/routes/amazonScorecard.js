@@ -410,4 +410,105 @@ router.get('/', async (req, res) => {
   res.json(rows);
 });
 
+// ── Quality & Safety Analysis ────────────────────────────────────────────────
+function buildAnalysis(rows) {
+  const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+  const map = {};
+  rows.forEach(r => {
+    if (!map[r.staff_id]) map[r.staff_id] = { staff_id: r.staff_id, driver_name: r.driver_name, weeks: 0, data: [] };
+    map[r.staff_id].weeks++;
+    map[r.staff_id].data.push(r);
+  });
+  return { map, avg };
+}
+
+router.get('/quality-analysis', async (req, res) => {
+  try {
+    const weeksBack = { weekly: 1, biweekly: 2, monthly: 4, '3months': 12 }[req.query.period] || 4;
+    const { rows } = await pool.query(`
+      SELECT staff_id, driver_name, week_label, dcr_score, pod_rate, cdf_revised, dsb_revised, final_ranking, packages
+      FROM amazon_scorecards
+      WHERE scorecard_type = 'final'
+        AND (year * 100 + amazon_week) >= (
+          SELECT MIN(year * 100 + amazon_week) FROM (
+            SELECT DISTINCT year, amazon_week FROM amazon_scorecards WHERE scorecard_type='final' ORDER BY year DESC, amazon_week DESC LIMIT $1
+          ) r)
+      ORDER BY driver_name
+    `, [weeksBack]);
+
+    const { map, avg } = buildAnalysis(rows);
+    const drivers = Object.values(map).map(d => {
+      const dcr = d.data.map(r => parseFloat(r.dcr_score)).filter(v => !isNaN(v));
+      const pod = d.data.map(r => parseFloat(r.pod_rate)).filter(v => !isNaN(v));
+      const cdf = d.data.map(r => parseFloat(r.cdf_revised)).filter(v => !isNaN(v));
+      const dsb = d.data.map(r => parseFloat(r.dsb_revised)).filter(v => !isNaN(v));
+      const overall = d.data.map(r => parseFloat(r.final_ranking)).filter(v => !isNaN(v));
+      return {
+        staff_id: d.staff_id, driver_name: d.driver_name, weeks_included: d.weeks,
+        packages_total: d.data.reduce((s, r) => s + (r.packages || 0), 0),
+        avg_dcr: avg(dcr), avg_pod: avg(pod), avg_cdf: avg(cdf), avg_dsb: avg(dsb), avg_overall: avg(overall),
+      };
+    });
+
+    const withOverall = drivers.filter(d => d.avg_overall !== null).sort((a, b) => b.avg_overall - a.avg_overall);
+    res.json({
+      period: req.query.period || 'monthly', totalDrivers: drivers.length,
+      topDriver: withOverall[0] || null,
+      worstDriver: withOverall[withOverall.length - 1] || null,
+      byCDF: [...drivers].filter(d => d.avg_cdf !== null).sort((a, b) => b.avg_cdf - a.avg_cdf),
+      byDSB: [...drivers].filter(d => d.avg_dsb !== null).sort((a, b) => b.avg_dsb - a.avg_dsb),
+      byPOD: [...drivers].filter(d => d.avg_pod !== null).sort((a, b) => a.avg_pod - b.avg_pod),
+      byDCR: [...drivers].filter(d => d.avg_dcr !== null).sort((a, b) => a.avg_dcr - b.avg_dcr),
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/safety-analysis', async (req, res) => {
+  try {
+    const weeksBack = { weekly: 1, biweekly: 2, monthly: 4, '3months': 12 }[req.query.period] || 4;
+    const { rows } = await pool.query(`
+      SELECT staff_id, driver_name, speeding_score, seatbelt_score, distraction_score, sign_signal_score, following_dist_score, safety_pass
+      FROM amazon_scorecards
+      WHERE scorecard_type = 'final'
+        AND (year * 100 + amazon_week) >= (
+          SELECT MIN(year * 100 + amazon_week) FROM (
+            SELECT DISTINCT year, amazon_week FROM amazon_scorecards WHERE scorecard_type='final' ORDER BY year DESC, amazon_week DESC LIMIT $1
+          ) r)
+      ORDER BY driver_name
+    `, [weeksBack]);
+
+    const { map, avg } = buildAnalysis(rows);
+    const drivers = Object.values(map).map(d => {
+      const sp = d.data.map(r => parseFloat(r.speeding_score)).filter(v => !isNaN(v));
+      const sb = d.data.map(r => parseFloat(r.seatbelt_score)).filter(v => !isNaN(v));
+      const di = d.data.map(r => parseFloat(r.distraction_score)).filter(v => !isNaN(v));
+      const ss = d.data.map(r => parseFloat(r.sign_signal_score)).filter(v => !isNaN(v));
+      const fd = d.data.map(r => parseFloat(r.following_dist_score)).filter(v => !isNaN(v));
+      const allScores = [...sp, ...sb, ...di, ...ss, ...fd];
+      return {
+        staff_id: d.staff_id, driver_name: d.driver_name, weeks_included: d.weeks,
+        safety_passes: d.data.filter(r => r.safety_pass).length,
+        all_weeks_safe: d.data.every(r => r.safety_pass),
+        avg_speeding: avg(sp), avg_seatbelt: avg(sb), avg_distraction: avg(di),
+        avg_sign_signal: avg(ss), avg_following_dist: avg(fd),
+        avg_safety_overall: avg(allScores),
+        had_speeding: sp.some(v => v < 100), had_seatbelt: sb.some(v => v < 100),
+        had_distraction: di.some(v => v < 100), had_sign_signal: ss.some(v => v < 100),
+        had_following_dist: fd.some(v => v < 100),
+      };
+    });
+
+    res.json({
+      period: req.query.period || 'monthly', totalDrivers: drivers.length,
+      topOffenders: [...drivers].filter(d => d.avg_safety_overall !== null).sort((a, b) => a.avg_safety_overall - b.avg_safety_overall).slice(0, 10),
+      cleanDrivers: drivers.filter(d => d.all_weeks_safe && d.avg_safety_overall === 100),
+      bySpeeding: [...drivers].filter(d => d.avg_speeding !== null).sort((a, b) => a.avg_speeding - b.avg_speeding),
+      bySeatbelt: [...drivers].filter(d => d.avg_seatbelt !== null).sort((a, b) => a.avg_seatbelt - b.avg_seatbelt),
+      byDistraction: [...drivers].filter(d => d.avg_distraction !== null).sort((a, b) => a.avg_distraction - b.avg_distraction),
+      bySignalViolation: [...drivers].filter(d => d.avg_sign_signal !== null).sort((a, b) => a.avg_sign_signal - b.avg_sign_signal),
+      byFollowingDistance: [...drivers].filter(d => d.avg_following_dist !== null).sort((a, b) => a.avg_following_dist - b.avg_following_dist),
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

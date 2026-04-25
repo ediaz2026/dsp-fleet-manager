@@ -1448,6 +1448,9 @@ function getSundayStr() {
   return sunday.toISOString().split('T')[0];
 }
 
+// Export sub-tab components for reuse in Performance page
+export { VolumeShareTab, CRTrackerTab };
+
 export default function Analytics() {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();

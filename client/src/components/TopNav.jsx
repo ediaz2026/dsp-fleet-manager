@@ -2,7 +2,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Bell, LogOut, User, LayoutDashboard, Calendar, ClipboardCheck,
   DollarSign, Car, Users, Search, Cpu, Settings,
-  ChevronDown, Star, Lock, AlertTriangle, X, BarChart2, Check, CalendarDays,
+  ChevronDown, Star, Lock, AlertTriangle, X, BarChart2, Check, CalendarDays, TrendingUp,
 } from 'lucide-react';
 import companyLogo from '../assets/logo.png';
 import { useState, useRef, useEffect, useMemo } from 'react';
@@ -18,6 +18,7 @@ const navGroups = [
   { to: '/drivers', icon: Users, label: 'Drivers', mgmtOnly: true },
   { to: '/vehicles', icon: Car, label: 'Fleet', mgmtOnly: true },
   { to: '/scorecard', icon: Star, label: 'Scorecard' },
+  { to: '/performance', icon: TrendingUp, label: 'Performance', managerOnly: true },
   { to: '/attendance', icon: ClipboardCheck, label: 'Attendance', adminOnly: true },
   { to: '/analytics', icon: BarChart2, label: 'Analytics', managerOnly: true },
   { to: '/payroll', icon: DollarSign, label: 'Payroll', adminOnly: true },

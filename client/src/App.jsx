@@ -16,6 +16,7 @@ import Management from './pages/Management';
 import OperationalPlanner from './pages/OperationalPlanner';
 import Scorecard from './pages/Scorecard';
 import Analytics from './pages/Analytics';
+import Performance from './pages/Performance';
 import DriverSchedule from './pages/DriverSchedule';
 import DriverAttendance from './pages/DriverAttendance';
 import ChangePassword from './pages/ChangePassword';
@@ -82,6 +83,7 @@ export default function App() {
           <Route path="settings" element={<RequireAuth allowedRoles={['admin']}><Settings /></RequireAuth>} />
           <Route path="management" element={<RequireAuth allowedRoles={['admin']}><Management /></RequireAuth>} />
           <Route path="scorecard" element={<Scorecard />} />
+          <Route path="performance" element={<RequireAuth allowedRoles={['admin', 'manager']}><Performance /></RequireAuth>} />
           <Route path="analytics" element={<Analytics />} />
         </Route>
 

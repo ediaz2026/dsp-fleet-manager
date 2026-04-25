@@ -1108,6 +1108,7 @@ const TABS = [
   { id: 'rescue',        label: 'Rescue',              icon: AlertTriangle  },
   { id: 'daily-summary', label: 'Daily Routes Summary', icon: ClipboardList },
   { id: 'raffle',        label: '🎟 Raffle',            icon: Gift           },
+  { id: 'cr-tracker',   label: '📊 CR Tracker',        icon: BarChart2      },
 ];
 
 // ══ SUB-SECTION 6: RAFFLE ═══════════════════════════════════════════════════
@@ -1238,6 +1239,184 @@ function RaffleTab() {
   );
 }
 
+// ══ SUB-SECTION 7: CR TRACKER ═══════════════════════════════════════════════
+function CRDayRow({ day, onSave }) {
+  const [form, setForm] = useState({
+    route_target: day.route_target ?? '', available_capacity: day.available_capacity ?? '',
+    amazon_paid_cancels: day.amazon_paid_cancels || 0, dsp_dropped_routes: day.dsp_dropped_routes || 0,
+  });
+  const [saving, setSaving] = useState(false);
+  const rt = parseInt(form.route_target) || 0;
+  const flexUp = rt ? Math.ceil(rt * 1.05) : null;
+  const ac = parseInt(form.available_capacity) || 0;
+  const completed = day.completed_routes || 0;
+  const finalSched = day.final_scheduled || 0;
+  const amazonCancels = parseInt(form.amazon_paid_cancels) || 0;
+  const dspDropped = parseInt(form.dsp_dropped_routes) || 0;
+  let relTarget = null;
+  if (rt) {
+    if (completed > rt) relTarget = flexUp;
+    else if (finalSched < rt && ac && finalSched < ac) relTarget = finalSched;
+    else relTarget = rt;
+  }
+  const denom = (relTarget || 0) + dspDropped;
+  const cr = denom > 0 ? (completed + amazonCancels) / denom : null;
+  const d = new Date(day.date + 'T12:00:00');
+  const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const tdS = { padding: '8px 10px', borderBottom: '1px solid #e2e8f0', textAlign: 'center', fontSize: '13px' };
+  const inpS = { width: '60px', padding: '4px 6px', borderRadius: '4px', border: '1px solid #d1d5db', textAlign: 'center', fontSize: '13px' };
+  const save = async () => { setSaving(true); await onSave(day.date, form); setSaving(false); };
+  return (
+    <tr>
+      <td style={{ ...tdS, textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>{dayLabel}</td>
+      <td style={tdS}><input type="number" style={{ ...inpS, background: '#eff6ff' }} value={form.route_target} onChange={e => setForm(f => ({ ...f, route_target: e.target.value }))} /></td>
+      <td style={{ ...tdS, color: '#94a3b8' }}>{flexUp ?? '—'}</td>
+      <td style={tdS}><input type="number" style={inpS} value={form.available_capacity} onChange={e => setForm(f => ({ ...f, available_capacity: e.target.value }))} /></td>
+      <td style={tdS}>{finalSched || '—'}</td>
+      <td style={{ ...tdS, fontWeight: 700, color: '#2563eb' }}>{completed || '—'}</td>
+      <td style={tdS}><input type="number" style={{ ...inpS, width: '50px' }} value={form.amazon_paid_cancels} onChange={e => setForm(f => ({ ...f, amazon_paid_cancels: e.target.value }))} /></td>
+      <td style={tdS}><input type="number" style={{ ...inpS, width: '50px' }} value={form.dsp_dropped_routes} onChange={e => setForm(f => ({ ...f, dsp_dropped_routes: e.target.value }))} /></td>
+      <td style={{ ...tdS, fontWeight: 600, color: relTarget === finalSched && relTarget !== rt ? '#d97706' : '#374151' }}>{relTarget ?? '—'}</td>
+      <td style={{ ...tdS, fontWeight: 800, color: cr === null ? '#94a3b8' : cr >= 1 ? '#16a34a' : '#dc2626' }}>
+        {cr !== null ? (cr * 100).toFixed(1) + '%' : '—'}
+      </td>
+      <td style={tdS}>
+        <button onClick={save} disabled={saving} style={{ padding: '4px 10px', borderRadius: '4px', border: 'none', background: '#2563eb', color: 'white', fontSize: '11px', fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.5 : 1 }}>
+          {saving ? '...' : '💾'}
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function CRTrackerTab() {
+  const qc = useQueryClient();
+  const [weekOffset, setWeekOffset] = useState(0);
+  const currentWeekNum = getWeek(new Date(), { weekStartsOn: 0, firstWeekContainsDate: 1 });
+  const currentYear = new Date().getFullYear();
+  const wk = currentWeekNum + weekOffset;
+  const weekStr = `${currentYear}-W${wk}`;
+
+  const { data: crData, isLoading } = useQuery({
+    queryKey: ['cr-tracker', weekStr],
+    queryFn: () => api.get(`/cr-tracker?week=${weekStr}`).then(r => r.data),
+  });
+  const { data: trailing = [] } = useQuery({
+    queryKey: ['cr-trailing'],
+    queryFn: () => api.get('/cr-tracker/trailing?weeks=12').then(r => r.data),
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const handleSave = async (date, form) => {
+    await api.put(`/cr-tracker/${date}`, form);
+    qc.invalidateQueries({ queryKey: ['cr-tracker', weekStr] });
+    qc.invalidateQueries({ queryKey: ['cr-trailing'] });
+    toast.success('Saved');
+  };
+
+  const weekRange = crData ? `${new Date(crData.startDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(crData.endDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '';
+  const thS = { padding: '10px 8px', textAlign: 'center', fontSize: '11px', fontWeight: 700, letterSpacing: '0.3px', whiteSpace: 'nowrap' };
+  const tdS = { padding: '8px 10px', borderBottom: '1px solid #e2e8f0', textAlign: 'center', fontSize: '13px' };
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1a2e4a' }}>📊 Capacity Reliability Tracker</h2>
+          <p style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>CR = (Completed + Amazon Cancels) / (Reliability Target + DSP Dropped)</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button onClick={() => setWeekOffset(o => o - 1)} className="p-2 rounded-lg border bg-white hover:bg-slate-50"><ChevronLeft size={16} /></button>
+          <span style={{ fontWeight: 600, fontSize: '14px', minWidth: '180px', textAlign: 'center' }}>Week {wk} · {weekRange}</span>
+          <button onClick={() => setWeekOffset(o => o + 1)} className="p-2 rounded-lg border bg-white hover:bg-slate-50"><ChevronRight size={16} /></button>
+        </div>
+      </div>
+
+      {/* Weekly CR badge */}
+      {crData?.totals?.weeklyCR != null && (
+        <div style={{
+          background: crData.totals.weeklyCR >= 1 ? '#f0fdf4' : '#fef2f2',
+          border: `2px solid ${crData.totals.weeklyCR >= 1 ? '#22c55e' : '#ef4444'}`,
+          borderRadius: '12px', padding: '16px 24px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Week {wk} CR Score</div>
+            <div style={{ fontSize: '36px', fontWeight: 800, color: crData.totals.weeklyCR >= 1 ? '#16a34a' : '#dc2626' }}>
+              {(crData.totals.weeklyCR * 100).toFixed(2)}%
+            </div>
+          </div>
+          <div style={{ textAlign: 'right', fontSize: '12px', color: '#64748b' }}>
+            <div>Completed: {crData.totals.totalCompleted} routes</div>
+            <div>Target: {crData.totals.totalReliabilityTarget} routes</div>
+            <div>Dropped: {crData.totals.totalDspDropped}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Daily table */}
+      {isLoading && <p className="text-center text-content-muted py-6">Loading…</p>}
+      {!isLoading && crData && (
+        <div style={{ overflowX: 'auto', background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#1a2e4a', color: 'white' }}>
+                <th style={{ ...thS, textAlign: 'left' }}>Date</th>
+                <th style={thS}>Route Target</th>
+                <th style={thS}>Flex-up</th>
+                <th style={thS}>Avail. Cap.</th>
+                <th style={thS}>Final Sched.</th>
+                <th style={thS}>Completed</th>
+                <th style={thS}>Amz Cancels</th>
+                <th style={thS}>DSP Dropped</th>
+                <th style={thS}>Rel. Target</th>
+                <th style={thS}>CR Score</th>
+                <th style={thS}>Save</th>
+              </tr>
+            </thead>
+            <tbody>
+              {crData.days.map(day => <CRDayRow key={day.date} day={day} onSave={handleSave} />)}
+            </tbody>
+            <tfoot>
+              <tr style={{ background: '#f8fafc', fontWeight: 700, borderTop: '2px solid #1a2e4a' }}>
+                <td style={{ ...tdS, textAlign: 'left' }}>Total</td>
+                <td style={tdS}>—</td><td style={tdS}>—</td><td style={tdS}>—</td><td style={tdS}>—</td>
+                <td style={{ ...tdS, color: '#2563eb' }}>{crData.totals.totalCompleted}</td>
+                <td style={tdS}>{crData.totals.totalAmazonCancels}</td>
+                <td style={tdS}>{crData.totals.totalDspDropped}</td>
+                <td style={tdS}>{crData.totals.totalReliabilityTarget}</td>
+                <td style={{ ...tdS, fontWeight: 800, color: crData.totals.weeklyCR >= 1 ? '#16a34a' : '#dc2626' }}>
+                  {crData.totals.weeklyCR ? (crData.totals.weeklyCR * 100).toFixed(2) + '%' : '—'}
+                </td>
+                <td style={tdS}></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {/* Trailing 12-week chart */}
+      {trailing.length > 0 && (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px 24px' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#1a2e4a', marginBottom: '16px' }}>📈 Trailing 12-Week CR Performance</h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={trailing.filter(w => w.cr != null).map(w => ({ week: `W${w.weekNum}`, cr: parseFloat((w.cr * 100).toFixed(1)), fill: w.cr >= 1 ? '#22c55e' : '#ef4444' }))} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+              <XAxis dataKey="week" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}%`} domain={[80, 120]} />
+              <Tooltip formatter={v => [`${v}%`, 'CR Score']} />
+              <ReferenceLine y={100} stroke="#64748b" strokeDasharray="4 2" label={{ value: '100% Target', position: 'right', fontSize: 9, fill: '#64748b' }} />
+              <Bar dataKey="cr" radius={[4, 4, 0, 0]}>
+                {trailing.filter(w => w.cr != null).map((w, i) => <Cell key={i} fill={w.cr >= 1 ? '#22c55e' : '#ef4444'} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Daily Routes Summary row config ──────────────────────────────────────────
 const SUMMARY_ROWS = [
   { key: 'okami_l',              label: 'C — Route Commitment',   field: 'okami_count',    manual: true,  color: 'bg-blue-50' },
@@ -1274,12 +1453,12 @@ export default function Analytics() {
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    return t && ['volume', 'routes', 'performance', 'rescue', 'daily-summary', 'raffle'].includes(t) ? t : 'volume';
+    return t && ['volume', 'routes', 'performance', 'rescue', 'daily-summary', 'raffle', 'cr-tracker'].includes(t) ? t : 'volume';
   });
 
   useEffect(() => {
     const t = searchParams.get('tab');
-    if (t && t !== tab && ['volume', 'routes', 'performance', 'rescue', 'daily-summary', 'raffle'].includes(t)) setTab(t);
+    if (t && t !== tab && ['volume', 'routes', 'performance', 'rescue', 'daily-summary', 'raffle', 'cr-tracker'].includes(t)) setTab(t);
   }, [searchParams]);
 
   // Daily Routes Summary state
@@ -1432,6 +1611,7 @@ export default function Analytics() {
       )}
 
       {tab === 'raffle' && <RaffleTab />}
+      {tab === 'cr-tracker' && <CRTrackerTab />}
     </div>
   );
 }

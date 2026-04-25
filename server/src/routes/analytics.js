@@ -408,7 +408,7 @@ router.get('/daily-routes-summary', async (req, res) => {
     const weekEnd = weDate.toISOString().split('T')[0];
 
     // Run all queries in parallel
-    const [asgnRes, routesRes, pickRes, manualRes] = await Promise.all([
+    const [asgnRes, routesRes, pickRes, manualRes, targetsRes] = await Promise.all([
       // Scheduled drivers, helpers, extras from ops_assignments
       pool.query(`
         SELECT plan_date,
@@ -450,6 +450,12 @@ router.get('/daily-routes-summary', async (req, res) => {
         SELECT * FROM daily_routes_manual
         WHERE plan_date BETWEEN $1 AND $2 AND station = $3
       `, [week_start, weekEnd, station]),
+
+      // Route targets (Okami) from shared table
+      pool.query(`
+        SELECT target_date, route_target FROM route_targets
+        WHERE target_date BETWEEN $1 AND $2
+      `, [week_start, weekEnd]).catch(() => ({ rows: [] })),
     ]);
 
     // Index results by date string
@@ -466,6 +472,7 @@ router.get('/daily-routes-summary', async (req, res) => {
     const routesMap = byDate(routesRes.rows);
     const pickMap = byDate(pickRes.rows);
     const manualMap = byDate(manualRes.rows);
+    const targetsMap = byDate(targetsRes.rows, 'target_date');
 
     // Build 7 day objects
     const days = [];
@@ -489,6 +496,7 @@ router.get('/daily-routes-summary', async (req, res) => {
       const r = routesMap[dateStr] || {};
       const p = pickMap[dateStr] || {};
       const m = manualMap[dateStr] || {};
+      const tgt = targetsMap[dateStr] || {};
 
       const D = parseInt(a.scheduled_d) || 0;
       const H = parseInt(a.helpers_h) || 0;
@@ -496,7 +504,8 @@ router.get('/daily-routes-summary', async (req, res) => {
       const E = parseInt(r.cortex_no_flex_e) || 0;
       const F = parseInt(r.flex_f) || 0;
       const G = parseInt(r.hza_g) || 0;
-      const L = parseInt(m.okami_count) || 0;
+      // Route commitment: manual entry first, then route_targets table
+      const L = parseInt(m.okami_count) || parseInt(tgt.route_target) || 0;
       const M = parseInt(m.amazon_canceled) || 0;
       const Q = parseInt(m.wst_completed) || 0;
       const R = parseInt(m.wst_cancelled) || 0;

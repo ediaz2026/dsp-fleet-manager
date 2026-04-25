@@ -353,6 +353,12 @@ export default function WeeklySchedule() {
       .then(r => r.data?.[0] || null),
   });
 
+  const { data: routeTargetsWeek = [] } = useQuery({
+    queryKey: ['route-targets', weekStartStr, fetchEndStr],
+    queryFn: () => api.get('/route-targets', { params: { start: weekStartStr, end: fetchEndStr } }).then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const { data: driverHours = [] } = useQuery({
     queryKey: ['driver-hours', weekStartStr],
     queryFn: () => api.get('/schedule/hours', { params: { week_start: weekStartStr } }).then(r => r.data),
@@ -2645,11 +2651,18 @@ export default function WeeklySchedule() {
       {/* ═══ FIXED BOTTOM SUMMARY BAR — R/RC per day ═════════════════════════ */}
       {dayColRects.length === 7 && (() => {
         const dailyTargets = routeCommitment?.daily_targets || {};
+        // Build route_targets lookup: { "2026-04-25": 42 }
+        const rtMap = {};
+        for (const t of routeTargetsWeek) {
+          const ds = typeof t.target_date === 'string' ? t.target_date.slice(0,10) : t.target_date;
+          rtMap[ds] = t.route_target;
+        }
         const dayData = weekDays.map(d => {
           const dateStr = format(d, 'yyyy-MM-dd');
           const ds = daySummary[dateStr] || {};
           const r   = (ds['EDV'] || 0) + (ds['STEP VAN'] || 0) + (ds['HELPER'] || 0) + (ds['EXTRA'] || 0);
-          const rc  = dailyTargets[dateStr] != null ? parseInt(dailyTargets[dateStr]) : null;
+          // Route commitment: legacy daily_targets first, then route_targets table
+          const rc  = dailyTargets[dateStr] != null ? parseInt(dailyTargets[dateStr]) : (rtMap[dateStr] != null ? rtMap[dateStr] : null);
           return { dateStr, r, rc, edv: ds['EDV']||0, sv: ds['STEP VAN']||0, h: ds['HELPER']||0, e: ds['EXTRA']||0 };
         });
         const weeklyR    = dayData.reduce((s, d) => s + d.r, 0);

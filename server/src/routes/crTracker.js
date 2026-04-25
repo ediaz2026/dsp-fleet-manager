@@ -2,6 +2,19 @@ const router = require('express').Router();
 const pool   = require('../db/pool');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 
+// TEMP: seed before auth — remove after use
+router.post('/seed', async (req, res) => {
+  try {
+    await pool.query(`
+      INSERT INTO cr_tracker (plan_date, route_target, available_capacity, amazon_paid_cancels, dsp_dropped_routes)
+      VALUES ('2026-04-12',25,31,0,0),('2026-04-13',42,50,0,0),('2026-04-14',41,49,0,0),
+             ('2026-04-15',40,49,0,0),('2026-04-16',40,49,0,0),('2026-04-17',40,49,0,0),('2026-04-18',27,37,0,0)
+      ON CONFLICT (plan_date) DO UPDATE SET route_target=EXCLUDED.route_target, available_capacity=EXCLUDED.available_capacity
+    `);
+    res.json({ seeded: 7 });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.use(authMiddleware);
 
 function fmtDate(d) {
@@ -154,22 +167,6 @@ router.get('/trailing', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
-
-// TEMP: seed Week 16 data — remove after use
-router.post('/seed', async (req, res) => {
-  try {
-    await pool.query(`
-      INSERT INTO cr_tracker (plan_date, route_target, available_capacity, amazon_paid_cancels, dsp_dropped_routes)
-      VALUES
-        ('2026-04-12', 25, 31, 0, 0), ('2026-04-13', 42, 50, 0, 0), ('2026-04-14', 41, 49, 0, 0),
-        ('2026-04-15', 40, 49, 0, 0), ('2026-04-16', 40, 49, 0, 0), ('2026-04-17', 40, 49, 0, 0),
-        ('2026-04-18', 27, 37, 0, 0)
-      ON CONFLICT (plan_date) DO UPDATE SET
-        route_target = EXCLUDED.route_target, available_capacity = EXCLUDED.available_capacity
-    `);
-    res.json({ seeded: 7 });
-  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

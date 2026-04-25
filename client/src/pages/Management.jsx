@@ -77,6 +77,92 @@ const SIDEBAR = [
 ];
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
+function RouteTargetsSection() {
+  const qc = useQueryClient();
+  const [targets, setTargets] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  // 3 weeks forward from current Sunday
+  const today = new Date();
+  const sun = new Date(today); sun.setDate(today.getDate() - today.getDay());
+  const dates = [];
+  for (let i = 0; i < 21; i++) { const d = new Date(sun); d.setDate(sun.getDate() + i); dates.push(d.toISOString().split('T')[0]); }
+  const startDate = dates[0], endDate = dates[dates.length - 1];
+
+  const { data: existing = [] } = useQuery({
+    queryKey: ['route-targets', startDate, endDate],
+    queryFn: () => api.get('/route-targets', { params: { start: startDate, end: endDate } }).then(r => r.data),
+  });
+
+  useEffect(() => {
+    const m = {};
+    for (const t of existing) { const ds = typeof t.target_date === 'string' ? t.target_date.slice(0,10) : t.target_date.toISOString().slice(0,10); m[ds] = { route_target: t.route_target, notes: t.notes || '' }; }
+    setTargets(m);
+  }, [existing]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const arr = Object.entries(targets).filter(([, v]) => v.route_target).map(([date, v]) => ({ date, route_target: parseInt(v.route_target), notes: v.notes || null }));
+    await api.post('/route-targets', { targets: arr });
+    qc.invalidateQueries({ queryKey: ['route-targets'] });
+    qc.invalidateQueries({ queryKey: ['cr-tracker'] });
+    toast.success(`Saved ${arr.length} route targets`);
+    setSaving(false);
+  };
+
+  const todayStr = today.toISOString().split('T')[0];
+  const CARD = 'bg-white border border-[#E2E8F0] rounded-xl shadow-sm p-5 space-y-4';
+
+  return (
+    <section className={CARD}>
+      <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+        <div>
+          <h2 className="text-[16px] font-bold text-[#1E3A5F]">📅 Route Targets (Okami)</h2>
+          <p className="text-xs text-[#6B7280] mt-1">Enter targets for 3 weeks. CR Tracker, Daily Summary, and Schedule all read from here.</p>
+        </div>
+        <button onClick={handleSave} disabled={saving} className="btn-primary text-sm">
+          <Save size={14} /> {saving ? 'Saving…' : 'Save Targets'}
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-slate-200 bg-slate-50">
+            <th className="text-left px-3 py-2 text-xs font-semibold text-slate-500">Date</th>
+            <th className="text-left px-3 py-2 text-xs font-semibold text-slate-500">Day</th>
+            <th className="text-center px-3 py-2 text-xs font-semibold text-slate-500">Route Target</th>
+            <th className="text-center px-3 py-2 text-xs font-semibold text-slate-500">Flex-up (auto)</th>
+            <th className="text-left px-3 py-2 text-xs font-semibold text-slate-500">Notes</th>
+          </tr></thead>
+          <tbody>
+            {dates.map(ds => {
+              const d = new Date(ds + 'T12:00:00');
+              const isT = ds === todayStr;
+              const val = targets[ds]?.route_target || '';
+              const notes = targets[ds]?.notes || '';
+              const flex = val ? Math.ceil(parseInt(val) * 1.05) : null;
+              return (
+                <tr key={ds} className={isT ? 'bg-blue-50' : ''} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td className="px-3 py-2" style={{ fontWeight: isT ? 700 : 400 }}>{format(d, 'MMM d')}</td>
+                  <td className="px-3 py-2 text-slate-500">{format(d, 'EEE')}</td>
+                  <td className="px-3 py-2 text-center">
+                    <input type="number" min="0" max="100" value={val} onChange={e => setTargets(prev => ({ ...prev, [ds]: { ...prev[ds], route_target: e.target.value } }))}
+                      className="w-16 text-center border border-slate-200 rounded px-2 py-1 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none" placeholder="—" />
+                  </td>
+                  <td className="px-3 py-2 text-center text-slate-400 text-xs">{flex ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    <input type="text" value={notes} onChange={e => setTargets(prev => ({ ...prev, [ds]: { ...prev[ds], notes: e.target.value } }))}
+                      className="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Optional note…" />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function AnnouncementsSection({ CARD, SH, FL }) {
   const [msg, setMsg] = useState('');
   const [expiry, setExpiry] = useState('');
@@ -707,6 +793,9 @@ export default function Management() {
                 <Save size={16} /> {saveSettings.isPending ? 'Saving…' : 'Save'}
               </button>
             </section>
+
+            {/* ── Route Targets (Okami) ────────────────────────────── */}
+            <RouteTargetsSection />
           </>
         )}
 

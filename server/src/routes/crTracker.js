@@ -29,9 +29,14 @@ router.get('/', async (req, res) => {
     const week = req.query.week || `${new Date().getFullYear()}-W${Math.ceil((new Date() - new Date(new Date().getFullYear(), 0, 1)) / 604800000)}`;
     const { start, end, weekNum, year } = getWeekRange(week);
 
-    // Manual entries
+    // Manual entries from cr_tracker
     const { rows: manualRows } = await pool.query(
       `SELECT * FROM cr_tracker WHERE plan_date BETWEEN $1 AND $2 ORDER BY plan_date`, [start, end]
+    );
+
+    // Route targets from the shared route_targets table (primary source)
+    const { rows: targetRows } = await pool.query(
+      `SELECT target_date, route_target, CEIL(route_target * 1.05)::int AS flex_up_target FROM route_targets WHERE target_date BETWEEN $1 AND $2`, [start, end]
     );
 
     // Completed routes from dsp_volume_share (LSMD column)
@@ -56,10 +61,12 @@ router.get('/', async (req, res) => {
     while (cur <= endD) {
       const ds = fmtDate(cur);
       const manual = manualRows.find(r => fmtDate(r.plan_date) === ds) || {};
+      const target = targetRows.find(r => fmtDate(r.target_date) === ds);
       const vol = volRows.find(r => fmtDate(r.plan_date) === ds);
       const sched = schedRows.find(r => fmtDate(r.shift_date) === ds);
 
-      const routeTarget = manual.route_target || null;
+      // Route target: route_targets table first, cr_tracker fallback
+      const routeTarget = target?.route_target || manual.route_target || null;
       const flexUp = routeTarget ? Math.ceil(routeTarget * 1.05) : null;
       const availCap = manual.available_capacity || null;
       const completed = vol?.completed_routes || 0;

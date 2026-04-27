@@ -1,10 +1,8 @@
 import { useState } from 'react';
-import { VolumeShareTab, CRTrackerTab } from './Analytics';
-import { useNavigate } from 'react-router-dom';
+import { VolumeShareTab, CRTrackerTab, DailyRoutesSummaryTab } from './Analytics';
 
 export default function Performance() {
   const [activeTab, setActiveTab] = useState('volume-share');
-  const navigate = useNavigate();
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: '1400px', margin: '0 auto' }}>
@@ -13,7 +11,6 @@ export default function Performance() {
         Volume share, daily routes, and capacity reliability
       </p>
 
-      {/* Tab row */}
       <div style={{ display: 'flex', gap: '4px', borderBottom: '2px solid #e2e8f0', marginBottom: '24px' }}>
         {[
           { id: 'volume-share', label: '📊 Volume Share' },
@@ -28,29 +25,8 @@ export default function Performance() {
         ))}
       </div>
 
-      {/* Tab content */}
       {activeTab === 'volume-share' && <VolumeShareTab />}
-      {activeTab === 'daily-routes' && (
-        <div>
-          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-            <p style={{ fontSize: '15px', color: '#374151', fontWeight: 600, marginBottom: '12px' }}>
-              Daily Routes Summary
-            </p>
-            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
-              The full Daily Routes Summary with editable fields is available in Analytics.
-            </p>
-            <button
-              onClick={() => navigate('/analytics?tab=daily-summary')}
-              style={{
-                padding: '10px 24px', background: '#1a2e4a', color: 'white', border: 'none',
-                borderRadius: '8px', fontWeight: 600, fontSize: '14px', cursor: 'pointer',
-              }}
-            >
-              Open Daily Routes Summary →
-            </button>
-          </div>
-        </div>
-      )}
+      {activeTab === 'daily-routes' && <DailyRoutesSummaryTab />}
       {activeTab === 'cr-tracker' && <CRTrackerTab />}
     </div>
   );

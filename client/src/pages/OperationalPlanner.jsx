@@ -15,6 +15,13 @@ import { format, addDays, subDays, parseISO } from 'date-fns';
 // Shift types that should never appear in Ops Planner
 const OPS_EXCLUDED_TYPES = new Set(['ON CALL', 'UTO', 'PTO', 'SUSPENSION', 'TRAINING', 'TRAINER']);
 
+// Cycle classification
+function getCycle(shiftType) {
+  if (shiftType === 'EDV-C0') return 'c0';
+  if (shiftType === 'EDV-C2') return 'c2';
+  return 'c1'; // EDV, EDV-C1, STEP VAN, HELPER, EXTRA
+}
+
 // ══ SHIFT TYPE MAPPING ════════════════════════════════════════════════════════
 const AMAZON_DST_MAP = {
   'STANDARD PARCEL ELECTRIC - RIVIAN MEDIUM':             'EDV',
@@ -1793,6 +1800,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   const planDate    = planDateProp    ?? standaloneDate;
   const onDateChange = onDateChangeProp ?? setStandaloneDate;
   const [opsMode, setOpsMode] = useState('ops'); // 'ops' | 'rts'
+  const [cycleFilter, setCycleFilter] = useState('all'); // 'all' | 'c0' | 'c1' | 'c2'
   const [uploading, setUploading]   = useState({}); // { step1: bool, step2: bool, step3: bool }
   const [showDatePicker, setShowDatePicker] = useState(false);
   const datePickerRef = useRef(null);
@@ -2769,6 +2777,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       const attCategories = { callOuts: [], ncns: [], lates: [], sentHome: [], training: [], trainer: [] };
 
       for (const row of allRows) {
+        // Apply cycle filter to export
+        if (cycleFilter !== 'all' && getCycle(row.shiftType) !== cycleFilter) continue;
         const staffId = row.profile?.staff_id;
         const asgn = row.asgn || {};
         const shift = row.internalShift;
@@ -3269,7 +3279,11 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       );
     };
 
-    const rows = sortedRows.filter(r => r.shiftType !== 'DISPATCH AM' && r.shiftType !== 'DISPATCH PM');
+    const rows = sortedRows.filter(r => {
+      if (r.shiftType === 'DISPATCH AM' || r.shiftType === 'DISPATCH PM') return false;
+      if (cycleFilter !== 'all' && getCycle(r.shiftType) !== cycleFilter) return false;
+      return true;
+    });
 
     return (
       <div className="space-y-2">
@@ -3671,7 +3685,30 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
       })()}
 
       {/* ── Summary bar ──────────────────────────────────────────────────── */}
-      {hasAnyData && (
+      {hasAnyData && (<>
+        {/* Cycle filter pills */}
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '6px' }}>
+          {[
+            { label: 'All Cycles', value: 'all', color: '#1a2e4a' },
+            { label: '⚡ C0 — Early', value: 'c0', color: '#0ea5e9' },
+            { label: '🔵 C1 — Mid', value: 'c1', color: '#2563eb' },
+            { label: '🟣 C2 — Late', value: 'c2', color: '#7c3aed' },
+          ].map(opt => {
+            const cnt = opt.value === 'all' ? null : sortedRows.filter(r => r.shiftType !== 'DISPATCH AM' && r.shiftType !== 'DISPATCH PM' && getCycle(r.shiftType) === opt.value).length;
+            return (
+              <button key={opt.value} onClick={() => setCycleFilter(opt.value)} style={{
+                padding: '4px 12px', borderRadius: '16px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap',
+                border: `1px solid ${cycleFilter === opt.value ? opt.color : '#e2e8f0'}`,
+                background: cycleFilter === opt.value ? opt.color : 'white',
+                color: cycleFilter === opt.value ? 'white' : '#374151',
+              }}>
+                {opt.label}
+                {cnt !== null && <span style={{ marginLeft: '5px', background: cycleFilter === opt.value ? 'rgba(255,255,255,0.25)' : '#f1f5f9', color: cycleFilter === opt.value ? 'white' : '#64748b', borderRadius: '10px', padding: '0 6px', fontSize: '11px' }}>{cnt}</span>}
+              </button>
+            );
+          })}
+        </div>
+
         <SummaryBar>
           <span className="font-semibold text-content">Blocks: {summaryCounts.totalBlocks}</span>
           {/* Routes X/Y — green when all assigned, red when some are missing */}
@@ -3770,7 +3807,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             ? <span className="ml-auto text-red-500 font-semibold">{summaryCounts.flags} flag{summaryCounts.flags !== 1 ? 's' : ''}</span>
             : hasAnyData && <span className="ml-auto text-emerald-600 font-semibold">✅ All matched</span>}
         </SummaryBar>
-      )}
+      </>)}
 
 
       {/* ── Unassigned Routes Popup ──────────────────────────────────────── */}

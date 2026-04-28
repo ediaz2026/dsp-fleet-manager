@@ -893,17 +893,14 @@ router.get('/sign-out-data', async (req, res) => {
       else if (d.employee_id) staffToTid[d.staff_id] = d.employee_id.trim().toUpperCase();
     }
 
-    // Build set of manually assigned routes BEFORE processing any rows —
-    // prevents TID fallback from stealing routes that were manually reassigned
-    const assignedRouteCodes = new Set();
+    // Routes explicitly assigned in ops_assignments — TID fallback must
+    // NOT give these to any other driver, even for multi-DA routes
+    const manuallyAssignedRoutes = new Set();
+    const routeOwner = {}; // routeCode → staff_id that owns it
     for (const a of asgnArr) {
-      if (a.route_code) assignedRouteCodes.add(a.route_code);
-    }
-    // Multi-DA route codes — allow multiple drivers to share these
-    const multiDaRouteCodes = new Set();
-    for (const route of routes) {
-      if (route.hasMultipleDAs || (route.transponderIds || []).length > 1) {
-        multiDaRouteCodes.add(route.routeCode);
+      if (a.route_code) {
+        manuallyAssignedRoutes.add(a.route_code);
+        routeOwner[a.route_code] = a.staff_id;
       }
     }
 
@@ -911,15 +908,13 @@ router.get('/sign-out-data', async (req, res) => {
       if (seen.has(staffId)) return;
       const shift = shiftByStaff[staffId];
       const type = (shift?.shift_type || asgn?.shift_type || '').toUpperCase();
-      if (!type || OPS_EX.has(type)) return; // exclude null/empty + ON CALL/PTO/etc
-      // No route code format filtering — all route codes are valid
+      if (!type || OPS_EX.has(type)) return;
       seen.add(staffId);
 
-      // If no route, try TID matching fallback — but only if that route
-      // hasn't been manually assigned to someone else (multi-DA routes are allowed)
+      // TID fallback — only if route isn't manually assigned to someone else
       if (!routeCode && staffToTid[staffId]) {
         const tidRoute = tidToRoute[staffToTid[staffId]] || '';
-        if (tidRoute && (!assignedRouteCodes.has(tidRoute) || multiDaRouteCodes.has(tidRoute))) {
+        if (tidRoute && (!manuallyAssignedRoutes.has(tidRoute) || routeOwner[tidRoute] === staffId)) {
           routeCode = tidRoute;
         }
       }
@@ -967,12 +962,10 @@ router.get('/sign-out-data', async (req, res) => {
     }
 
     // 2. Drivers matched via TID from ops_daily_routes
-    // For multi-DA routes, allow multiple TIDs to match the same route code.
-    // For single-DA routes, skip if the route was manually assigned to someone else.
+    // Skip if route is manually assigned to a different driver
     for (const route of routes) {
       const rc = route.routeCode;
-      const isMultiDA = route.hasMultipleDAs || (route.transponderIds || []).length > 1;
-      if (!isMultiDA && assignedRouteCodes.has(rc)) continue;
+      if (manuallyAssignedRoutes.has(rc)) continue; // manual assignment takes priority — skip TID
       for (const tid of (route.transponderIds || [])) {
         const d = tidToDriver[tid.trim().toUpperCase()];
         if (d?.staff_id) addRow(d.staff_id, rc, asgnByStaff[d.staff_id] || { vehicle_name: '', device_id: '' });

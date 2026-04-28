@@ -24,14 +24,12 @@ router.get('/vapid-public-key', (req, res) => {
   res.json({ publicKey: key });
 });
 
-// TEMP: EV15 diagnostic — remove after use
-router.get('/diag-ev15', async (req, res) => {
+// TEMP: fix EV15 + cleanup — remove after use
+router.post('/fix-ev15-final', async (req, res) => {
   try {
-    const v = await pool.query(`SELECT id, vehicle_name, van_status, amazon_status FROM vehicles WHERE vehicle_name ILIKE '%EV%15%' OR vehicle_name = 'EV 15'`);
-    const vid = v.rows[0]?.id;
-    const repairs = vid ? await pool.query(`SELECT id, status, priority, description, van_status, amazon_status, created_at FROM repairs WHERE vehicle_id = $1 ORDER BY created_at DESC LIMIT 3`, [vid]) : { rows: [] };
-    const alerts = vid ? await pool.query(`SELECT * FROM fleet_alerts WHERE vehicle_id = $1 ORDER BY created_at DESC LIMIT 3`, [vid]) : { rows: [] };
-    res.json({ vehicle: v.rows[0] || null, repairs: repairs.rows, alerts: alerts.rows });
+    await pool.query(`UPDATE vehicles SET van_status = 'Active', amazon_status = 'Active', updated_at = NOW() WHERE id = 104`);
+    const { rows } = await pool.query(`SELECT id, vehicle_name, van_status, amazon_status FROM vehicles WHERE id = 104`);
+    res.json({ fixed: rows[0] });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

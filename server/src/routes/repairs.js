@@ -86,10 +86,8 @@ router.post('/', managerOnly, async (req, res) => {
        scheduled_date || null, vendor || null, req.user.id]
     );
 
-    // Sync vehicle status to vehicles table
-    if (van_status === 'inactive' || amazon_status === 'grounded') {
-      await syncVehicleStatus(client, vehicle_id, van_status, amazon_status);
-    }
+    // Creating a repair only logs the issue — does NOT change vehicle status.
+    // Status changes happen via explicit "Mark Out of Service" or repair completion.
 
     await client.query('COMMIT');
 
@@ -134,8 +132,7 @@ router.put('/:id', managerOnly, async (req, res) => {
     );
     if (!rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Not found' }); }
 
-    // Sync vehicle status to vehicles table
-    await syncVehicleStatus(client, vehicle_id, van_status, amazon_status);
+    // Editing a repair only updates the repair record — does NOT change vehicle status.
 
     await client.query('COMMIT');
     res.json(rows[0]);

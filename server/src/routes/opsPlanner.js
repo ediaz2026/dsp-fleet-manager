@@ -298,4 +298,43 @@ router.post('/remove-driver', authMiddleware, async (req, res) => {
   res.json(rows[0]);
 });
 
+// ── RTS Log ─────────────────────────────────────────────────────────────────
+router.get('/rts-log', async (req, res) => {
+  try {
+    const date = req.query.date;
+    if (!date) return res.status(400).json({ error: 'date required' });
+    const { rows } = await pool.query(`
+      SELECT oa.staff_id, s.first_name || ' ' || s.last_name AS driver_name,
+             oa.route_code, oa.shift_type, oa.wave_override,
+             rl.depart_time, rl.rts_time, rl.cortex_undeliverables, rl.packages_returned, rl.notes, rl.id AS rts_id
+      FROM ops_assignments oa
+      JOIN staff s ON s.id = oa.staff_id
+      LEFT JOIN rts_log rl ON rl.staff_id = oa.staff_id AND rl.plan_date = $1
+      WHERE oa.plan_date = $1
+        AND COALESCE(oa.shift_type,'EDV') IN ('EDV','STEP VAN','EDV-C0','EDV-C1','EDV-C2')
+        AND (oa.removed_from_ops = false OR oa.removed_from_ops IS NULL)
+      ORDER BY oa.wave_override ASC NULLS LAST, s.last_name ASC
+    `, [date]);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/rts-log/:staffId', async (req, res) => {
+  try {
+    const { date, depart_time, rts_time, cortex_undeliverables, packages_returned, notes } = req.body;
+    if (!date) return res.status(400).json({ error: 'date required' });
+    // Get route_code from assignment
+    const { rows: asgn } = await pool.query(`SELECT route_code FROM ops_assignments WHERE plan_date=$1 AND staff_id=$2`, [date, req.params.staffId]);
+    await pool.query(`
+      INSERT INTO rts_log (plan_date, staff_id, route_code, depart_time, rts_time, cortex_undeliverables, packages_returned, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (plan_date, staff_id) DO UPDATE SET
+        depart_time = EXCLUDED.depart_time, rts_time = EXCLUDED.rts_time,
+        cortex_undeliverables = EXCLUDED.cortex_undeliverables, packages_returned = EXCLUDED.packages_returned,
+        notes = EXCLUDED.notes, route_code = EXCLUDED.route_code, updated_at = NOW()
+    `, [date, req.params.staffId, asgn[0]?.route_code || null, depart_time || null, rts_time || null, cortex_undeliverables || 0, packages_returned || 0, notes || null]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

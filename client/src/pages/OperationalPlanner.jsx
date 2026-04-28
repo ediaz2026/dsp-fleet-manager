@@ -1686,6 +1686,101 @@ function DriverSearchDropdown({ currentName, allDrivers = [], excludeStaffIds = 
   );
 }
 
+// ══ RTS VIEW ═════════════════════════════════════════════════════════════════
+function RTSRow({ row, date, onSave }) {
+  const [form, setForm] = useState({
+    depart_time: row.depart_time || '', rts_time: row.rts_time || '',
+    cortex_undeliverables: row.cortex_undeliverables || 0, packages_returned: row.packages_returned || 0,
+    notes: row.notes || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const save = async () => { setSaving(true); await onSave(row.staff_id, date, form); setSaving(false); };
+  const tdS = { padding: '8px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px' };
+  const inpS = { padding: '4px 6px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '13px' };
+  return (
+    <tr>
+      <td style={{ ...tdS, fontWeight: 700, fontFamily: 'monospace' }}>{row.route_code || '—'}</td>
+      <td style={{ ...tdS, fontWeight: 500 }}>{row.driver_name}</td>
+      <td style={tdS}><span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', background: '#eff6ff', color: '#2563eb' }}>{row.shift_type || 'EDV'}</span></td>
+      <td style={{ ...tdS, color: '#64748b' }}>{row.wave_override || '—'}</td>
+      <td style={tdS}><input type="time" style={{ ...inpS, width: '100px' }} value={form.depart_time} onChange={e => setForm(f => ({ ...f, depart_time: e.target.value }))} /></td>
+      <td style={tdS}><input type="time" style={{ ...inpS, width: '100px', background: form.rts_time ? '#f0fdf4' : 'white' }} value={form.rts_time} onChange={e => setForm(f => ({ ...f, rts_time: e.target.value }))} /></td>
+      <td style={{ ...tdS, textAlign: 'center' }}><input type="number" min="0" style={{ ...inpS, width: '60px', textAlign: 'center' }} value={form.cortex_undeliverables} onChange={e => setForm(f => ({ ...f, cortex_undeliverables: e.target.value }))} /></td>
+      <td style={{ ...tdS, textAlign: 'center' }}><input type="number" min="0" style={{ ...inpS, width: '60px', textAlign: 'center' }} value={form.packages_returned} onChange={e => setForm(f => ({ ...f, packages_returned: e.target.value }))} /></td>
+      <td style={tdS}><input type="text" style={{ ...inpS, width: '100%', minWidth: '120px' }} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes…" /></td>
+      <td style={tdS}><button onClick={save} disabled={saving} style={{ padding: '4px 10px', borderRadius: '4px', border: 'none', background: '#2563eb', color: 'white', fontSize: '11px', fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.5 : 1 }}>{saving ? '...' : '💾'}</button></td>
+    </tr>
+  );
+}
+
+function RTSView({ planDate }) {
+  const { data: rtsData = [], isLoading } = useQuery({
+    queryKey: ['rts-log', planDate],
+    queryFn: () => api.get('/ops-planner/rts-log', { params: { date: planDate } }).then(r => r.data),
+    enabled: !!planDate,
+  });
+  const qc = useQueryClient();
+  const handleSave = async (staffId, date, form) => {
+    await api.put(`/ops-planner/rts-log/${staffId}`, { date, ...form });
+    qc.invalidateQueries({ queryKey: ['rts-log', date] });
+    toast.success('Saved');
+  };
+  const returned = rtsData.filter(r => r.rts_time).length;
+  const stillOut = rtsData.filter(r => !r.rts_time).length;
+  const totalPkgs = rtsData.reduce((s, r) => s + (r.packages_returned || 0), 0);
+  const totalCortex = rtsData.reduce((s, r) => s + (r.cortex_undeliverables || 0), 0);
+
+  if (isLoading) return <p className="text-center text-content-muted py-8">Loading RTS data…</p>;
+
+  return (
+    <div className="space-y-4">
+      {/* Summary bar */}
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 16px' }}>
+          <div style={{ fontSize: '11px', color: '#64748b' }}>Total Drivers</div>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: '#1a2e4a' }}>{rtsData.length}</div>
+        </div>
+        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '10px 16px' }}>
+          <div style={{ fontSize: '11px', color: '#64748b' }}>Returned</div>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: '#16a34a' }}>{returned}</div>
+        </div>
+        <div style={{ background: '#f5f3ff', border: '1px solid #c4b5fd', borderRadius: '8px', padding: '10px 16px' }}>
+          <div style={{ fontSize: '11px', color: '#64748b' }}>Still Out</div>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: '#7c3aed' }}>{stillOut}</div>
+        </div>
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px 16px' }}>
+          <div style={{ fontSize: '11px', color: '#64748b' }}>Pkgs Returned</div>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: '#dc2626' }}>{totalPkgs}</div>
+        </div>
+        <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 16px' }}>
+          <div style={{ fontSize: '11px', color: '#64748b' }}>Cortex Undeliv.</div>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: '#ea580c' }}>{totalCortex}</div>
+        </div>
+      </div>
+
+      {/* RTS table */}
+      {rtsData.length === 0 ? (
+        <p className="text-center text-content-muted py-8">No EDV/STEP VAN drivers assigned for this date</p>
+      ) : (
+        <div style={{ overflowX: 'auto', background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#1a2e4a', color: 'white' }}>
+                {['Route', 'Driver', 'Shift', 'Wave', 'Depart', 'RTS Time', 'Cortex Undeliv.', 'Pkgs Returned', 'Notes', 'Save'].map(h => (
+                  <th key={h} style={{ padding: '10px 10px', fontSize: '11px', fontWeight: 700, textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rtsData.map(row => <RTSRow key={row.staff_id} row={row} date={planDate} onSave={handleSave} />)}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ══ MAIN COMPONENT ════════════════════════════════════════════════════════════
 
 export default function OperationalPlanner({ embedded, planDate: planDateProp, onDateChange: onDateChangeProp }) {
@@ -1697,6 +1792,7 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
   // Shadow the prop names so all downstream code works without changes
   const planDate    = planDateProp    ?? standaloneDate;
   const onDateChange = onDateChangeProp ?? setStandaloneDate;
+  const [opsMode, setOpsMode] = useState('ops'); // 'ops' | 'rts'
   const [uploading, setUploading]   = useState({}); // { step1: bool, step2: bool, step3: bool }
   const [showDatePicker, setShowDatePicker] = useState(false);
   const datePickerRef = useRef(null);
@@ -3144,14 +3240,6 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             ) : <span className="text-slate-300 text-[10px]">—</span>}
           </td>
 
-          {/* Actual Finish Time — click-to-edit */}
-          <td className="px-2 py-2 text-center">
-            <InlineTimeCell
-              value={asgn.finish_time || ''}
-              onSave={val => staffId && patchAssignment.mutate({ staffId, data: { finish_time: val || null } })}
-            />
-          </td>
-
           {/* Pick List cell */}
           {pickListData.length > 0 && (() => {
             const pick = pickListMap[effectiveRoute.toUpperCase()] || pickListMap[effectiveRoute];
@@ -3344,7 +3432,6 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
                     </th>
                   );
                 })()}
-                <SortHeader col="rts" label="RTS" className="text-center" />
                 {pickListData.length > 0 && <SortHeader col="pickList" label="Pick List" />}
               </tr>
             </thead>
@@ -3460,6 +3547,18 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
             Today
           </button>
         )}
+
+        {/* ── Mode toggle ──────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: '20px', padding: '3px', marginLeft: '12px' }}>
+          {[{ label: '📋 Ops Planner', value: 'ops' }, { label: '🚐 RTS', value: 'rts' }].map(opt => (
+            <button key={opt.value} onClick={() => setOpsMode(opt.value)} style={{
+              padding: '6px 16px', borderRadius: '16px', border: 'none', cursor: 'pointer',
+              fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap',
+              background: opsMode === opt.value ? '#1a2e4a' : 'transparent',
+              color: opsMode === opt.value ? 'white' : '#64748b', transition: 'all 0.15s',
+            }}>{opt.label}</button>
+          ))}
+        </div>
 
         {/* ── Action buttons ─────────────────────────────────────────────── */}
         <div className="ml-auto flex items-center gap-2">
@@ -4152,8 +4251,11 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         </div>
       )}
 
-      {/* ── Main table ───────────────────────────────────────────────────── */}
-      {hasAnyData ? (
+      {/* ── RTS Mode ─────────────────────────────────────────────────────── */}
+      {opsMode === 'rts' && <RTSView planDate={planDate} />}
+
+      {/* ── Main table (Ops Planner mode only) ───────────────────────────── */}
+      {opsMode === 'ops' && hasAnyData ? (
         renderTable()
       ) : shiftsLoading && planDate ? (
         <div className="overflow-x-auto rounded-xl border border-card-border bg-white">

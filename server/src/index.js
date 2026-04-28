@@ -404,6 +404,7 @@ runMigrations()
   .then(() => require('./db/migratePush')().catch(err => console.error('⚠️  migratePush error:', err.message)))
   .then(() => require('./db/migrateCR')().catch(err => console.error('⚠️  migrateCR error:', err.message)))
   .then(() => require('./db/migrateRouteTargets')().catch(err => console.error('⚠️  migrateRouteTargets error:', err.message)))
+  .then(() => require('./db/migrateRTS')().catch(err => console.error('⚠️  migrateRTS error:', err.message)))
   // Clean up non-working drivers from future ops_assignments on startup
   .then(() => require('./db/pool').query(`
     DELETE FROM ops_assignments

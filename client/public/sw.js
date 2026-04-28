@@ -1,27 +1,31 @@
-const CACHE_NAME = 'lastmile-dsp-v1';
-const PRECACHE_URLS = [
-  '/',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
-];
+// Cache version — changes every time this file changes (Vite hashes JS/CSS
+// but the SW itself is served from /sw.js and cached by the browser).
+// Changing this constant forces the browser to install a new SW, which
+// deletes old caches and claims all clients.
+const CACHE_VERSION = '20260428a';
+const CACHE_NAME = `dsp-fleet-${CACHE_VERSION}`;
 
-// Install — cache app shell
+// Install — skip waiting so new SW activates immediately
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
-  );
   self.skipWaiting();
 });
 
-// Activate — clean old caches
+// Activate — delete ALL old caches, claim clients, notify them to reload
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    caches.keys()
+      .then(names => Promise.all(
+        names.filter(n => n !== CACHE_NAME).map(n => {
+          console.log('[SW] Deleting old cache:', n);
+          return caches.delete(n);
+        })
+      ))
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: 'window' }))
+      .then(clients => {
+        clients.forEach(c => c.postMessage({ type: 'SW_UPDATED', version: CACHE_VERSION }));
+      })
   );
-  self.clients.claim();
 });
 
 // Push notification received
@@ -29,18 +33,15 @@ self.addEventListener('push', (event) => {
   if (!event.data) return;
   try {
     const data = event.data.json();
-    const options = {
+    event.waitUntil(self.registration.showNotification(data.title || 'Last Mile DSP', {
       body: data.body || '',
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       vibrate: [200, 100, 200],
       data: data.data || {},
       tag: data.data?.tag || 'default',
-    };
-    event.waitUntil(self.registration.showNotification(data.title || 'Last Mile DSP', options));
-  } catch (e) {
-    console.error('[SW] push parse error', e);
-  }
+    }));
+  } catch (e) { console.error('[SW] push parse error', e); }
 });
 
 // Notification click — open or focus the app
@@ -61,28 +62,44 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// Fetch — network-first for API, cache-first for static assets
+// Fetch strategy:
+//   HTML / navigation → network-first (never serve stale HTML)
+//   API calls → network only (never cache)
+//   Static assets (JS/CSS/images) → cache-first with network update
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
+  const url = new URL(event.request.url);
 
-  // Never cache API calls or auth requests
+  // API — always network, never cache
   if (url.pathname.startsWith('/api')) return;
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      const fetchPromise = fetch(request)
-        .then((response) => {
-          // Only cache successful same-origin responses
-          if (response.ok && url.origin === self.location.origin) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
+  // HTML navigation — network first, fall back to cache only if offline
+  if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
           return response;
         })
-        .catch(() => cached);
+        .catch(() => caches.match(event.request).then(c => c || caches.match('/')))
+    );
+    return;
+  }
 
-      return cached || fetchPromise;
-    })
-  );
+  // Static assets — cache first, background update
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      caches.match(event.request).then(cached => {
+        const networkFetch = fetch(event.request).then(response => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          }
+          return response;
+        }).catch(() => cached);
+
+        return cached || networkFetch;
+      })
+    );
+  }
 });

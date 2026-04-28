@@ -217,8 +217,19 @@ app.get('/api/debug', async (req, res) => {
 // Serve the built React client — check if client/dist exists
 const clientDist = path.join(__dirname, '../../client/dist');
 if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
+  // Static assets (JS/CSS with hashes) — long cache
+  app.use(express.static(clientDist, {
+    maxAge: '7d',
+    setHeaders: (res, filePath) => {
+      // sw.js and index.html must never be cached by the browser
+      if (filePath.endsWith('sw.js') || filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    },
+  }));
+  // SPA fallback — no-cache on HTML
   app.get('*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(path.join(clientDist, 'index.html'));
   });
 }

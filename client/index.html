@@ -18,7 +18,17 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(() => {});
+          navigator.serviceWorker.register('/sw.js').then(reg => {
+            // Check for updates every 60 seconds
+            setInterval(() => reg.update(), 60000);
+          }).catch(() => {});
+        });
+        // Auto-reload when new SW activates
+        navigator.serviceWorker.addEventListener('message', (e) => {
+          if (e.data?.type === 'SW_UPDATED') {
+            console.log('[App] New version detected, reloading…');
+            window.location.reload();
+          }
         });
       }
     </script>

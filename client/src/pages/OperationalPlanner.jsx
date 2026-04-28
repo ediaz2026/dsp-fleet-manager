@@ -2641,12 +2641,14 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         case 'device':        return (row.asgn?.device_id || '').toLowerCase();
         case 'rts':           return (row.asgn?.finish_time || '');
         case 'pickList': {
-          const rc = (row.asgn?.route_code || row.routeCode || '').toUpperCase();
+          const _tidRc1 = row.routeCode || '';
+          const rc = (row.asgn?.route_code || (_tidRc1 && !manuallyAssignedRoutes.has(_tidRc1) ? _tidRc1 : '') || '').toUpperCase();
           const pl = pickListMap[rc];
           return pl ? String(pl.total_packages || 0).padStart(5, '0') : '';
         }
         case 'eft': {
-          const effectiveRoute = row.asgn?.route_code || row.routeCode || '';
+          const _tidRc2 = row.routeCode || '';
+          const effectiveRoute = row.asgn?.route_code || (_tidRc2 && !manuallyAssignedRoutes.has(_tidRc2) ? _tidRc2 : '') || '';
           const wt  = l.waveTime || null;
           const dur = effectiveRoute ? durationByRoute[effectiveRoute] : null;
           const dep = wt ? addMinutesToTime(wt, 30) : null;
@@ -2689,6 +2691,14 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     for (const a of assignmentsArr) if (a.route_code) s.add(a.route_code);
     return s;
   }, [section1Rows, assignmentsArr]);
+
+  // Routes explicitly set in ops_assignments.route_code (manual dispatcher assignments).
+  // TID fallback must NOT use a route if it's already manually assigned to someone else.
+  const manuallyAssignedRoutes = useMemo(() => {
+    const s = new Set();
+    for (const a of assignmentsArr) if (a.route_code && !a.removed_from_ops) s.add(a.route_code);
+    return s;
+  }, [assignmentsArr]);
 
   const allRouteCodes = useMemo(() => {
     const codes = (routesData?.routes || []).map(r => r.routeCode).filter(Boolean);
@@ -2784,7 +2794,9 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         const shift = row.internalShift;
         const type = (shift?.shift_type || row.shiftType || '').toUpperCase();
         const attSt = shift?.attendance_status;
-        const routeCode = asgn.route_code || row.routeCode || '';
+        // Manual assignment wins; TID fallback only if route isn't manually assigned elsewhere
+        const tidRc = row.routeCode || '';
+        const routeCode = asgn.route_code || (tidRc && !manuallyAssignedRoutes.has(tidRc) ? tidRc : '') || '';
         const displayName = (asgn.name_override || row.name || '').toUpperCase();
         if (!displayName && !routeCode) continue;
 
@@ -2972,7 +2984,9 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     const renderRow = (row, key, rowNum) => {
       const staffId  = row.profile?.staff_id || null;
       const asgn     = row.asgn || (staffId ? (assignments[staffId] || {}) : {});
-      const effectiveRoute = asgn.route_code || row.routeCode || '';
+      // Manual assignment wins; TID fallback only if route isn't manually assigned elsewhere
+      const tidRoute = row.routeCode || '';
+      const effectiveRoute = asgn.route_code || (tidRoute && !manuallyAssignedRoutes.has(tidRoute) ? tidRoute : '') || '';
       const currentLoadout = loadoutMap[effectiveRoute] || row.loadout || {};
       const rowVehicle = vehicles.find(v => v.id === asgn.vehicle_id);
 
@@ -4472,7 +4486,8 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
         const allDriverPicks = !isSingle ? sortedRows
           .map(row => {
             const asgn = row.asgn || {};
-            const route = asgn.route_code || row.routeCode || '';
+            const _tr = row.routeCode || '';
+            const route = asgn.route_code || (_tr && !manuallyAssignedRoutes.has(_tr) ? _tr : '') || '';
             const pick = pickListMap[route.toUpperCase()] || pickListMap[route];
             const name = asgn.name_override || row.name || '';
             return pick && name ? { name, routeCode: route, pick } : null;

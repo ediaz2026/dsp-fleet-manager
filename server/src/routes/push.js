@@ -30,7 +30,7 @@ router.get('/diag-ev15', async (req, res) => {
     const v = await pool.query(`SELECT id, vehicle_name, van_status, amazon_status FROM vehicles WHERE vehicle_name ILIKE '%EV%15%' OR vehicle_name = 'EV 15'`);
     const vid = v.rows[0]?.id;
     const repairs = vid ? await pool.query(`SELECT id, status, priority, description, van_status, amazon_status, created_at FROM repairs WHERE vehicle_id = $1 ORDER BY created_at DESC LIMIT 3`, [vid]) : { rows: [] };
-    const alerts = vid ? await pool.query(`SELECT id, alert_type, description, is_resolved, created_at FROM fleet_alerts WHERE vehicle_id = $1 ORDER BY created_at DESC LIMIT 3`, [vid]) : { rows: [] };
+    const alerts = vid ? await pool.query(`SELECT * FROM fleet_alerts WHERE vehicle_id = $1 ORDER BY created_at DESC LIMIT 3`, [vid]) : { rows: [] };
     res.json({ vehicle: v.rows[0] || null, repairs: repairs.rows, alerts: alerts.rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

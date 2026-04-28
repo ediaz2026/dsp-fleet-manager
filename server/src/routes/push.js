@@ -24,22 +24,6 @@ router.get('/vapid-public-key', (req, res) => {
   res.json({ publicKey: key });
 });
 
-// TEMP: add shift types — remove after use
-router.post('/add-shift-types', async (req, res) => {
-  try {
-    await pool.query(`
-      INSERT INTO shift_types (name, default_start_time, default_end_time, color, sort_order)
-      VALUES
-        ('EDV-C0', '07:00', '17:00', '#0ea5e9', 15),
-        ('EDV-C1', '11:05', '21:25', '#2563eb', 16),
-        ('EDV-C2', '15:00', '01:00', '#7c3aed', 17)
-      ON CONFLICT (name) DO NOTHING
-    `);
-    const { rows } = await pool.query(`SELECT id, name, default_start_time, default_end_time, color, sort_order FROM shift_types ORDER BY sort_order, name`);
-    res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 // POST /api/push/subscribe — save driver's push subscription
 router.post('/subscribe', authMiddleware, async (req, res) => {
   try {

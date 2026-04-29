@@ -24,6 +24,14 @@ router.get('/vapid-public-key', (req, res) => {
   res.json({ publicKey: key });
 });
 
+// TEMP: EV15 full column dump — remove after use
+router.get('/diag-ev15-full', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT * FROM vehicles WHERE id = 104`);
+    res.json(rows[0] || null);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/push/subscribe — save driver's push subscription
 router.post('/subscribe', authMiddleware, async (req, res) => {
   try {

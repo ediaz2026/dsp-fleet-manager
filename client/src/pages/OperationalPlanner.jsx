@@ -2723,16 +2723,18 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
     const allWithRoute = allRows.filter(r => (r.asgn?.route_code || r.routeCode) && r.shiftType !== 'HELPER');
     const assignedRoutes = allWithRoute.filter(r => r.name && r.status !== 'unassigned_route' && r.status !== 'multiple_das').length;
     const totalRoutes = allWithRoute.length;
+    // Exclude DISPATCH from status counts — they're filtered from the grid display
+    const displayableRows = allRows.filter(r => r.shiftType !== 'DISPATCH AM' && r.shiftType !== 'DISPATCH PM');
     return {
       totalBlocks: totalRoutes + section2Rows.length,
       routes: totalRoutes,
       assignedRoutes,
       helpers: section2Rows.length,
-      wronglyRostered: allRows.filter(r => r.status === 'wrongly_rostered').length,
-      notInAmazon: allRows.filter(r => r.status === 'not_in_amazon').length,
+      wronglyRostered: displayableRows.filter(r => r.status === 'wrongly_rostered').length,
+      notInAmazon: displayableRows.filter(r => r.status === 'not_in_amazon').length,
       unassignedRoutes: section1Rows.filter(r => r.status === 'unassigned_route').length,
-      multipleDAs: allRows.filter(r => r.status === 'multiple_das').length,
-      flags: allRows.filter(r => r.status !== 'fully_matched' && r.status !== 'helper_matched').length,
+      multipleDAs: displayableRows.filter(r => r.status === 'multiple_das').length,
+      flags: displayableRows.filter(r => r.status !== 'fully_matched' && r.status !== 'helper_matched').length,
     };
   }, [section1Rows, section2Rows, allRows]);
 

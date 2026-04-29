@@ -3796,27 +3796,6 @@ export default function OperationalPlanner({ embedded, planDate: planDateProp, o
               📢 Release Briefing
             </button>
           )}
-          <button
-            onClick={async () => {
-              try {
-                const { data } = await api.post('/ops/cleanup-ops', { date: planDate });
-                console.log('[cleanup debug]', data.debug);
-                if (data.removed > 0) {
-                  toast.success(`Removed ${data.removed} non-working driver${data.removed !== 1 ? 's' : ''}: ${data.names.join(', ')}`);
-                  qc.invalidateQueries({ queryKey: ['ops-assignments', planDate] });
-                } else {
-                  // Show shift type breakdown so admin can see what's happening
-                  const types = data.debug ? Object.entries(data.debug).map(([t, n]) => `${t}: ${n.length}`).join(', ') : '';
-                  toast(`No non-working drivers to remove. Shift types: ${types || 'none'}`, { icon: '✅', duration: 5000 });
-                }
-              } catch (err) {
-                toast.error('Cleanup failed: ' + (err?.response?.data?.error || err.message));
-              }
-            }}
-            className="font-semibold px-2 py-0.5 rounded transition-colors text-slate-600 bg-slate-100 hover:bg-slate-200"
-          >
-            🧹 Clean Up
-          </button>
           {summaryCounts.flags > 0
             ? <span className="ml-auto text-red-500 font-semibold">{summaryCounts.flags} flag{summaryCounts.flags !== 1 ? 's' : ''}</span>
             : hasAnyData && <span className="ml-auto text-emerald-600 font-semibold">✅ All matched</span>}

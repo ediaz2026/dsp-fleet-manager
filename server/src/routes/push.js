@@ -24,15 +24,6 @@ router.get('/vapid-public-key', (req, res) => {
   res.json({ publicKey: key });
 });
 
-// TEMP: fix EV15 + cleanup — remove after use
-router.post('/fix-ev15-final', async (req, res) => {
-  try {
-    await pool.query(`UPDATE vehicles SET van_status = 'Active', amazon_status = 'Active', updated_at = NOW() WHERE id = 104`);
-    const { rows } = await pool.query(`SELECT id, vehicle_name, van_status, amazon_status FROM vehicles WHERE id = 104`);
-    res.json({ fixed: rows[0] });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 // POST /api/push/subscribe — save driver's push subscription
 router.post('/subscribe', authMiddleware, async (req, res) => {
   try {
